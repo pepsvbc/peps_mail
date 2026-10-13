@@ -255,10 +255,10 @@ export function EmailRenderer({
     }
 
     // App theme colors (must match globals.css --background / --foreground)
-    const appDarkBg = '#141110';   // hsl(20 10% 7%)
-    const appDarkFg = '#f5f3f1';   // hsl(20 10% 95%) — approximate foreground
+    const appDarkBg = '#140320';
+    const appDarkFg = '#f8f2fa';
     const appLightBg = '#ffffff';  // hsl(0 0% 100%)
-    const appLightFg = '#0a0a0a';  // hsl(0 0% 4%) — approximate foreground
+    const appLightFg = '#24172b';
 
     // Set color-scheme to match the visual appearance of the iframe content.
     // This affects browser chrome like scrollbars and form controls.

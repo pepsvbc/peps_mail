@@ -252,7 +252,7 @@ export function ThreePanelLayout({
               ) : (
                 <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-6 text-center">
                   <p className="text-2xl font-bold tracking-tight text-primary">
-                    {brand.appName}
+                    Mail · {brand.name}
                   </p>
                   <p className="text-sm text-muted-foreground">Select a message to read it.</p>
                 </div>

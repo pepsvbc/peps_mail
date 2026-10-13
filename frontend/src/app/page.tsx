@@ -3,16 +3,10 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LoginThemeToggle } from "@/components/shared/LoginThemeToggle";
 import { apiPost, fetchAccounts } from "@/lib/api";
 import { brand } from "@/lib/brand";
 import { useAuthStore } from "@/stores/useAuthStore";
@@ -80,99 +74,87 @@ export default function Home() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-8">
-      <div className="w-full max-w-sm">
-        {/* Branding */}
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 h-36 w-64 overflow-hidden">
-            <Image
-              src={brand.logoPath}
-              alt={brand.name}
-              width={256}
-              height={256}
-              className="-mt-14"
-              priority
-              unoptimized
-            />
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">
-            {brand.appName}
-          </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Sign in to your account
-          </p>
-        </div>
-
-        {/* Login Card */}
-        <Card className="rounded-lg">
-          <CardHeader>
-            <CardTitle className="text-lg">Welcome back</CardTitle>
-            <CardDescription>
-              Enter your credentials to continue
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {error && (
-              <div className="mb-4 rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                {error}
-              </div>
-            )}
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="you@example.com"
-                  autoComplete="email"
-                  required
-                  disabled={loading}
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="Enter your password"
-                  autoComplete="current-password"
-                  required
-                  disabled={loading}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-              <label htmlFor="remember" className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  id="remember"
-                  type="checkbox"
-                  checked={remember}
-                  onChange={(e) => setRemember(e.target.checked)}
-                  disabled={loading}
-                  className="size-4 rounded border-muted-foreground/40 accent-primary"
-                />
-                <span className="text-sm text-muted-foreground">Keep me logged in</span>
-              </label>
-
-              <Button
-                type="submit"
-                className="mt-2 w-full"
-                size="lg"
-                disabled={loading}
-              >
-                {loading ? "Signing in..." : "Sign in"}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        {/* Footer */}
-        <p className="mt-6 text-center text-xs text-muted-foreground">
-          Secure, private, and fast email.
-        </p>
+    <div className="flex min-h-dvh flex-col bg-background px-6 py-6 text-foreground">
+      <div className="flex justify-end">
+        <LoginThemeToggle />
       </div>
+      <main className="flex flex-1 items-center justify-center py-10">
+        <div className="w-full max-w-sm">
+          {/* Branding */}
+          <div className="mb-8 text-center">
+            <div className="mx-auto mb-4 h-36 w-64 overflow-hidden">
+              <Image
+                src={brand.logoPath}
+                alt={brand.name}
+                width={256}
+                height={256}
+                className="-mt-14"
+                priority
+                unoptimized
+              />
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Sign in to Mail
+            </h1>
+          </div>
+
+          {error && (
+            <div role="alert" className="mb-4 rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="you@example.com"
+                autoComplete="email"
+                required
+                disabled={loading}
+                className="h-11 border-muted-foreground/80 bg-background text-foreground shadow-none dark:bg-background"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Enter your password"
+                autoComplete="current-password"
+                required
+                disabled={loading}
+                className="h-11 border-muted-foreground/80 bg-background text-foreground shadow-none dark:bg-background"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            <label htmlFor="remember" className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                id="remember"
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                disabled={loading}
+                className="size-4 rounded border-muted-foreground accent-primary"
+              />
+              <span className="text-sm">Keep me logged in</span>
+            </label>
+
+            <Button
+              type="submit"
+              className="mt-2 h-11 w-full"
+              size="lg"
+              disabled={loading}
+            >
+              {loading ? "Signing in..." : "Sign in"}
+            </Button>
+          </form>
+        </div>
+      </main>
     </div>
   );
 }

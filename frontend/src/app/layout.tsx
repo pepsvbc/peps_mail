@@ -15,7 +15,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: brand.appName,
+  title: `Mail · ${brand.name}`,
   description: brand.description,
 };
 

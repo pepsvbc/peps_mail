@@ -139,9 +139,6 @@ export function AccountSwitcher() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="truncate">{activeAccount?.email}</div>
-            <div className="text-xs text-muted-foreground truncate">
-              {activeAccount?.imapHost}
-            </div>
           </div>
           <ChevronRight
             className={cn(
@@ -203,9 +200,6 @@ export function AccountSwitcher() {
                           isActive ? "text-foreground" : "text-foreground/80"
                         )}>
                           {account.email}
-                        </div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          {account.imapHost}
                         </div>
                       </div>
                       <div className="shrink-0 w-8 flex items-center justify-center">
