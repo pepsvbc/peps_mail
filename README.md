@@ -23,6 +23,9 @@ Connects to an existing IMAP/SMTP mail server.
 - Restricts login to the configured mail servers and strengthens account and session checks.
 - Protects draft attachment paths and isolates potentially unsafe attachment content.
 - Keeps message display preferences and remote-image permissions separate for each account and message.
+- Adds English/French language selection and light/dark theme controls.
+- Shows unread inbox counts across accounts and supports docking or minimizing drafts.
+- Provides a public setup guide with iOS profiles and IMAP/SMTP instructions.
 
 Branding can be customized in these files:
 
