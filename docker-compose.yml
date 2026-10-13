@@ -8,6 +8,7 @@ services:
       - "3001:3001"
     environment:
       - BASE_PATH=${BASE_PATH:-}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
       - IMAP_HOST=${IMAP_HOST:-mail.example.com}
       - IMAP_PORT=${IMAP_PORT:-993}
       - SMTP_HOST=${SMTP_HOST:-mail.example.com}

@@ -21,29 +21,22 @@ pub struct LoginRequest {
     pub password: String,
     #[serde(default)]
     pub remember: bool,
-    pub imap_host: Option<String>,
-    pub imap_port: Option<u16>,
-    #[serde(default = "default_tls")]
-    pub imap_tls: bool,
-    pub smtp_host: Option<String>,
-    pub smtp_port: Option<u16>,
-    #[serde(default = "default_tls")]
-    pub smtp_tls: bool,
-    pub browser_id: Option<String>,
-}
-fn default_tls() -> bool {
-    true
 }
 
 fn browser_cookie(browser_id: &str, max_age_secs: u64, secure: bool) -> String {
     let secure_flag = if secure { " Secure;" } else { "" };
     format!(
-        "{}={};{} SameSite=Strict; Path=/; Max-Age={}",
+        "{}={};{} HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
         BROWSER_COOKIE, browser_id, secure_flag, max_age_secs
     )
 }
 
-fn account_session_cookie(account_id: &str, token: &str, max_age_secs: u64, secure: bool) -> String {
+fn account_session_cookie(
+    account_id: &str,
+    token: &str,
+    max_age_secs: u64,
+    secure: bool,
+) -> String {
     let secure_flag = if secure { " Secure;" } else { "" };
     format!(
         "oxi_session_{}={};{} HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
@@ -67,7 +60,7 @@ fn clearing_account_cookie(account_id: &str, secure: bool) -> String {
     )
 }
 
-fn extract_browser_id(headers: &axum::http::HeaderMap) -> Option<String> {
+pub(crate) fn extract_browser_id(headers: &axum::http::HeaderMap) -> Option<String> {
     headers
         .get_all("cookie")
         .iter()
@@ -86,11 +79,15 @@ fn extract_browser_id(headers: &axum::http::HeaderMap) -> Option<String> {
         })
 }
 
-fn extract_session_cookies(headers: &axum::http::HeaderMap) -> Vec<(String, String)> {
+pub(crate) fn extract_session_cookies(headers: &axum::http::HeaderMap) -> Vec<(String, String)> {
     let prefix = "oxi_session_";
     let mut sessions = Vec::new();
-    
-    for cookie in headers.get_all("cookie").iter().filter_map(|v| v.to_str().ok()) {
+
+    for cookie in headers
+        .get_all("cookie")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+    {
         for segment in cookie.split(';') {
             let trimmed = segment.trim();
             if let Some(rest) = trimmed.strip_prefix(prefix)
@@ -115,6 +112,7 @@ fn extract_session_cookies(headers: &axum::http::HeaderMap) -> Vec<(String, Stri
 pub async fn login(
     Extension(store): Extension<Arc<SessionStore>>,
     Extension(config): Extension<Arc<AppConfig>>,
+    headers: axum::http::HeaderMap,
     Json(body): Json<LoginRequest>,
 ) -> Response {
     if body.email.trim().is_empty() || body.password.trim().is_empty() {
@@ -133,7 +131,12 @@ pub async fn login(
             .into_response();
     }
 
-    let imap_host = body.imap_host.clone().or(config.imap_host.clone());
+    // Mailbox caches are keyed by email address, so authentication must use the
+    // same administrator-configured server as all subsequent mailbox requests.
+    let imap_host = config
+        .imap_host
+        .as_ref()
+        .filter(|host| !host.trim().is_empty());
     let Some(imap_host) = imap_host else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -150,16 +153,31 @@ pub async fn login(
             .into_response();
     };
 
-    let smtp_host = body.smtp_host.clone().or(config.smtp_host.clone());
-    let smtp_host = smtp_host.unwrap_or_else(|| imap_host.clone());
+    let smtp_host = config
+        .smtp_host
+        .as_ref()
+        .filter(|host| !host.trim().is_empty());
+    let Some(smtp_host) = smtp_host else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": {
+                    "code": "SERVICE_UNAVAILABLE",
+                    "message": "SMTP server not configured",
+                    "status": 503
+                }
+            })),
+        )
+            .into_response();
+    };
 
-    let imap_port = body.imap_port.unwrap_or(config.imap_port);
-    let imap_tls = body.imap_tls;
-    let smtp_port = body.smtp_port.unwrap_or(config.smtp_port);
-    let smtp_tls = body.smtp_tls;
+    let imap_port = config.imap_port;
+    let imap_tls = config.tls_enabled;
+    let smtp_port = config.smtp_port;
+    let smtp_tls = config.tls_enabled;
 
     let result = imap_auth::validate_imap_credentials(
-        &imap_host,
+        imap_host,
         imap_port,
         imap_tls,
         &body.email,
@@ -169,14 +187,29 @@ pub async fn login(
 
     match result {
         AuthResult::Success => {
-            let provided_browser_id = body.browser_id.clone();
-            
-            if let Some(ref browser_id) = provided_browser_id {
-                let existing_accounts = store.get_browser_accounts(browser_id);
-                let duplicate = existing_accounts.iter().find(|a| {
-                    a.email == body.email && a.imap_host == imap_host
-                });
-                
+            // A browser identifier alone is not proof of ownership. Only reuse
+            // a browser when a matching account session cookie authenticates it.
+            let existing_browser_id = extract_browser_id(&headers).filter(|browser_id| {
+                extract_session_cookies(&headers)
+                    .iter()
+                    .any(|(account_id, token)| {
+                        store
+                            .get_account_session(browser_id, account_id, token)
+                            .is_some()
+                    })
+            });
+
+            if let Some(ref browser_id) = existing_browser_id {
+                let existing_accounts: Vec<_> = extract_session_cookies(&headers)
+                    .into_iter()
+                    .filter_map(|(account_id, token)| {
+                        store.get_account_session(browser_id, &account_id, &token)
+                    })
+                    .collect();
+                let duplicate = existing_accounts
+                    .iter()
+                    .find(|a| a.email == body.email && a.imap_host == *imap_host);
+
                 if let Some(dup) = duplicate {
                     tracing::debug!(
                         email = %body.email,
@@ -199,7 +232,7 @@ pub async fn login(
                         .into_response();
                 }
             }
-            
+
             let user_hash = user_data::hash_email(&body.email);
             if let Err(e) = user_data::provision_user_data(&config.data_dir, &user_hash) {
                 tracing::error!(error = %e, "failed to provision user data directory");
@@ -245,12 +278,9 @@ pub async fn login(
                 config.session_timeout_hours
             };
 
-            let provided_browser_id = body.browser_id.clone();
-            let browser_id = body.browser_id.unwrap_or_else(|| store.create_browser());
+            let browser_id = existing_browser_id.unwrap_or_else(|| store.create_browser());
             tracing::debug!(
                 email = %body.email,
-                provided_browser_id = ?provided_browser_id,
-                effective_browser_id = %browser_id,
                 "login: creating session"
             );
 
@@ -268,9 +298,11 @@ pub async fn login(
             );
 
             let max_age = session_hours * 3600;
+            store.set_timeout_override(&token, Some(std::time::Duration::from_secs(max_age)));
             let secure = config.environment != "development";
             let browser_cookie_header = browser_cookie(&browser_id, max_age, secure);
-            let session_cookie_header = account_session_cookie(&account_id, &token, max_age, secure);
+            let session_cookie_header =
+                account_session_cookie(&account_id, &token, max_age, secure);
 
             let response = (
                 StatusCode::CREATED,
@@ -346,116 +378,43 @@ pub async fn list_accounts(
     headers: axum::http::HeaderMap,
 ) -> Response {
     let secure = config.environment != "development";
-    
     let browser_id = extract_browser_id(&headers);
+    let mut seen_accounts = std::collections::HashSet::new();
+    let mut valid_accounts = Vec::new();
+    let mut clear_cookies = Vec::new();
 
-    let Some(browser_id) = browser_id else {
-        tracing::debug!("list_accounts: no browser_id cookie found");
-        return (
-            StatusCode::OK,
-            [("content-type", "application/json")],
-            serde_json::json!({ "accounts": [], "browserSessionExpired": true }).to_string(),
-        )
-            .into_response();
-    };
-
-    let browser_exists = store.browser_exists(&browser_id);
-    if !browser_exists {
-        tracing::debug!(browser_id = %browser_id, "list_accounts: browser_id not found on server");
-        let clear_browser = clearing_browser_cookie(secure);
-        return (
-            StatusCode::OK,
-            [
-                ("content-type", "application/json"),
-                ("set-cookie", &clear_browser),
-            ],
-            serde_json::json!({ "accounts": [], "browserSessionExpired": true }).to_string(),
-        )
-            .into_response();
-    }
-
-    let session_cookies = extract_session_cookies(&headers);
-    let session_map: std::collections::HashMap<String, String> = session_cookies.into_iter().collect();
-    
-    let browser_accounts = store.get_browser_accounts(&browser_id);
-    let browser_account_ids: Vec<String> = browser_accounts
-        .iter()
-        .map(|s| s.account_id.clone())
-        .collect();
-    
-    let mut valid_accounts: Vec<serde_json::Value> = Vec::new();
-    let mut clear_cookies: Vec<String> = Vec::new();
-    
-    for session in &browser_accounts {
-        if let Some(token) = session_map.get(&session.account_id) {
-            if let Some(valid_session) = store.get(token) {
-                valid_accounts.push(serde_json::json!({
-                    "id": valid_session.account_id,
-                    "email": valid_session.email,
-                    "imapHost": valid_session.imap_host,
-                    "smtpHost": valid_session.smtp_host
-                }));
-            } else {
-                store.remove_account(&session.account_id);
-                clear_cookies.push(clearing_account_cookie(&session.account_id, secure));
-            }
+    // Missing or forged cookies must never revoke another client's sessions.
+    // Validate the browser, account ID and token together before returning data.
+    for (account_id, token) in extract_session_cookies(&headers) {
+        if !seen_accounts.insert(account_id.clone()) {
+            continue;
+        }
+        let session = browser_id
+            .as_deref()
+            .and_then(|browser_id| store.get_account_session(browser_id, &account_id, &token));
+        if let Some(session) = session {
+            valid_accounts.push(serde_json::json!({
+                "id": session.account_id,
+                "email": session.email,
+                "imapHost": session.imap_host,
+                "smtpHost": session.smtp_host
+            }));
         } else {
-            store.remove_account(&session.account_id);
-        }
-    }
-    
-    for account_id in session_map.keys() {
-        if !browser_account_ids.contains(account_id) {
-            clear_cookies.push(clearing_account_cookie(account_id, secure));
+            clear_cookies.push(clearing_account_cookie(&account_id, secure));
         }
     }
 
-    if valid_accounts.is_empty() {
-        tracing::debug!(
-            browser_id = %browser_id,
-            "list_accounts: no valid accounts found"
-        );
-        let clear_browser = clearing_browser_cookie(secure);
-        let body = serde_json::json!({ "accounts": [], "browserSessionExpired": true }).to_string();
-        
-        let mut response = axum::response::Response::new(axum::body::Body::from(body));
-        *response.status_mut() = StatusCode::OK;
-        response.headers_mut().insert(
-            axum::http::header::CONTENT_TYPE,
-            axum::http::HeaderValue::from_static("application/json"),
-        );
-        response.headers_mut().append(
-            axum::http::header::SET_COOKIE,
-            axum::http::HeaderValue::from_str(&clear_browser).unwrap(),
-        );
-        for cookie in clear_cookies {
-            response.headers_mut().append(
-                axum::http::header::SET_COOKIE,
-                axum::http::HeaderValue::from_str(&cookie).unwrap(),
-            );
-        }
-        return response;
-    }
-
-    tracing::debug!(
-        browser_id = %browser_id,
-        account_count = valid_accounts.len(),
-        accounts = ?valid_accounts.iter().filter_map(|a| a.get("email").and_then(|e| e.as_str())).collect::<Vec<_>>(),
-        "list_accounts: returning valid accounts"
-    );
-
-    let body = serde_json::json!({ "accounts": valid_accounts }).to_string();
-    let mut response = axum::response::Response::new(axum::body::Body::from(body));
-    *response.status_mut() = StatusCode::OK;
-    response.headers_mut().insert(
-        axum::http::header::CONTENT_TYPE,
-        axum::http::HeaderValue::from_static("application/json"),
-    );
+    let body = if valid_accounts.is_empty() {
+        clear_cookies.push(clearing_browser_cookie(secure));
+        serde_json::json!({ "accounts": [], "browserSessionExpired": true })
+    } else {
+        serde_json::json!({ "accounts": valid_accounts })
+    };
+    let mut response = Json(body).into_response();
     for cookie in clear_cookies {
-        response.headers_mut().append(
-            axum::http::header::SET_COOKIE,
-            axum::http::HeaderValue::from_str(&cookie).unwrap(),
-        );
+        if let Ok(value) = cookie.parse() {
+            response.headers_mut().append("set-cookie", value);
+        }
     }
     response
 }
@@ -484,23 +443,25 @@ pub async fn remove_account(
             .into_response();
     };
 
-    let browser_accounts = store.get_browser_accounts(&browser_id);
-    let account_belongs_to_browser = browser_accounts
-        .iter()
-        .any(|s| s.account_id == account_id);
+    let owns_account = extract_session_cookies(&headers)
+        .into_iter()
+        .filter(|(cookie_account_id, _)| cookie_account_id == &account_id)
+        .any(|(_, token)| {
+            store
+                .get_account_session(&browser_id, &account_id, &token)
+                .is_some()
+        });
 
-    if !account_belongs_to_browser {
+    if !owns_account {
         return (
             StatusCode::FORBIDDEN,
-            [("content-type", "application/json")],
-            serde_json::json!({
+            Json(serde_json::json!({
                 "error": {
                     "code": "FORBIDDEN",
-                    "message": "Account does not belong to this browser session",
+                    "message": "A valid account session is required",
                     "status": 403
                 }
-            })
-            .to_string(),
+            })),
         )
             .into_response();
     }
@@ -535,14 +496,18 @@ pub async fn logout(
     let mut cookies_to_clear: Vec<String> = Vec::new();
 
     if let Some(ref browser_id) = browser_id {
-        let accounts = store.get_browser_accounts(browser_id);
-        for account in accounts {
+        for (account_id, token) in extract_session_cookies(&headers) {
+            if store
+                .get_account_session(browser_id, &account_id, &token)
+                .is_some()
+            {
+                store.remove_account(&account_id);
+            }
             cookies_to_clear.push(clearing_account_cookie(
-                &account.account_id,
+                &account_id,
                 config.environment != "development",
             ));
         }
-        store.remove_browser(browser_id);
     }
 
     let secure = config.environment != "development";
@@ -604,5 +569,431 @@ mod tests {
         };
         let json = serde_json::to_value(&resp).unwrap();
         assert_eq!(json["status"], "logged_out");
+    }
+
+    use axum::Router;
+    use axum::body::Body;
+    use axum::http::Request;
+    use axum::routing::{delete, get, post};
+    use http_body_util::BodyExt;
+    use std::time::Duration;
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::TcpListener;
+    use tower::ServiceExt;
+
+    fn test_config(data_dir: &tempfile::TempDir) -> AppConfig {
+        let mut config: AppConfig = figment::Figment::new().extract().unwrap();
+        config.data_dir = data_dir.path().to_str().unwrap().to_string();
+        config.imap_host = Some("127.0.0.1".to_string());
+        config.smtp_host = Some("smtp.example.com".to_string());
+        config.smtp_port = 2525;
+        config.tls_enabled = false;
+        config.environment = "production".to_string();
+        config
+    }
+
+    fn test_store() -> Arc<SessionStore> {
+        Arc::new(SessionStore::new(Duration::from_secs(3600)))
+    }
+
+    fn test_router(store: Arc<SessionStore>, config: AppConfig) -> Router {
+        Router::new()
+            .route("/login", post(login))
+            .route("/accounts", get(list_accounts))
+            .route("/accounts/{id}", delete(remove_account))
+            .route(
+                "/logout",
+                post(logout).layer(axum::middleware::from_fn(
+                    crate::auth::middleware::auth_guard,
+                )),
+            )
+            .layer(Extension(store))
+            .layer(Extension(Arc::new(config)))
+    }
+
+    async fn request(
+        app: Router,
+        method: &str,
+        path: &str,
+        cookie: &str,
+        body: serde_json::Value,
+    ) -> (StatusCode, axum::http::HeaderMap, serde_json::Value) {
+        let response = tokio::time::timeout(
+            Duration::from_secs(5),
+            app.oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(path)
+                    .header("content-type", "application/json")
+                    .header("cookie", cookie)
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            ),
+        )
+        .await
+        .expect("auth request must finish")
+        .unwrap();
+        let status = response.status();
+        let headers = response.headers().clone();
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        (status, headers, serde_json::from_slice(&bytes).unwrap())
+    }
+
+    // A real TCP IMAP peer makes the route tests exercise credential validation,
+    // including which endpoint and transport the route actually chooses.
+    async fn accepting_imap() -> (u16, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut stream = BufReader::new(stream);
+            stream
+                .get_mut()
+                .write_all(b"* OK test IMAP ready\r\n")
+                .await
+                .unwrap();
+            let mut line = String::new();
+            stream.read_line(&mut line).await.unwrap();
+            assert!(line.contains(" LOGIN "), "expected an IMAP LOGIN command");
+            let tag = line.split_whitespace().next().unwrap();
+            stream
+                .get_mut()
+                .write_all(format!("{tag} OK authenticated\r\n").as_bytes())
+                .await
+                .unwrap();
+            line.clear();
+            stream.read_line(&mut line).await.unwrap();
+            assert!(line.contains(" LOGOUT"));
+            let tag = line.split_whitespace().next().unwrap();
+            stream
+                .get_mut()
+                .write_all(format!("* BYE logging out\r\n{tag} OK logout complete\r\n").as_bytes())
+                .await
+                .unwrap();
+        });
+        (port, handle)
+    }
+
+    fn add_test_account(store: &SessionStore, browser_id: &str, email: &str) -> (String, String) {
+        store.add_account_to_browser(
+            browser_id,
+            email.to_string(),
+            "password".to_string(),
+            user_data::hash_email(email),
+            "127.0.0.1".to_string(),
+            993,
+            true,
+            "smtp.example.com".to_string(),
+            587,
+            true,
+        )
+    }
+
+    fn response_cookie(headers: &axum::http::HeaderMap, name: &str) -> String {
+        headers
+            .get_all("set-cookie")
+            .iter()
+            .filter_map(|value| value.to_str().ok())
+            .find_map(|value| value.strip_prefix(&format!("{name}=")))
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_string()
+    }
+
+    #[tokio::test]
+    async fn login_ignores_client_mail_servers_and_browser_id() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut config = test_config(&data_dir);
+        let (port, imap) = accepting_imap().await;
+        config.imap_port = port;
+        let store = test_store();
+        let attacker_browser = store.create_browser();
+        let (status, headers, json) = request(
+            test_router(store.clone(), config),
+            "POST",
+            "/login",
+            "",
+            serde_json::json!({
+                "email": "member@example.com", "password": "password", "remember": true,
+                "imap_host": "127.0.0.2", "imap_port": 1, "imap_tls": true,
+                "smtp_host": "attacker.example", "smtp_port": 1, "smtp_tls": true,
+                "browser_id": attacker_browser,
+            }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{json}");
+        imap.await.unwrap();
+        let browser_id = response_cookie(&headers, BROWSER_COOKIE);
+        assert_ne!(browser_id, attacker_browser);
+        assert!(store.get_browser_accounts(&attacker_browser).is_empty());
+        let account_id = json["account"]["id"].as_str().unwrap();
+        let token = response_cookie(&headers, &format!("oxi_session_{account_id}"));
+        let session = store
+            .get_account_session(&browser_id, account_id, &token)
+            .unwrap();
+        assert_eq!(session.imap_host, "127.0.0.1");
+        assert_eq!(session.imap_port, port);
+        assert!(!session.imap_tls);
+        assert_eq!(session.smtp_host, "smtp.example.com");
+        assert_eq!(session.smtp_port, 2525);
+        assert!(!session.smtp_tls);
+        assert_eq!(
+            session.timeout_override,
+            Some(Duration::from_secs(30 * 24 * 3600))
+        );
+        for cookie in headers.get_all("set-cookie") {
+            let cookie = cookie.to_str().unwrap();
+            assert!(cookie.contains("HttpOnly"));
+            assert!(cookie.contains("Secure"));
+            assert!(cookie.contains("SameSite=Strict"));
+        }
+    }
+
+    #[tokio::test]
+    async fn login_cannot_disable_configured_tls() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut config = test_config(&data_dir);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        config.imap_port = listener.local_addr().unwrap().port();
+        config.tls_enabled = true;
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut record = [0; 5];
+            stream.read_exact(&mut record).await.unwrap();
+            // TLS handshake record; plaintext LOGIN credentials must not be sent.
+            assert_eq!(record[0], 22);
+            assert_eq!(record[1], 3);
+        });
+        let store = test_store();
+        let (status, _, _) = request(
+            test_router(store.clone(), config), "POST", "/login", "",
+            serde_json::json!({"email": "member@example.com", "password": "password", "imap_tls": false}),
+        ).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        peer.await.unwrap();
+        assert!(store.is_empty());
+    }
+
+    #[tokio::test]
+    async fn login_requires_nonblank_configured_mail_servers() {
+        let data_dir = tempfile::tempdir().unwrap();
+        for (imap_host, smtp_host, expected_message) in [
+            (None, Some("smtp.example.com"), "IMAP server not configured"),
+            (
+                Some(" "),
+                Some("smtp.example.com"),
+                "IMAP server not configured",
+            ),
+            (Some("127.0.0.1"), None, "SMTP server not configured"),
+            (Some("127.0.0.1"), Some(" "), "SMTP server not configured"),
+        ] {
+            let mut config = test_config(&data_dir);
+            config.imap_host = imap_host.map(str::to_string);
+            config.smtp_host = smtp_host.map(str::to_string);
+            let store = test_store();
+            let (status, _, json) = request(
+                test_router(store.clone(), config),
+                "POST",
+                "/login",
+                "",
+                serde_json::json!({
+                    "email": "member@example.com", "password": "password",
+                    "imap_host": "127.0.0.1", "smtp_host": "smtp.example.com",
+                }),
+            )
+            .await;
+            assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+            assert_eq!(json["error"]["message"], expected_message);
+            assert!(store.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn login_requires_account_proof_to_reuse_browser() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let store = test_store();
+        let browser_id = store.create_browser();
+        let (token, account_id) = add_test_account(&store, &browser_id, "first@example.com");
+        for (cookie, reuses_browser) in [
+            (format!("oxi_browser={browser_id}"), false),
+            (
+                format!("oxi_browser={browser_id}; oxi_session_{account_id}={token}"),
+                true,
+            ),
+        ] {
+            let mut config = test_config(&data_dir);
+            let (port, imap) = accepting_imap().await;
+            config.imap_port = port;
+            let (status, headers, json) = request(
+                test_router(store.clone(), config),
+                "POST",
+                "/login",
+                &cookie,
+                serde_json::json!({"email": "second@example.com", "password": "password"}),
+            )
+            .await;
+            assert_eq!(status, StatusCode::CREATED, "{json}");
+            imap.await.unwrap();
+            assert_eq!(
+                response_cookie(&headers, BROWSER_COOKIE) == browser_id,
+                reuses_browser
+            );
+        }
+        assert_eq!(store.get_browser_accounts(&browser_id).len(), 2);
+    }
+
+    #[tokio::test]
+    async fn login_allows_reauthentication_when_an_account_cookie_is_missing_or_expired() {
+        let data_dir = tempfile::tempdir().unwrap();
+        for expired in [false, true] {
+            let store = test_store();
+            let browser_id = store.create_browser();
+            let (first_token, first_account) =
+                add_test_account(&store, &browser_id, "first@example.com");
+            let (second_token, second_account) =
+                add_test_account(&store, &browser_id, "second@example.com");
+            let mut cookie =
+                format!("oxi_browser={browser_id}; oxi_session_{first_account}={first_token}");
+            if expired {
+                store.set_timeout_override(&second_token, Some(Duration::ZERO));
+                cookie.push_str(&format!("; oxi_session_{second_account}={second_token}"));
+            }
+            let mut config = test_config(&data_dir);
+            let (port, imap) = accepting_imap().await;
+            config.imap_port = port;
+            let (status, headers, json) = request(
+                test_router(store.clone(), config),
+                "POST",
+                "/login",
+                &cookie,
+                serde_json::json!({"email": "second@example.com", "password": "password"}),
+            )
+            .await;
+            assert_eq!(status, StatusCode::CREATED, "{json}");
+            imap.await.unwrap();
+            assert_eq!(response_cookie(&headers, BROWSER_COOKIE), browser_id);
+            assert_ne!(json["account"]["id"], second_account);
+            assert!(store.get(&first_token).is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn account_listing_does_not_revoke_sessions_without_valid_cookies() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let store = test_store();
+        let browser_id = store.create_browser();
+        let (token, account_id) = add_test_account(&store, &browser_id, "member@example.com");
+        for cookie in [
+            format!("oxi_browser={browser_id}"),
+            format!("oxi_browser={browser_id}; oxi_session_{account_id}=forged"),
+        ] {
+            let (status, _, json) = request(
+                test_router(store.clone(), test_config(&data_dir)),
+                "GET",
+                "/accounts",
+                &cookie,
+                serde_json::Value::Null,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(json["accounts"], serde_json::json!([]));
+            assert!(
+                store
+                    .get_account_session(&browser_id, &account_id, &token)
+                    .is_some()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn account_listing_binds_tokens_to_the_requested_browser_and_account() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let store = test_store();
+        let browser_id = store.create_browser();
+        let (token, account_id) = add_test_account(&store, &browser_id, "member@example.com");
+        let other_browser = store.create_browser();
+        let (other_token, other_account) =
+            add_test_account(&store, &other_browser, "other@example.com");
+        for cookie in [
+            format!("oxi_browser={browser_id}; oxi_session_{account_id}={other_token}"),
+            format!("oxi_browser={browser_id}; oxi_session_{other_account}={other_token}"),
+        ] {
+            let (_, _, json) = request(
+                test_router(store.clone(), test_config(&data_dir)),
+                "GET",
+                "/accounts",
+                &cookie,
+                serde_json::Value::Null,
+            )
+            .await;
+            assert_eq!(json["accounts"], serde_json::json!([]));
+        }
+        let (_, _, json) = request(
+            test_router(store.clone(), test_config(&data_dir)),
+            "GET",
+            "/accounts",
+            &format!("oxi_browser={browser_id}; oxi_session_{account_id}={token}"),
+            serde_json::Value::Null,
+        )
+        .await;
+        assert_eq!(json["accounts"][0]["email"], "member@example.com");
+        assert!(store.get(&other_token).is_some());
+    }
+
+    #[tokio::test]
+    async fn removing_account_requires_its_own_session_cookie() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let store = test_store();
+        let browser_id = store.create_browser();
+        let (token, account_id) = add_test_account(&store, &browser_id, "member@example.com");
+        let (other_token, _) = add_test_account(&store, &browser_id, "other@example.com");
+        for cookie in [
+            format!("oxi_browser={browser_id}"),
+            format!("oxi_browser={browser_id}; oxi_session_{account_id}={other_token}"),
+        ] {
+            let (status, _, _) = request(
+                test_router(store.clone(), test_config(&data_dir)),
+                "DELETE",
+                &format!("/accounts/{account_id}"),
+                &cookie,
+                serde_json::Value::Null,
+            )
+            .await;
+            assert_eq!(status, StatusCode::FORBIDDEN);
+            assert!(store.get(&token).is_some());
+        }
+        let (status, _, _) = request(
+            test_router(store.clone(), test_config(&data_dir)),
+            "DELETE",
+            &format!("/accounts/{account_id}"),
+            &format!("oxi_browser={browser_id}; oxi_session_{account_id}={token}"),
+            serde_json::Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(store.get(&token).is_none());
+        assert!(store.get(&other_token).is_some());
+    }
+
+    #[tokio::test]
+    async fn logout_revokes_only_accounts_with_matching_session_cookies() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let store = test_store();
+        let browser_id = store.create_browser();
+        let (token, account_id) = add_test_account(&store, &browser_id, "member@example.com");
+        let (other_token, _) = add_test_account(&store, &browser_id, "other@example.com");
+        let (status, _, _) = request(
+            test_router(store.clone(), test_config(&data_dir)),
+            "POST",
+            &format!("/logout?account_id={account_id}"),
+            &format!("oxi_browser={browser_id}; oxi_session_{account_id}={token}"),
+            serde_json::Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(store.get(&token).is_none());
+        assert!(store.get(&other_token).is_some());
     }
 }

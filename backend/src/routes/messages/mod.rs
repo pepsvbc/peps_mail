@@ -868,22 +868,7 @@ pub async fn download_attachment(
         .unwrap_or_else(|| format!("attachment_{index}"));
     let content_type = preview_content_type(&attachment.content_type, Some(&filename), &attachment.data);
 
-    // Use inline disposition for types the browser can display natively
-    // (PDF, images) so the preview works; use attachment for everything else.
-    let is_inline = content_type == "application/pdf"
-        || content_type.starts_with("image/")
-        || content_type.starts_with("text/");
-    let disposition = if is_inline {
-        format!("inline; filename=\"{}\"", filename.replace('"', "\\\""))
-    } else {
-        format!("attachment; filename=\"{}\"", filename.replace('"', "\\\""))
-    };
-
-    Ok(Response::builder()
-        .header("content-type", &content_type)
-        .header("content-disposition", &disposition)
-        .body(axum::body::Body::from(attachment.data))
-        .unwrap())
+    super::attachment_response::attachment_response(&content_type, &filename, attachment.data)
 }
 
 fn preview_content_type(content_type: &str, filename: Option<&str>, data: &[u8]) -> String {

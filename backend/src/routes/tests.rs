@@ -1,3 +1,6 @@
+    mod attachment_security;
+    mod draft_paths;
+
     use super::*;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
@@ -423,6 +426,7 @@
         let mut cfg = (*test_config(dir.path().to_str().unwrap())).clone();
         cfg.imap_host = Some("127.0.0.1".to_string());
         cfg.imap_port = 19999; // Nothing listening here
+        cfg.smtp_host = Some("smtp.example.com".to_string());
         cfg.tls_enabled = false;
         let config = Arc::new(cfg);
         let store = test_store();

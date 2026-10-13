@@ -35,6 +35,7 @@ import {
 
 type HeaderMode = "summary" | "details";
 type BodyMode = "html" | "plain";
+type EmailTheme = "auto" | "light" | "dark";
 
 export function ReadingPane() {
   const activeFolder = useUiStore((s) => s.activeFolder);
@@ -42,10 +43,16 @@ export function ReadingPane() {
   const effectiveAnimationMode = useUiStore((s) => s.effectiveAnimationMode);
   const activeAccountId = useAuthStore((s) => s.activeAccountId);
   const [headerMode, setHeaderMode] = useState<HeaderMode>("details");
-  const [bodyMode, setBodyMode] = useState<BodyMode>("html");
+  const [bodyModeOverride, setBodyModeOverride] = useState<{
+    messageKey: string;
+    value: BodyMode;
+  } | null>(null);
   const [showHeaders, setShowHeaders] = useState(false);
-  const [emailTheme, setEmailTheme] = useState<"auto" | "light" | "dark">("auto");
-  const [allowedRemoteUids, setAllowedRemoteUids] = useState<Set<string>>(
+  const [emailThemeOverride, setEmailThemeOverride] = useState<{
+    messageKey: string;
+    value: EmailTheme;
+  } | null>(null);
+  const [allowedRemoteMessages, setAllowedRemoteMessages] = useState<Set<string>>(
     new Set()
   );
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
@@ -74,17 +81,6 @@ export function ReadingPane() {
     queryClient.invalidateQueries({ queryKey: ["folders"] });
     queryClient.invalidateQueries({ queryKey: ["search"] });
   }, [isError, error, selectedMessageUid, activeFolder, selectMessage, queryClient]);
-
-  // Auto-switch to plain text mode for plaintext-only emails
-  useEffect(() => {
-    if (data && !data.html && data.text) {
-      setBodyMode("plain");
-    } else {
-      setBodyMode("html");
-    }
-    setEmailTheme("auto");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.uid]);
 
   // Auto-mark unread messages as read when opened.
   useEffect(() => {
@@ -134,8 +130,14 @@ export function ReadingPane() {
   }
 
   const attachmentBaseUrl = `${process.env.NEXT_PUBLIC_BASE_PATH || ""}/api/messages/${encodeURIComponent(data.folder)}/${data.uid}/attachments`;
-  const messageKey = `${data.folder}:${data.uid}`;
-  const remoteAllowed = allowedRemoteUids.has(messageKey);
+  const messageKey = JSON.stringify([activeAccountId, data.folder, data.uid]);
+  const bodyMode = bodyModeOverride?.messageKey === messageKey
+    ? bodyModeOverride.value
+    : !data.html && data.text ? "plain" : "html";
+  const emailTheme = emailThemeOverride?.messageKey === messageKey
+    ? emailThemeOverride.value
+    : "auto";
+  const remoteAllowed = allowedRemoteMessages.has(messageKey);
   const showRemoteBanner = !remoteAllowed && hasRemoteResources(data.html);
 
   const paneContent = (
@@ -206,7 +208,10 @@ export function ReadingPane() {
           <button
             type="button"
             onClick={() => {
-              setBodyMode(bodyMode === "html" ? "plain" : "html");
+              setBodyModeOverride({
+                messageKey,
+                value: bodyMode === "html" ? "plain" : "html",
+              });
               setShowHeaders(false);
             }}
             className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -237,9 +242,10 @@ export function ReadingPane() {
           <button
             type="button"
             onClick={() => {
-              if (emailTheme === "auto") setEmailTheme("light");
-              else if (emailTheme === "light") setEmailTheme("dark");
-              else setEmailTheme("auto");
+              setEmailThemeOverride({
+                messageKey,
+                value: emailTheme === "auto" ? "light" : emailTheme === "light" ? "dark" : "auto",
+              });
             }}
             className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs transition-colors ${
               emailTheme !== "auto"
@@ -310,7 +316,7 @@ export function ReadingPane() {
             size="sm"
             className="h-6 text-xs"
             onClick={() =>
-              setAllowedRemoteUids((prev) => new Set(prev).add(messageKey))
+              setAllowedRemoteMessages((prev) => new Set(prev).add(messageKey))
             }
           >
             Allow
@@ -319,7 +325,7 @@ export function ReadingPane() {
       )}
 
       {/* Body area — fills remaining space */}
-      <div className="min-h-0 flex-1" key={data.uid}>
+      <div className="min-h-0 flex-1" key={messageKey}>
         {showHeaders ? (
           <pre className="h-full overflow-auto whitespace-pre-wrap break-words p-4 text-xs leading-relaxed text-foreground">
             {data.raw_headers || "No headers available"}
@@ -344,7 +350,7 @@ export function ReadingPane() {
   return (
     <AnimatePresence mode="wait" initial={false}>
       <AnimatedDiv
-        key={`reading-pane-${data.uid}`}
+        key={`reading-pane-${messageKey}`}
         data-testid="reading-pane-message-transition"
         variants={paneVariants}
         initial={paneVariants.initial}

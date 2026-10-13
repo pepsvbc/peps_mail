@@ -5,6 +5,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};
 
+use super::drafts::validate_draft_id;
 use crate::auth::session::SessionState;
 use crate::config::AppConfig;
 use crate::db;
@@ -50,6 +51,10 @@ pub async fn send_message_handler(
     Extension(imap_client): Extension<Arc<dyn ImapClient>>,
     Json(req): Json<SendRequest>,
 ) -> Result<Response, AppError> {
+    if let Some(draft_id) = &req.draft_id {
+        validate_draft_id(draft_id)?;
+    }
+
     // Validate: at least one recipient.
     if req.to.is_empty() && req.cc.is_empty() && req.bcc.is_empty() {
         return Err(AppError::BadRequest(

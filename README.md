@@ -6,7 +6,7 @@
 
 **The email client for PEPS VBC volleyball club.**
 
-A themed fork of [oxi](https://github.com/c0h1b4/oxi), built with React + Rust.\
+A fork of [oxi](https://github.com/c0h1b4/oxi), built with React + Rust.\
 Connects to an existing IMAP/SMTP mail server.
 
 [![CI](https://github.com/pepsvbc/peps_mail/actions/workflows/ci.yml/badge.svg)](https://github.com/pepsvbc/peps_mail/actions/workflows/ci.yml)
@@ -17,9 +17,14 @@ Connects to an existing IMAP/SMTP mail server.
 
 ---
 
-## Club Theme
+## This fork
 
-This fork adds the PEPS VBC logo, purple light and dark themes, app title, and icons. Mail functionality and authentication remain inherited from oxi.
+- Updates the theme, logo, app title, and icons to match PEPS VBC branding.
+- Restricts login to the configured mail servers and strengthens account and session checks.
+- Protects draft attachment paths and isolates potentially unsafe attachment content.
+- Keeps message display preferences and remote-image permissions separate for each account and message.
+
+Branding can be customized in these files:
 
 | Branding | Location |
 |----------|----------|
@@ -88,6 +93,10 @@ STATIC_DIR=frontend/out DATA_DIR=./data ./backend/target/release/oxi-email-serve
 ## Configuration
 
 Keep actual mail-server settings in your local `.env`, which is ignored by Git. [`.env.example`](.env.example) is a generic, public template. Docker Compose reads `.env` for the variables referenced in `docker-compose.yml`; direct backend runs require environment variables exported into the shell.
+
+Set both `IMAP_HOST` and `SMTP_HOST`. Login and mailbox operations use the hosts, ports, and TLS settings configured on the server. Members enter their mailbox credentials; custom mail servers cannot be supplied by the browser. Multiple accounts on the configured provider remain supported.
+
+For an HTTPS deployment, set `ENVIRONMENT=production` in your private `.env` to enable Secure cookies and disable development CORS. The reverse proxy must preserve the public `Host` header for WebSocket origin validation. Browser sessions use HttpOnly cookies; removing or expiring a session stops its live mail events. Sessions are held in memory and require signing in again after a server restart.
 
 The following table lists backend defaults:
 

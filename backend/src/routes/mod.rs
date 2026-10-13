@@ -1,3 +1,4 @@
+mod attachment_response;
 pub mod attachments;
 pub mod auth;
 pub mod calendar;
@@ -111,7 +112,7 @@ pub fn create_router(
         .layer(GovernorLayer::new(governor_conf));
 
     // Browser-bound routes (no auth_guard, no rate limit).
-    // These routes only need the browser cookie, not full auth.
+    // Handlers validate the browser cookie and each account's session token.
     let browser_routes = Router::new()
         .route("/accounts", get(auth::list_accounts))
         .route("/accounts/{id}", delete(auth::remove_account).layer(middleware::from_fn(csrf_protection)));

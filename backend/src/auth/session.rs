@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use dashmap::DashMap;
 use rand::RngCore;
 
@@ -138,6 +138,7 @@ impl SessionStore {
             .collect()
     }
 
+    #[cfg(test)]
     pub fn browser_exists(&self, browser_id: &str) -> bool {
         self.browsers.contains_key(browser_id)
     }
@@ -161,6 +162,31 @@ impl SessionStore {
         drop(session_id);
 
         self.get(token)
+    }
+
+    /// Check a live subscription without extending the user's idle timeout.
+    /// Server-generated WebSocket traffic must not keep a login alive forever.
+    pub fn is_account_session_valid(
+        &self,
+        browser_id: &str,
+        account_id: &str,
+        token: &str,
+    ) -> bool {
+        let Some(session) = self.sessions.get(token) else {
+            return false;
+        };
+        session.account_id == account_id
+            && self
+                .account_to_browser
+                .get(account_id)
+                .is_some_and(|browser| browser.value() == browser_id)
+            && session.last_accessed.elapsed() <= session.timeout_override.unwrap_or(self.timeout)
+    }
+
+    pub fn set_timeout_override(&self, token: &str, timeout: Option<Duration>) {
+        if let Some(mut session) = self.sessions.get_mut(token) {
+            session.timeout_override = timeout;
+        }
     }
 
     pub fn remove_account(&self, account_id: &str) -> bool {
@@ -187,6 +213,7 @@ impl SessionStore {
         }
     }
 
+    #[cfg(test)]
     pub fn remove_browser(&self, browser_id: &str) {
         if let Some((_, account_ids)) = self.browsers.remove(browser_id) {
             // Clean up each account. Individual failures are tolerated --
@@ -394,6 +421,72 @@ mod tests {
             last_accessed: Instant::now(),
             timeout_override: None,
         }
+    }
+
+    #[test]
+    fn subscription_checks_require_matching_credentials_and_do_not_refresh_timeout() {
+        let store = long_lived_store();
+        let browser = store.create_browser();
+        let (token, account) = store.add_account_to_browser(
+            &browser,
+            "alice@example.com".into(),
+            "password".into(),
+            "hash".into(),
+            "imap.example.com".into(),
+            993,
+            true,
+            "smtp.example.com".into(),
+            587,
+            true,
+        );
+        let last_accessed = store.sessions.get(&token).unwrap().last_accessed;
+        assert!(store.is_account_session_valid(&browser, &account, &token));
+        assert_eq!(
+            store.sessions.get(&token).unwrap().last_accessed,
+            last_accessed
+        );
+        assert!(!store.is_account_session_valid("another-browser", &account, &token));
+        assert!(!store.is_account_session_valid(&browser, "another-account", &token));
+        assert!(!store.is_account_session_valid(&browser, &account, "another-token"));
+        store.remove_account(&account);
+        assert!(!store.is_account_session_valid(&browser, &account, &token));
+    }
+
+    #[test]
+    fn subscription_checks_respect_expiry_and_remember_timeout() {
+        let store = SessionStore::new(Duration::from_secs(1));
+        let browser = store.create_browser();
+        let (token, account) = store.add_account_to_browser(
+            &browser,
+            "alice@example.com".into(),
+            "password".into(),
+            "hash".into(),
+            "imap.example.com".into(),
+            993,
+            true,
+            "smtp.example.com".into(),
+            587,
+            true,
+        );
+        store.sessions.get_mut(&token).unwrap().last_accessed =
+            Instant::now() - Duration::from_secs(2);
+        assert!(!store.is_account_session_valid(&browser, &account, &token));
+        store.set_timeout_override(&token, Some(Duration::from_secs(60)));
+        assert!(store.is_account_session_valid(&browser, &account, &token));
+        assert!(
+            store
+                .get_account_session(&browser, &account, &token)
+                .is_some()
+        );
+        store.sessions.get_mut(&token).unwrap().last_accessed =
+            Instant::now() - Duration::from_secs(61);
+        assert!(!store.is_account_session_valid(&browser, &account, &token));
+        assert!(
+            store
+                .get_account_session(&browser, &account, &token)
+                .is_none()
+        );
+        assert!(store.check_consistency().is_empty());
     }
 
     #[test]
@@ -767,7 +860,11 @@ mod tests {
 
     // --- Consistency tests ---
 
-    fn add_test_account(store: &SessionStore, browser_id: &str, email: &str) -> (SessionId, AccountId) {
+    fn add_test_account(
+        store: &SessionStore,
+        browser_id: &str,
+        email: &str,
+    ) -> (SessionId, AccountId) {
         store.add_account_to_browser(
             browser_id,
             email.into(),
@@ -1108,7 +1205,11 @@ mod tests {
 
         store.purge_expired();
 
-        assert_eq!(store.sessions.len(), 1, "only the live session should remain");
+        assert_eq!(
+            store.sessions.len(),
+            1,
+            "only the live session should remain"
+        );
         assert!(
             !store.account_to_session.contains_key(&account1),
             "expired account mapping should be gone"
@@ -1176,7 +1277,11 @@ mod tests {
 
         thread::sleep(Duration::from_millis(100));
 
-        assert!(store.get_account_session(&browser_id, &account_id, &token).is_none());
+        assert!(
+            store
+                .get_account_session(&browser_id, &account_id, &token)
+                .is_none()
+        );
 
         assert!(
             !store.account_to_session.contains_key(&account_id),

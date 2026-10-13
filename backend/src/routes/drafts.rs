@@ -12,6 +12,21 @@ use crate::db;
 use crate::error::AppError;
 use crate::imap::client::{ImapClient, ImapCredentials};
 
+/// Draft IDs are also directory names, so they must remain a single safe path
+/// component. Accept the frontend's generated IDs and existing simple IDs.
+pub(super) fn validate_draft_id(id: &str) -> Result<(), AppError> {
+    if id.is_empty()
+        || id.len() > 255
+        || matches!(id, "." | "..")
+        || !id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        return Err(AppError::BadRequest("Invalid draft ID".to_string()));
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Request / Response types
 // ---------------------------------------------------------------------------
@@ -88,6 +103,8 @@ pub async fn upsert_draft_handler(
     Extension(imap_client): Extension<Arc<dyn ImapClient>>,
     Json(req): Json<UpsertDraftRequest>,
 ) -> Result<Response, AppError> {
+    validate_draft_id(&req.id)?;
+
     let conn = db::pool::open_user_db(&config.data_dir, &session.user_hash)
         .map_err(|e| AppError::InternalError(format!("Failed to open database: {e}")))?;
 
@@ -221,6 +238,8 @@ pub async fn get_draft_handler(
     Extension(config): Extension<Arc<AppConfig>>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Response, AppError> {
+    validate_draft_id(&id)?;
+
     let conn = db::pool::open_user_db(&config.data_dir, &session.user_hash)
         .map_err(|e| AppError::InternalError(format!("Failed to open database: {e}")))?;
 
@@ -264,6 +283,8 @@ pub async fn delete_draft_handler(
     Extension(config): Extension<Arc<AppConfig>>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Response, AppError> {
+    validate_draft_id(&id)?;
+
     let conn = db::pool::open_user_db(&config.data_dir, &session.user_hash)
         .map_err(|e| AppError::InternalError(format!("Failed to open database: {e}")))?;
 

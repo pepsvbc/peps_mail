@@ -7,6 +7,8 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use serde::Serialize;
 
+use super::attachment_response::attachment_response;
+use super::drafts::validate_draft_id;
 use crate::auth::session::SessionState;
 use crate::config::AppConfig;
 use crate::db;
@@ -38,6 +40,8 @@ pub async fn upload_attachment(
     AxumPath(draft_id): AxumPath<String>,
     mut multipart: Multipart,
 ) -> Result<Response, AppError> {
+    validate_draft_id(&draft_id)?;
+
     let conn = db::pool::open_user_db(&config.data_dir, &session.user_hash)
         .map_err(|e| AppError::InternalError(format!("Failed to open database: {e}")))?;
 
@@ -132,6 +136,8 @@ pub async fn get_attachment_content(
     Extension(config): Extension<Arc<AppConfig>>,
     AxumPath((draft_id, attachment_id)): AxumPath<(String, String)>,
 ) -> Result<Response, AppError> {
+    validate_draft_id(&draft_id)?;
+
     let conn = db::pool::open_user_db(&config.data_dir, &session.user_hash)
         .map_err(|e| AppError::InternalError(format!("Failed to open database: {e}")))?;
 
@@ -147,11 +153,7 @@ pub async fn get_attachment_content(
         .await
         .map_err(|e| AppError::InternalError(format!("Failed to read attachment file: {e}")))?;
 
-    Ok(Response::builder()
-        .header("content-type", &attachment.content_type)
-        .header("cache-control", "private, max-age=3600")
-        .body(axum::body::Body::from(data))
-        .unwrap())
+    attachment_response(&attachment.content_type, &attachment.filename, data)
 }
 
 /// Handler for `DELETE /api/drafts/{draft_id}/attachments/{attachment_id}`.
@@ -162,6 +164,8 @@ pub async fn delete_attachment(
     Extension(config): Extension<Arc<AppConfig>>,
     AxumPath((draft_id, attachment_id)): AxumPath<(String, String)>,
 ) -> Result<Response, AppError> {
+    validate_draft_id(&draft_id)?;
+
     let conn = db::pool::open_user_db(&config.data_dir, &session.user_hash)
         .map_err(|e| AppError::InternalError(format!("Failed to open database: {e}")))?;
 
