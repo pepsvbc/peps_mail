@@ -107,7 +107,7 @@ async fn account_unread_uses_the_requested_accounts_own_credentials() {
         account_tokens.push((account, token, email, password, host, port, tls));
     }
     let cookies = format!(
-        "oxi_browser={browser}; oxi_session_{}={}; oxi_session_{}={}",
+        "peps_mail_browser={browser}; peps_mail_session_{}={}; peps_mail_session_{}={}",
         account_tokens[0].0, account_tokens[0].1, account_tokens[1].0, account_tokens[1].1,
     );
 
@@ -142,10 +142,10 @@ async fn account_unread_rejects_missing_mismatched_and_expired_auth() {
         vec![],
         vec![(
             "cookie",
-            format!("oxi_browser={browser}; oxi_session_{account}={token}"),
+            format!("peps_mail_browser={browser}; peps_mail_session_{account}={token}"),
         )],
         vec![
-            ("cookie", format!("oxi_browser={browser}")),
+            ("cookie", format!("peps_mail_browser={browser}")),
             ("x-active-account", account.clone()),
         ],
         auth_headers(&browser, &account, &other_token),

@@ -142,7 +142,7 @@
     /// Helper: build auth headers for multi-account requests.
     fn auth_headers(browser_id: &str, account_id: &str, token: &str) -> Vec<(&'static str, String)> {
         vec![
-            ("cookie", format!("oxi_browser={browser_id}; oxi_session_{account_id}={token}")),
+            ("cookie", format!("peps_mail_browser={browser_id}; peps_mail_session_{account_id}={token}")),
             ("x-active-account", account_id.to_string()),
         ]
     }
@@ -597,7 +597,7 @@
             .get_all("set-cookie");
         // Should have clearing cookies for both browser and account session
         let cookie_str = format!("{:?}", set_cookie);
-        assert!(cookie_str.contains("oxi_browser=;") || cookie_str.contains("Max-Age=0"));
+        assert!(cookie_str.contains("peps_mail_browser=;") || cookie_str.contains("Max-Age=0"));
     }
 
     // -----------------------------------------------------------------------

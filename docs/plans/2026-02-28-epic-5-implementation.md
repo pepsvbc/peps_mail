@@ -785,7 +785,7 @@ export function useNotifications() {
   });
   const [bannerDismissed, setBannerDismissed] = useState(() => {
     if (typeof window === "undefined") return false;
-    return localStorage.getItem("oxi-notif-banner-dismissed") === "true";
+    return localStorage.getItem("peps-mail-notif-banner-dismissed") === "true";
   });
 
   const { data: prefs } = useNotificationPreferences();
@@ -802,7 +802,7 @@ export function useNotifications() {
 
   const dismissBanner = useCallback(() => {
     setBannerDismissed(true);
-    localStorage.setItem("oxi-notif-banner-dismissed", "true");
+    localStorage.setItem("peps-mail-notif-banner-dismissed", "true");
   }, []);
 
   // Listen for permission changes (e.g. user changes in browser settings)
@@ -836,7 +836,7 @@ export function useNotifications() {
 
       const notification = new Notification("New email", {
         body: `New message in ${folder}`,
-        tag: `oxi-${folder}-${Date.now()}`,
+        tag: `peps-mail-${folder}-${Date.now()}`,
         icon: "/icon-192.png",
       });
 
@@ -1194,7 +1194,7 @@ Expected: No lint errors.
 
 **Step 4: Docker build (if applicable)**
 
-Run: `docker build -t oxi-email:epic5 .`
+Run: `docker build -t peps-mail:epic5 .`
 Expected: Image builds successfully.
 
 **Step 5: Commit any remaining fixes and tag**

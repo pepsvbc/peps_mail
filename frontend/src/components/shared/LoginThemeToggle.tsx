@@ -1,5 +1,7 @@
 "use client";
 
+import { STORAGE_KEYS, readStoredPreference, writeStoredPreference } from "@/lib/browser-storage";
+
 import { useTranslation } from "@/lib/i18n";
 
 import { useEffect } from "react";
@@ -8,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useUiStore, type ThemeMode } from "@/stores/useUiStore";
 
-const THEME_STORAGE_KEY = "oxi-theme";
+const THEME_STORAGE_KEY = STORAGE_KEYS.theme;
 const SYSTEM_THEME_QUERY = "(prefers-color-scheme: dark)";
 const options = [
   { value: "light", label: "Light", icon: Sun },
@@ -30,7 +32,7 @@ function useLoginTheme() {
   useEffect(() => {
     let initialTheme: ThemeMode = "system";
     try {
-      const stored = localStorage.getItem(THEME_STORAGE_KEY);
+      const stored = readStoredPreference(THEME_STORAGE_KEY);
       if (stored === "light" || stored === "dark" || stored === "system") {
         initialTheme = stored;
       }
@@ -55,7 +57,7 @@ function useLoginTheme() {
     setTheme(nextTheme);
     applyTheme(nextTheme, window.matchMedia?.(SYSTEM_THEME_QUERY).matches ?? false);
     try {
-      localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+      writeStoredPreference(THEME_STORAGE_KEY, nextTheme);
     } catch {
       // Apply the choice for this visit even if it cannot be saved.
     }

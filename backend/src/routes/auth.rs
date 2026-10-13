@@ -12,7 +12,7 @@ use crate::auth::user_data;
 use crate::config::AppConfig;
 use crate::db;
 
-pub const BROWSER_COOKIE: &str = "oxi_browser";
+use crate::auth::middleware::{BROWSER_COOKIE, SESSION_COOKIE_PREFIX};
 
 /// JSON body expected on `POST /api/auth/login`.
 #[derive(Deserialize)]
@@ -39,7 +39,7 @@ fn account_session_cookie(
 ) -> String {
     let secure_flag = if secure { " Secure;" } else { "" };
     format!(
-        "oxi_session_{}={};{} HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
+        "{SESSION_COOKIE_PREFIX}{}={};{} HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
         account_id, token, secure_flag, max_age_secs
     )
 }
@@ -55,9 +55,37 @@ fn clearing_browser_cookie(secure: bool) -> String {
 fn clearing_account_cookie(account_id: &str, secure: bool) -> String {
     let secure_flag = if secure { " Secure;" } else { "" };
     format!(
-        "oxi_session_{}=;{} HttpOnly; SameSite=Strict; Path=/; Max-Age=0",
+        "{SESSION_COOKIE_PREFIX}{}=;{} HttpOnly; SameSite=Strict; Path=/; Max-Age=0",
         account_id, secure_flag
     )
+}
+
+// Old sessions are invalid after a server restart. Remove their cookies when
+// the browser restores its account list instead of keeping stale names around.
+fn clearing_legacy_cookies(headers: &axum::http::HeaderMap, secure: bool) -> Vec<String> {
+    let secure_flag = if secure { " Secure;" } else { "" };
+    let mut seen = std::collections::HashSet::new();
+    headers
+        .get_all("cookie")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(';'))
+        .filter_map(|segment| segment.trim().split_once('='))
+        .map(|(name, _)| name)
+        .filter(|name| {
+            *name == "oxi_browser"
+                || name
+                    .strip_prefix("oxi_session_")
+                    .is_some_and(|id| {
+                        !id.is_empty()
+                            && id.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+                    })
+        })
+        .filter(|name| seen.insert(*name))
+        .map(|name| {
+            format!("{name}=;{secure_flag} HttpOnly; SameSite=Strict; Path=/; Max-Age=0")
+        })
+        .collect()
 }
 
 pub(crate) fn extract_browser_id(headers: &axum::http::HeaderMap) -> Option<String> {
@@ -68,7 +96,7 @@ pub(crate) fn extract_browser_id(headers: &axum::http::HeaderMap) -> Option<Stri
         .find_map(|cookie| {
             for segment in cookie.split(';') {
                 let trimmed = segment.trim();
-                if let Some(id) = trimmed.strip_prefix("oxi_browser=") {
+                if let Some(id) = trimmed.strip_prefix(&format!("{BROWSER_COOKIE}=")) {
                     let id = id.trim();
                     if !id.is_empty() {
                         return Some(id.to_string());
@@ -80,7 +108,7 @@ pub(crate) fn extract_browser_id(headers: &axum::http::HeaderMap) -> Option<Stri
 }
 
 pub(crate) fn extract_session_cookies(headers: &axum::http::HeaderMap) -> Vec<(String, String)> {
-    let prefix = "oxi_session_";
+    let prefix = SESSION_COOKIE_PREFIX;
     let mut sessions = Vec::new();
 
     for cookie in headers
@@ -381,7 +409,7 @@ pub async fn list_accounts(
     let browser_id = extract_browser_id(&headers);
     let mut seen_accounts = std::collections::HashSet::new();
     let mut valid_accounts = Vec::new();
-    let mut clear_cookies = Vec::new();
+    let mut clear_cookies = clearing_legacy_cookies(&headers, secure);
 
     // Missing or forged cookies must never revoke another client's sessions.
     // Validate the browser, account ID and token together before returning data.
@@ -729,7 +757,7 @@ mod tests {
         assert_ne!(browser_id, attacker_browser);
         assert!(store.get_browser_accounts(&attacker_browser).is_empty());
         let account_id = json["account"]["id"].as_str().unwrap();
-        let token = response_cookie(&headers, &format!("oxi_session_{account_id}"));
+        let token = response_cookie(&headers, &format!("peps_mail_session_{account_id}"));
         let session = store
             .get_account_session(&browser_id, account_id, &token)
             .unwrap();
@@ -811,15 +839,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn account_restore_expires_legacy_cookies_without_authenticating_them() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let store = test_store();
+        let browser_id = store.create_browser();
+        let (token, account_id) = add_test_account(&store, &browser_id, "first@example.com");
+        for secure in [false, true] {
+            let mut config = test_config(&data_dir);
+            config.environment = if secure { "production" } else { "development" }.to_string();
+            let cookie = format!(
+                "oxi_browser={browser_id}; oxi_session_{account_id}={token}; unrelated=keep"
+            );
+            let (status, headers, json) = request(
+                test_router(store.clone(), config),
+                "GET", "/accounts", &cookie, serde_json::json!(null),
+            ).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(json["accounts"], serde_json::json!([]));
+            for name in ["oxi_browser".to_string(), format!("oxi_session_{account_id}")] {
+                let cleared = headers.get_all("set-cookie").iter()
+                    .map(|value| value.to_str().unwrap())
+                    .find(|value| value.starts_with(&format!("{name}="))).unwrap();
+                assert!(cleared.contains("Max-Age=0"));
+                assert!(cleared.contains("HttpOnly; SameSite=Strict; Path=/"));
+                assert_eq!(cleared.contains("Secure;"), secure);
+            }
+            assert!(!headers.get_all("set-cookie").iter()
+                .any(|value| value.to_str().unwrap().starts_with("unrelated=")));
+            assert!(store.get_account_session(&browser_id, &account_id, &token).is_some());
+        }
+    }
+
+    #[tokio::test]
     async fn login_requires_account_proof_to_reuse_browser() {
         let data_dir = tempfile::tempdir().unwrap();
         let store = test_store();
         let browser_id = store.create_browser();
         let (token, account_id) = add_test_account(&store, &browser_id, "first@example.com");
         for (cookie, reuses_browser) in [
-            (format!("oxi_browser={browser_id}"), false),
+            (format!("peps_mail_browser={browser_id}"), false),
             (
-                format!("oxi_browser={browser_id}; oxi_session_{account_id}={token}"),
+                format!("peps_mail_browser={browser_id}; peps_mail_session_{account_id}={token}"),
                 true,
             ),
         ] {
@@ -855,10 +915,10 @@ mod tests {
             let (second_token, second_account) =
                 add_test_account(&store, &browser_id, "second@example.com");
             let mut cookie =
-                format!("oxi_browser={browser_id}; oxi_session_{first_account}={first_token}");
+                format!("peps_mail_browser={browser_id}; peps_mail_session_{first_account}={first_token}");
             if expired {
                 store.set_timeout_override(&second_token, Some(Duration::ZERO));
-                cookie.push_str(&format!("; oxi_session_{second_account}={second_token}"));
+                cookie.push_str(&format!("; peps_mail_session_{second_account}={second_token}"));
             }
             let mut config = test_config(&data_dir);
             let (port, imap) = accepting_imap().await;
@@ -886,8 +946,8 @@ mod tests {
         let browser_id = store.create_browser();
         let (token, account_id) = add_test_account(&store, &browser_id, "member@example.com");
         for cookie in [
-            format!("oxi_browser={browser_id}"),
-            format!("oxi_browser={browser_id}; oxi_session_{account_id}=forged"),
+            format!("peps_mail_browser={browser_id}"),
+            format!("peps_mail_browser={browser_id}; peps_mail_session_{account_id}=forged"),
         ] {
             let (status, _, json) = request(
                 test_router(store.clone(), test_config(&data_dir)),
@@ -917,8 +977,8 @@ mod tests {
         let (other_token, other_account) =
             add_test_account(&store, &other_browser, "other@example.com");
         for cookie in [
-            format!("oxi_browser={browser_id}; oxi_session_{account_id}={other_token}"),
-            format!("oxi_browser={browser_id}; oxi_session_{other_account}={other_token}"),
+            format!("peps_mail_browser={browser_id}; peps_mail_session_{account_id}={other_token}"),
+            format!("peps_mail_browser={browser_id}; peps_mail_session_{other_account}={other_token}"),
         ] {
             let (_, _, json) = request(
                 test_router(store.clone(), test_config(&data_dir)),
@@ -934,7 +994,7 @@ mod tests {
             test_router(store.clone(), test_config(&data_dir)),
             "GET",
             "/accounts",
-            &format!("oxi_browser={browser_id}; oxi_session_{account_id}={token}"),
+            &format!("peps_mail_browser={browser_id}; peps_mail_session_{account_id}={token}"),
             serde_json::Value::Null,
         )
         .await;
@@ -950,8 +1010,8 @@ mod tests {
         let (token, account_id) = add_test_account(&store, &browser_id, "member@example.com");
         let (other_token, _) = add_test_account(&store, &browser_id, "other@example.com");
         for cookie in [
-            format!("oxi_browser={browser_id}"),
-            format!("oxi_browser={browser_id}; oxi_session_{account_id}={other_token}"),
+            format!("peps_mail_browser={browser_id}"),
+            format!("peps_mail_browser={browser_id}; peps_mail_session_{account_id}={other_token}"),
         ] {
             let (status, _, _) = request(
                 test_router(store.clone(), test_config(&data_dir)),
@@ -968,7 +1028,7 @@ mod tests {
             test_router(store.clone(), test_config(&data_dir)),
             "DELETE",
             &format!("/accounts/{account_id}"),
-            &format!("oxi_browser={browser_id}; oxi_session_{account_id}={token}"),
+            &format!("peps_mail_browser={browser_id}; peps_mail_session_{account_id}={token}"),
             serde_json::Value::Null,
         )
         .await;
@@ -988,7 +1048,7 @@ mod tests {
             test_router(store.clone(), test_config(&data_dir)),
             "POST",
             &format!("/logout?account_id={account_id}"),
-            &format!("oxi_browser={browser_id}; oxi_session_{account_id}={token}"),
+            &format!("peps_mail_browser={browser_id}; peps_mail_session_{account_id}={token}"),
             serde_json::Value::Null,
         )
         .await;

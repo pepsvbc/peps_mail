@@ -1,8 +1,9 @@
+import { STORAGE_KEYS, readStoredPreference, writeStoredPreference } from "@/lib/browser-storage";
 import { create } from "zustand";
 
 export type Language = "en" | "fr";
 export type LanguagePreference = Language | "system";
-export const LANGUAGE_STORAGE_KEY = "oxi-language";
+export const LANGUAGE_STORAGE_KEY = STORAGE_KEYS.language;
 
 export function normalizeLanguage(value: unknown): Language | undefined {
   if (typeof value !== "string") return undefined;
@@ -26,7 +27,7 @@ function browserLanguage(): Language {
 
 function readPreference(): LanguagePreference | undefined {
   try {
-    const value = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    const value = readStoredPreference(LANGUAGE_STORAGE_KEY);
     return value === "system" ? "system" : normalizeLanguage(value);
   } catch {
     return undefined;
@@ -67,7 +68,7 @@ export const useLanguageStore = create<LanguageState>((set, get) => ({
       hasStoredPreference: true,
     });
     try {
-      localStorage.setItem(LANGUAGE_STORAGE_KEY, preference);
+      writeStoredPreference(LANGUAGE_STORAGE_KEY, preference);
     } catch {
       // The choice still applies for this visit when storage is blocked.
     }

@@ -1,5 +1,7 @@
 "use client";
 
+import { STORAGE_KEYS, writeStoredPreference } from "@/lib/browser-storage";
+
 import { useTranslation } from "@/lib/i18n";
 
 import { useMemo } from "react";
@@ -35,7 +37,7 @@ function useResolvedTheme() {
   return theme;
 }
 
-const THEME_STORAGE_KEY = "oxi-theme";
+const THEME_STORAGE_KEY = STORAGE_KEYS.theme;
 
 export function CommandPalette() {
   const { t } = useTranslation();
@@ -61,7 +63,7 @@ export function CommandPalette() {
       applyTheme: () => setTheme(next),
       nextTheme: next,
     });
-    localStorage.setItem(THEME_STORAGE_KEY, next);
+    writeStoredPreference(THEME_STORAGE_KEY, next);
     updatePrefs.mutate({ theme: next });
   };
 

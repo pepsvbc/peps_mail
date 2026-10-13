@@ -36,7 +36,7 @@ describe("DisplaySettings animation mode", () => {
 
   afterEach(() => {
     useLanguageStore.setState({ language: "en", preference: "system" });
-    localStorage.removeItem("oxi-language");
+    localStorage.removeItem("peps-mail-language");
   });
 
   it("switches language immediately and saves the account preference", () => {
@@ -44,7 +44,7 @@ describe("DisplaySettings animation mode", () => {
     fireEvent.click(screen.getByRole("button", { name: "Français" }));
     expect(screen.getByRole("heading", { name: "Affichage" })).toBeTruthy();
     expect(mockMutate).toHaveBeenCalledWith({ language: "fr" }, expect.objectContaining({ onError: expect.any(Function) }));
-    expect(localStorage.getItem("oxi-language")).toBe("fr");
+    expect(localStorage.getItem("peps-mail-language")).toBe("fr");
     fireEvent.click(screen.getByRole("button", { name: "English" }));
     expect(screen.getByRole("heading", { name: "Display" })).toBeTruthy();
   });

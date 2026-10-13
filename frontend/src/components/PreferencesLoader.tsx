@@ -1,5 +1,7 @@
 "use client";
 
+import { STORAGE_KEYS, writeStoredPreference } from "@/lib/browser-storage";
+
 import { useEffect } from "react";
 import { useDisplayPreferences } from "@/hooks/useDisplayPreferences";
 import { resolveMotionConfig } from "@/lib/motion/config";
@@ -20,7 +22,7 @@ function applyTheme(theme: ThemeMode) {
   }
 }
 
-const THEME_STORAGE_KEY = "oxi-theme";
+const THEME_STORAGE_KEY = STORAGE_KEYS.theme;
 
 export function PreferencesLoader() {
   const { data } = useDisplayPreferences();
@@ -53,7 +55,7 @@ export function PreferencesLoader() {
       storedMode: motionConfig.storedMode,
       effectiveMode: motionConfig.effectiveMode,
     });
-    localStorage.setItem(THEME_STORAGE_KEY, data.theme);
+    writeStoredPreference(THEME_STORAGE_KEY, data.theme);
   }, [data, setDensity, setTheme, setComposeFormat, setAnimationModeState]);
 
   useEffect(() => {

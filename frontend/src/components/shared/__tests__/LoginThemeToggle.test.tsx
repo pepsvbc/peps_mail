@@ -38,8 +38,17 @@ afterEach(() => {
 });
 
 describe("login theme chooser", () => {
-  it("updates theme labels when the language changes without losing the selected theme", () => {
+  it("migrates the previous theme before signing in", () => {
     localStorage.setItem("oxi-theme", "dark");
+    render(<LoginThemeToggle />);
+    expect(screen.getByRole("button", { name: "Dark", pressed: true })).toBeTruthy();
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(localStorage.getItem("peps-mail-theme")).toBe("dark");
+    expect(localStorage.getItem("oxi-theme")).toBeNull();
+  });
+
+  it("updates theme labels when the language changes without losing the selected theme", () => {
+    localStorage.setItem("peps-mail-theme", "dark");
     render(<LoginThemeToggle />);
     act(() => useLanguageStore.getState().setLanguage("fr"));
     expect(screen.getByRole("group", { name: "Thème de couleur" })).toBeTruthy();
@@ -50,7 +59,7 @@ describe("login theme chooser", () => {
   });
 
   it("restores a saved dark preference before signing in", () => {
-    localStorage.setItem("oxi-theme", "dark");
+    localStorage.setItem("peps-mail-theme", "dark");
 
     render(<LoginThemeToggle />);
 
@@ -65,12 +74,12 @@ describe("login theme chooser", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Dark" }));
     expect(document.documentElement.classList.contains("dark")).toBe(true);
-    expect(localStorage.getItem("oxi-theme")).toBe("dark");
+    expect(localStorage.getItem("peps-mail-theme")).toBe("dark");
     expect(useUiStore.getState().theme).toBe("dark");
 
     fireEvent.click(screen.getByRole("button", { name: "Light" }));
     expect(document.documentElement.classList.contains("dark")).toBe(false);
-    expect(localStorage.getItem("oxi-theme")).toBe("light");
+    expect(localStorage.getItem("peps-mail-theme")).toBe("light");
     expect(screen.getByRole("button", { name: "Light", pressed: true })).toBeTruthy();
   });
 
@@ -87,7 +96,7 @@ describe("login theme chooser", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "System" }));
     expect(document.documentElement.classList.contains("dark")).toBe(true);
-    expect(localStorage.getItem("oxi-theme")).toBe("system");
+    expect(localStorage.getItem("peps-mail-theme")).toBe("system");
     changeSystemTheme(false);
     expect(document.documentElement.classList.contains("dark")).toBe(false);
 
@@ -96,7 +105,7 @@ describe("login theme chooser", () => {
   });
 
   it("uses the system preference when the saved value is invalid", () => {
-    localStorage.setItem("oxi-theme", "invalid");
+    localStorage.setItem("peps-mail-theme", "invalid");
     changeSystemTheme(true);
 
     render(<LoginThemeToggle />);

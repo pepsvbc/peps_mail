@@ -771,4 +771,4 @@ Fix any failing tests, lint errors, or build issues.
 5. **Contacts E2E:** Add contact → compose email → autocomplete shows contact → send → contact count increments
 6. **Thread E2E:** Open threaded message → conversation view shows all messages → expand/collapse works
 7. **Drag E2E:** Drag message from Inbox → drop on Sent folder → message moves
-8. **Docker:** `docker build -t oxi-email:epic5 .` — image builds successfully
+8. **Docker:** `docker build -t peps-mail:epic5 .` — image builds successfully

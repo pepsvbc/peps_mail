@@ -17,6 +17,15 @@ afterEach(() => {
 });
 
 describe("language selection and persistence", () => {
+  it("migrates the saved language before applying account preferences", () => {
+    localStorage.setItem("oxi-language", "en");
+    useLanguageStore.getState().initialize();
+    useLanguageStore.getState().applyAccountLanguage("fr");
+    expect(getLocale()).toBe("en-GB");
+    expect(localStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe("en");
+    expect(localStorage.getItem("oxi-language")).toBeNull();
+  });
+
   it("uses the first supported browser language with an English fallback", () => {
     expect(detectLanguage(["de-CH", "fr-FR", "en"])).toBe("fr");
     expect(detectLanguage(["en-US", "fr-CH"])).toBe("en");

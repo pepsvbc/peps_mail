@@ -1,5 +1,7 @@
 "use client";
 
+import { STORAGE_KEYS, writeStoredPreference } from "@/lib/browser-storage";
+
 import { useTranslation } from "@/lib/i18n";
 
 import { useCallback, type MouseEvent } from "react";
@@ -97,7 +99,7 @@ function useResolvedTheme() {
   return theme;
 }
 
-const THEME_STORAGE_KEY = "oxi-theme";
+const THEME_STORAGE_KEY = STORAGE_KEYS.theme;
 
 export function NavRail() {
   const { t } = useTranslation();
@@ -137,7 +139,7 @@ export function NavRail() {
       applyTheme: () => setTheme(next),
       nextTheme: next,
     });
-    localStorage.setItem(THEME_STORAGE_KEY, next);
+    writeStoredPreference(THEME_STORAGE_KEY, next);
     updatePrefs.mutate({ theme: next });
   }, [effectiveAnimationMode, resolvedTheme, setTheme, updatePrefs]);
 

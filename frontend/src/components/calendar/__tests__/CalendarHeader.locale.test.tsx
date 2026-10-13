@@ -11,7 +11,7 @@ beforeEach(() => {
 
 afterEach(() => {
   useLanguageStore.setState({ language: "en", preference: "system", initialized: false, hasStoredPreference: false });
-  localStorage.removeItem("oxi-language");
+  localStorage.removeItem("peps-mail-language");
 });
 
 describe("CalendarHeader language switching", () => {

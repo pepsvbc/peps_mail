@@ -1,10 +1,12 @@
 "use client";
 
+import { STORAGE_KEYS, readStoredPreference, writeStoredPreference } from "@/lib/browser-storage";
+
 import { create, type UseBoundStore, type StoreApi } from "zustand";
 
 import type { AnimationMode } from "@/lib/motion/config";
 
-const STORAGE_KEY = "oxi-ui-settings";
+const STORAGE_KEY = STORAGE_KEYS.uiSettings;
 
 interface PersistedSettings {
   sidebarWidth: number;
@@ -16,7 +18,7 @@ function loadSettings(): PersistedSettings {
     return { sidebarWidth: 200, messageListWidth: 420 };
   }
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = readStoredPreference(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       return {
@@ -33,7 +35,7 @@ function loadSettings(): PersistedSettings {
 function saveSettings(settings: Partial<PersistedSettings>) {
   try {
     const current = loadSettings();
-    localStorage.setItem(
+    writeStoredPreference(
       STORAGE_KEY,
       JSON.stringify({ ...current, ...settings }),
     );

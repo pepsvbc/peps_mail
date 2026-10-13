@@ -1,5 +1,7 @@
 "use client";
 
+import { STORAGE_KEYS, readStoredPreference } from "@/lib/browser-storage";
+
 import { QueryClientProvider } from "@tanstack/react-query";
 import { LazyMotion, domAnimation } from "framer-motion";
 import { useEffect, useState } from "react";
@@ -9,12 +11,12 @@ import { clearThemeTransitionArtifacts } from "@/lib/motion/theme-spread";
 import { makeQueryClient } from "@/lib/query-client";
 import { LanguageInitializer } from "@/components/LanguageInitializer";
 
-const THEME_STORAGE_KEY = "oxi-theme";
+const THEME_STORAGE_KEY = STORAGE_KEYS.theme;
 
 function ThemeInitializer() {
   useEffect(() => {
     clearThemeTransitionArtifacts();
-    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    const stored = readStoredPreference(THEME_STORAGE_KEY);
     if (stored === "dark") {
       document.documentElement.classList.add("dark");
     } else if (stored === "light") {

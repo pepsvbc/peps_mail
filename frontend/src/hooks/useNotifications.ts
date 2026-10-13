@@ -1,5 +1,7 @@
 "use client";
 
+import { STORAGE_KEYS, readStoredPreference, writeStoredPreference } from "@/lib/browser-storage";
+
 import { translate as t } from "@/lib/i18n";
 
 import { useCallback, useEffect, useState } from "react";
@@ -18,7 +20,7 @@ export function useNotifications() {
   });
   const [bannerDismissed, setBannerDismissed] = useState(() => {
     if (typeof window === "undefined") return false;
-    return localStorage.getItem("oxi-notif-banner-dismissed") === "true";
+    return readStoredPreference(STORAGE_KEYS.notificationBannerDismissed) === "true";
   });
 
   const { data: prefs } = useNotificationPreferences();
@@ -35,7 +37,7 @@ export function useNotifications() {
 
   const dismissBanner = useCallback(() => {
     setBannerDismissed(true);
-    localStorage.setItem("oxi-notif-banner-dismissed", "true");
+    writeStoredPreference(STORAGE_KEYS.notificationBannerDismissed, "true");
   }, []);
 
   // Re-check permission on visibility change
@@ -80,7 +82,7 @@ export function useNotifications() {
         if (permission === "granted") {
           const notification = new Notification(title, {
             body,
-            tag: `oxi-${folder}`,
+            tag: `peps-mail-${folder}`,
             icon: "/notification-icon.svg",
           });
 

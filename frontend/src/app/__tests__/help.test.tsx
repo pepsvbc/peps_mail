@@ -83,7 +83,7 @@ describe("public mail setup guide", () => {
       .toHaveAttribute("href", "/api/setup/apple.mobileconfig?lang=fr");
     expect(screen.getByRole("table")).toHaveTextContent("Réception (IMAP)");
     expect(screen.getByRole("table")).toHaveTextContent("imap.club.example");
-    expect(localStorage.getItem("oxi-language")).toBe("fr");
+    expect(localStorage.getItem("peps-mail-language")).toBe("fr");
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole("button", { name: "English" }));

@@ -287,7 +287,7 @@ mod tests {
 
     fn account_cookies(browser_id: &str, account_id: &str, token: &str) -> HeaderMap {
         cookies(&format!(
-            "oxi_browser={browser_id}; oxi_session_{account_id}={token}"
+            "peps_mail_browser={browser_id}; peps_mail_session_{account_id}={token}"
         ))
     }
 
@@ -298,11 +298,11 @@ mod tests {
         let (token, account_id) = add_account(&store, &browser_id);
 
         assert!(
-            authenticate_socket(&cookies(&format!("oxi_browser={browser_id}")), &store).is_none()
+            authenticate_socket(&cookies(&format!("peps_mail_browser={browser_id}")), &store).is_none()
         );
         assert!(
             authenticate_socket(
-                &cookies(&format!("oxi_session_{account_id}={token}")),
+                &cookies(&format!("peps_mail_session_{account_id}={token}")),
                 &store
             )
             .is_none()
@@ -365,7 +365,7 @@ mod tests {
         let mut headers = account_cookies(&browser_id, &first_id, &first_token);
         headers.append(
             "cookie",
-            format!("oxi_session_{third_id}={third_token}")
+            format!("peps_mail_session_{third_id}={third_token}")
                 .parse()
                 .unwrap(),
         );
@@ -407,7 +407,7 @@ mod tests {
         let (first_token, first_id) = add_account(&store, &browser_id);
         let (second_token, second_id) = add_account(&store, &browser_id);
         let headers = cookies(&format!(
-            "oxi_browser={browser_id}; oxi_session_{first_id}={first_token}; oxi_session_{second_id}={second_token}"
+            "peps_mail_browser={browser_id}; peps_mail_session_{first_id}={first_token}; peps_mail_session_{second_id}={second_token}"
         ));
         let auth = authenticate_socket(&headers, &store).unwrap();
 

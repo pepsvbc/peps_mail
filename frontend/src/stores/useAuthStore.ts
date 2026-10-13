@@ -1,8 +1,10 @@
 "use client";
 
+import { STORAGE_KEYS, readStoredPreference, writeStoredPreference } from "@/lib/browser-storage";
+
 import { create } from "zustand";
 
-const ACTIVE_ACCOUNT_STORAGE_KEY = "oxi-active-account-id";
+const ACTIVE_ACCOUNT_STORAGE_KEY = STORAGE_KEYS.activeAccountId;
 
 function loadActiveAccountId(): string | null {
   if (typeof window === "undefined") {
@@ -10,7 +12,7 @@ function loadActiveAccountId(): string | null {
   }
 
   try {
-    return localStorage.getItem(ACTIVE_ACCOUNT_STORAGE_KEY);
+    return readStoredPreference(ACTIVE_ACCOUNT_STORAGE_KEY);
   } catch {
     return null;
   }
@@ -23,11 +25,11 @@ function saveActiveAccountId(id: string | null) {
 
   try {
     if (id) {
-      localStorage.setItem(ACTIVE_ACCOUNT_STORAGE_KEY, id);
+      writeStoredPreference(ACTIVE_ACCOUNT_STORAGE_KEY, id);
       return;
     }
 
-    localStorage.removeItem(ACTIVE_ACCOUNT_STORAGE_KEY);
+    writeStoredPreference(ACTIVE_ACCOUNT_STORAGE_KEY, null);
   } catch {
   }
 }
