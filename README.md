@@ -99,7 +99,7 @@ Edit `.env` to set your IMAP/SMTP hostnames, ports, and TLS settings, then run `
 
 Then open [http://localhost:3001](http://localhost:3001) and log in with your email credentials.
 
-The image example above stores data in `./peps-mail-data`. The included Compose file uses the named volume `<project>_peps-mail-data`; development uses `peps-mail-dev_peps-mail-data`. When upgrading from `oxi-data`, stop the app and copy the contents of `<project>_oxi-data` into `<project>_peps-mail-data` before starting it again. Keep the old volume until you have verified the migration.
+The image example above stores data in `./peps-mail-data`. The included Compose file uses the named volume `<project>_peps-mail-data`; development uses `peps-mail-dev_peps-mail-data`.
 
 Our image and local builds include the PEPS VBC theme.
 
@@ -180,15 +180,7 @@ cd frontend && bun run lint
 cd backend && cargo clippy -- -D warnings
 ```
 
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feat/my-feature`)
-3. Commit your changes
-4. Open a pull request against `main`
 
 ## Credits
 
-Based on [oxi](https://github.com/c0h1b4/oxi). PEPS VBC branding comes from the [club website](https://pepsvbc.ch/).
+Based on [oxi](https://github.com/c0h1b4/oxi).
