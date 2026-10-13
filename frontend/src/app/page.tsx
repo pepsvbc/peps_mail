@@ -3,6 +3,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
+import { Lightbulb } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -153,6 +155,13 @@ export default function Home() {
               {loading ? "Signing in..." : "Sign in"}
             </Button>
           </form>
+          <Link
+            href="/help"
+            className="mt-6 flex min-h-11 items-center justify-center gap-2 rounded-md text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+          >
+            <Lightbulb className="size-4 shrink-0" aria-hidden="true" />
+            Need help setting up your email?
+          </Link>
         </div>
       </main>
     </div>

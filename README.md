@@ -96,6 +96,8 @@ Keep actual mail-server settings in your local `.env`, which is ignored by Git. 
 
 Set both `IMAP_HOST` and `SMTP_HOST`. Login and mailbox operations use the hosts, ports, and TLS settings configured on the server. Members enter their mailbox credentials; custom mail servers cannot be supplied by the browser. Multiple accounts on the configured provider remain supported.
 
+The sign-in page links to a public `/help/` guide for setting up phones and mail clients. The guide reads the configured hostnames, ports, and connection security from `GET /api/setup`; it requires no login. With mail servers configured and TLS enabled, `GET /api/setup/apple.mobileconfig` downloads an unsigned Apple Mail profile. iOS asks for the email address, usernames, and password during installation, so the download contains no credentials. Each download has unique profile identifiers to support separate mailboxes. Install from Safari, and remove unused profiles in iOS Settings.
+
 For an HTTPS deployment, set `ENVIRONMENT=production` in your private `.env` to enable Secure cookies and disable development CORS. The reverse proxy must preserve the public `Host` header for WebSocket origin validation. Browser sessions use HttpOnly cookies; removing or expiring a session stops its live mail events. Sessions are held in memory and require signing in again after a server restart.
 
 The following table lists backend defaults:

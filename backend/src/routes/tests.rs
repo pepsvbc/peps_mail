@@ -1,6 +1,7 @@
     mod account_unread;
     mod attachment_security;
     mod draft_paths;
+    mod setup;
 
     use super::*;
     use axum::body::Body;

@@ -16,6 +16,7 @@ pub mod notification_preferences;
 pub mod quota;
 pub mod search;
 pub mod send;
+pub mod setup;
 pub mod tags;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -70,6 +71,8 @@ impl KeyExtractor for PeerIpKeyExtractorFallback {
 ///
 /// Route layout:
 /// - `GET  /api/health`                        — health check (public)
+/// - `GET  /api/setup`                         — mail client settings (public)
+/// - `GET  /api/setup/apple.mobileconfig`      — Apple mail profile (public)
 /// - `POST /api/auth/login`                    — login (public, CSRF only)
 /// - `GET  /api/auth/session`                  — get session (auth_guard + CSRF)
 /// - `POST /api/auth/logout`                   — logout (auth_guard + CSRF)
@@ -300,6 +303,8 @@ pub fn create_router(
 
     let api_router = Router::new()
         .route("/health", get(health::health_check))
+        .route("/setup", get(setup::get_setup))
+        .route("/setup/apple.mobileconfig", get(setup::download_apple_profile))
         .nest("/auth", auth_router)
         .merge(ws_route)
         .merge(protected_data);

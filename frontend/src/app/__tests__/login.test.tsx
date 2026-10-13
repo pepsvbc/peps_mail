@@ -48,6 +48,7 @@ describe("sign in", () => {
   it.each([false, true])("sends only credentials and remember=%s, then activates the account", async (remember) => {
     render(<Home />);
     await screen.findByLabelText("Email");
+    expect(screen.getByRole("link", { name: "Need help setting up your email?" }).getAttribute("href")).toBe("/help");
     expect(screen.queryByText(/server configuration/i)).toBeNull();
     vi.mocked(fetchAccounts).mockResolvedValue({ accounts: [newAccount] });
     enterCredentials(remember);
