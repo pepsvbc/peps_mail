@@ -73,11 +73,33 @@ Build this fork using the included [`docker-compose.yml`](docker-compose.yml). F
 docker compose up -d --build
 ```
 
+Or use our image with this `compose.yaml`:
+
+```yaml
+services:
+  app:
+    image: ghcr.io/pepsvbc/peps_mail:latest
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env
+    volumes:
+      - ./peps-mail-data:/data
+```
+
+Copy [`.env.example`](.env.example) to `.env` beside `compose.yaml` (download the example first if you are using the image without cloning this repository):
+
+```bash
+[ -f .env ] || cp .env.example .env
+```
+
+Edit `.env` to set your IMAP/SMTP hostnames, ports, and TLS settings, then run `docker compose up -d`.
+
 Then open [http://localhost:3001](http://localhost:3001) and log in with your email credentials.
 
-Compose stores data in `<project>_peps-mail-data`; development uses `peps-mail-dev_peps-mail-data`. When upgrading from `oxi-data`, stop the app and copy the contents of `<project>_oxi-data` into `<project>_peps-mail-data` before starting it again. Keep the old volume until you have verified the migration.
+The image example above stores data in `./peps-mail-data`. The included Compose file uses the named volume `<project>_peps-mail-data`; development uses `peps-mail-dev_peps-mail-data`. When upgrading from `oxi-data`, stop the app and copy the contents of `<project>_oxi-data` into `<project>_peps-mail-data` before starting it again. Keep the old volume until you have verified the migration.
 
-The upstream oxi image contains the original branding; building this checkout includes the PEPS VBC theme.
+Our image and local builds include the PEPS VBC theme; the upstream oxi image contains the original branding.
 
 ### Local Development
 
