@@ -112,23 +112,20 @@ export function NavRail() {
   const updatePrefs = useUpdateDisplayPreferences();
   const resolvedTheme = useResolvedTheme();
   const accounts = useAuthStore((s) => s.accounts);
-  const activeAccountId = useAuthStore((s) => s.activeAccountId);
   const unreadCounts = useAccountUnreadCounts();
-  const otherCounts = accounts
-    .filter((account) => account.id !== activeAccountId)
-    .map((account) => unreadCounts[account.id]);
-  const otherUnreadCount = otherCounts.reduce(
+  const accountCounts = accounts.map((account) => unreadCounts[account.id]);
+  const totalUnreadCount = accountCounts.reduce(
     (total, unread) => total + (unread?.isError ? 0 : unread?.count ?? 0),
     0,
   );
-  const hasUnknownCounts = otherCounts.some((unread) => unread?.count == null || unread.isError);
-  const unreadBadge = otherUnreadCount > 0
-    ? otherUnreadCount > 99 ? "99+" : `${otherUnreadCount}${hasUnknownCounts ? "+" : ""}`
+  const hasUnknownCounts = accountCounts.some((unread) => unread?.count == null || unread.isError);
+  const unreadBadge = totalUnreadCount > 0
+    ? totalUnreadCount > 99 ? "99+" : `${totalUnreadCount}${hasUnknownCounts ? "+" : ""}`
     : undefined;
-  const mailLabel = otherUnreadCount > 0
+  const mailLabel = totalUnreadCount > 0
     ? t(hasUnknownCounts
-      ? otherUnreadCount === 1 ? "Mail — at least {count} unread message in other inboxes" : "Mail — at least {count} unread messages in other inboxes"
-      : otherUnreadCount === 1 ? "Mail — {count} unread message in other inboxes" : "Mail — {count} unread messages in other inboxes", { count: otherUnreadCount })
+      ? totalUnreadCount === 1 ? "Mail — at least {count} unread message in all inboxes" : "Mail — at least {count} unread messages in all inboxes"
+      : totalUnreadCount === 1 ? "Mail — {count} unread message in all inboxes" : "Mail — {count} unread messages in all inboxes", { count: totalUnreadCount })
     : t("Mail");
 
   const toggleTheme = useCallback((event: NavButtonClickEvent) => {

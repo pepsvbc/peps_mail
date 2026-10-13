@@ -68,6 +68,19 @@ export function AccountSwitcher() {
   }
 
   const activeAccount = accounts.find((a) => a.id === activeAccountId);
+  const otherAccounts = accounts.filter((account) => account.id !== activeAccountId);
+  const otherCounts = otherAccounts.map((account) => unreadCounts[account.id]);
+  const otherUnreadCount = otherCounts.reduce(
+    (total, unread) => total + (unread?.isError ? 0 : unread?.count ?? 0),
+    0,
+  );
+  const otherCountsUnknown = otherCounts.some((unread) => unread?.count == null || unread.isError);
+  const otherCountsLoading = otherCounts.some((unread) => !unread || unread.isLoading);
+  const otherUnreadSummary = otherCountsUnknown && otherUnreadCount === 0
+    ? otherCountsLoading ? "…" : "—"
+    : t(otherUnreadCount === 1 && !otherCountsUnknown ? "{count} unread message" : "{count} unread", {
+      count: `${otherUnreadCount}${otherCountsUnknown ? "+" : ""}`,
+    });
 
   const handleSwitchAccount = async (accountId: string) => {
     if (accountId === activeAccountId) {
@@ -145,6 +158,14 @@ export function AccountSwitcher() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="truncate">{activeAccount?.email}</div>
+            {otherAccounts.length > 0 && (
+              <div
+                className={cn("truncate text-xs", otherUnreadCount > 0 ? "font-medium text-primary" : "text-muted-foreground")}
+                title={t("Unread messages in other inboxes")}
+              >
+                {otherUnreadSummary}
+              </div>
+            )}
           </div>
           <ChevronRight
             className={cn(
