@@ -1,5 +1,7 @@
 /** French translations for mail, composition, and message actions. */
 export const mailMessages: Record<string, string> = {
+  "Save and close your current message before opening another draft.": "Enregistrez et fermez le message en cours avant d’ouvrir un autre brouillon.",
+  "Could not open this draft. Please try again.": "Impossible d’ouvrir ce brouillon. Veuillez réessayer.",
   "Folders": "Dossiers",
   "Open folders": "Ouvrir les dossiers",
   "Close folders": "Fermer les dossiers",

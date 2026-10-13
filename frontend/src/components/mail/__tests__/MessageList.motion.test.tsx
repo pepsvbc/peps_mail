@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Children, isValidElement, type Key, type ReactNode } from "react";
 
@@ -46,7 +46,7 @@ vi.mock("framer-motion", async () => {
   };
 });
 
-const { mockUiState, mockUseMessages } = vi.hoisted(() => ({
+const { mockUiState, mockUseMessages, mockOpenDraft } = vi.hoisted(() => ({
   mockUiState: {
     activeFolder: "INBOX",
     unreadOnly: false,
@@ -66,6 +66,7 @@ const { mockUiState, mockUseMessages } = vi.hoisted(() => ({
     setKeyboardNav: vi.fn(),
   },
   mockUseMessages: vi.fn(),
+  mockOpenDraft: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-virtual", () => ({
@@ -93,6 +94,9 @@ vi.mock("@/hooks/useTags", () => ({
   useTags: () => ({ data: { tags: [] } }),
   useTagMessages: () => ({ data: { messages: [], total_count: 0 }, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() }),
 }));
+
+vi.mock("@/hooks/useOpenDraft", () => ({ useOpenDraft: () => ({ openDraft: mockOpenDraft, isPending: false }) }));
+vi.mock("@/hooks/useFolders", () => ({ useFolders: () => ({ data: { folders: [] } }) }));
 
 vi.mock("@/hooks/useCompose", () => ({
   useListDrafts: () => ({ data: { drafts: [] } }),
@@ -165,7 +169,23 @@ function setMessages(uids: number[], readUids: number[] = [], hasNextPage = fals
 }
 
 describe("MessageList and MessageListItem motion transitions", () => {
-  beforeEach(() => { mockUiState.unreadOnly = false; });
+  beforeEach(() => {
+    mockUiState.unreadOnly = false;
+    mockUiState.activeFolder = "INBOX";
+    mockOpenDraft.mockClear();
+    mockUiState.selectMessage.mockClear();
+  });
+
+  it("opens server drafts in the composer instead of the reading pane", () => {
+    mockUiState.activeFolder = "Drafts";
+    mockUiState.effectiveAnimationMode = "off";
+    setMessages([7]);
+    mockUseMessages().data.pages[0].messages[0].folder = "Drafts";
+    render(<MessageList />);
+    fireEvent.click(screen.getByText("Subject 7"));
+    expect(mockOpenDraft).toHaveBeenCalledWith({ folder: "Drafts", uid: 7 });
+    expect(mockUiState.selectMessage).not.toHaveBeenCalled();
+  });
 
   it("filters read messages from the unread list", () => {
     mockUiState.unreadOnly = true;

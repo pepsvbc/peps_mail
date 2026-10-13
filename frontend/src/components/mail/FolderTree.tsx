@@ -37,9 +37,9 @@ import type { Folder as FolderType } from "@/types/folder";
 export { formatFolderName } from "@/lib/mail-folders";
 
 /** Check whether a folder name refers to the Drafts folder. */
-export function isDraftsFolder(name: string): boolean {
+export function isDraftsFolder(name: string, attributes: string[] = []): boolean {
   const lower = name.toLowerCase();
-  return lower === "drafts" || lower === "[gmail]/drafts";
+  return attributes.some((flag) => flag.toLowerCase() === "\\drafts") || ["drafts", "[gmail]/drafts", "brouillons"].includes(lower);
 }
 
 /** Sort priority for well-known folders.  Lower = higher in the list. */
@@ -243,7 +243,7 @@ function FolderItem({
     [folder.name, moveMessage],
   );
 
-  const isDrafts = isDraftsFolder(folder.name);
+  const isDrafts = isDraftsFolder(folder.name, folder.attributes);
   const { data: draftsData } = useListDrafts(isDrafts);
   const badgeCount = isDrafts ? (draftsData?.drafts.length ?? 0) : folder.unread_count;
 

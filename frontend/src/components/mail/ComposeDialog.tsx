@@ -146,7 +146,8 @@ export function ComposeDialog() {
       // Inject signature from the default identity
       if (defaultIdentity.signature_html && signatureEnabled) {
         setSignatureHtml(defaultIdentity.signature_html);
-        setField("body", injectSignature(body, defaultIdentity.signature_html));
+        // Saved drafts already contain the signature the author chose.
+        if (!draftId) setField("body", injectSignature(body, defaultIdentity.signature_html));
       }
     }
   }, [isOpen, accountMismatch, fromIdentityId, identities, setFromIdentityId]); // eslint-disable-line react-hooks/exhaustive-deps

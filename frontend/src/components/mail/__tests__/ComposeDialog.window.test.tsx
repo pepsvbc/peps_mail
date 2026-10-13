@@ -144,6 +144,22 @@ describe("composer window controls", () => {
     }), expect.any(Object));
   });
 
+  it("does not add another signature when reopening a saved draft", () => {
+    identities.data = [{
+      id: 1, display_name: "Coach", email: "coach@example.com", signature_html: "<p>Coach</p>",
+      is_default: true, created_at: "2026-10-13", updated_at: "2026-10-13",
+    }];
+    useComposeStore.getState().reset();
+    const body = "<p>My saved message</p><p>My existing signature</p>";
+    useComposeStore.getState().openDraft({
+      id: "saved-draft", to: "bob@example.com", cc: "", bcc: "", subject: "Saved", body,
+      inReplyTo: null, references: null, attachments: [],
+    });
+    render(<ComposeDialog />);
+    expect(useComposeStore.getState().body).toBe(body);
+    expect(useComposeStore.getState().signatureHtml).toBe("<p>Coach</p>");
+  });
+
   it("keeps the editor mounted and all content intact while minimized", () => {
     render(<ComposeDialog />);
     const editor = screen.getByRole("textbox", { name: "Message body" });

@@ -7,6 +7,7 @@ pub mod contact_groups;
 pub mod contacts;
 pub mod display_preferences;
 pub mod drafts;
+mod draft_import;
 pub mod folder_mgmt;
 pub mod folders;
 pub mod health;
@@ -165,6 +166,7 @@ pub fn create_router(
             "/messages/{folder}/{uid}",
             delete(messages::delete_message_handler),
         )
+        .route("/drafts/from-message", post(draft_import::import_draft_handler))
         .route("/drafts", post(drafts::upsert_draft_handler))
         .route("/drafts", get(drafts::list_drafts_handler))
         .route("/drafts/{id}", get(drafts::get_draft_handler))

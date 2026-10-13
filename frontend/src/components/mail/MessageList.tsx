@@ -2,19 +2,20 @@
 
 import { translate as t, useTranslation, getLocale } from "@/lib/i18n";
 
-import { useRef, useCallback, useEffect, useState } from "react";
+import { useRef, useCallback, useEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { AnimatePresence } from "framer-motion";
 import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
 import { PenLine, X, PanelRight, Inbox } from "lucide-react";
 import { useMessages } from "@/hooks/useMessages";
 import { useTagMessages } from "@/hooks/useTags";
-import { useListDrafts, useGetDraft, useDeleteDraft } from "@/hooks/useCompose";
+import { useListDrafts, useDeleteDraft } from "@/hooks/useCompose";
 import { createFadeSlideVariants, type MotionVariants } from "@/lib/motion/variants";
 import type { AnimationMode } from "@/lib/motion/config";
 import { ANIMATION_MODES } from "@/lib/motion/config";
 import { useUiStore } from "@/stores/useUiStore";
-import { useComposeStore } from "@/stores/useComposeStore";
+import { useOpenDraft } from "@/hooks/useOpenDraft";
+import { useFolders } from "@/hooks/useFolders";
 import { MessageListItem } from "./MessageListItem";
 import { isDraftsFolder } from "./FolderTree";
 import { BulkActionBar } from "./BulkActionBar";
@@ -85,33 +86,7 @@ function DraftItems() {
   useTranslation();
   const { data } = useListDrafts(true);
   const deleteDraft = useDeleteDraft();
-  const openDraft = useComposeStore((s) => s.openDraft);
-  const isComposeOpen = useComposeStore((s) => s.isOpen);
-  const [loadingDraftId, setLoadingDraftId] = useState<string | null>(null);
-  const getDraft = useGetDraft(loadingDraftId);
-
-  // When draft data arrives, open it in the compose dialog.
-  useEffect(() => {
-    if (!getDraft.data || !loadingDraftId) return;
-    const d = getDraft.data;
-    openDraft({
-      id: d.id,
-      to: d.to,
-      cc: d.cc,
-      bcc: d.bcc,
-      subject: d.subject,
-      body: d.html_body ?? d.text_body,
-      inReplyTo: d.in_reply_to,
-      references: d.references,
-      attachments: d.attachments.map((a) => ({
-        id: a.id,
-        filename: a.filename,
-        contentType: a.content_type,
-        size: a.size,
-      })),
-    });
-    setLoadingDraftId(null); // eslint-disable-line react-hooks/set-state-in-effect -- clearing after zustand store update
-  }, [getDraft.data, loadingDraftId, openDraft]);
+  const { openDraft, isPending } = useOpenDraft();
 
   const drafts = data?.drafts ?? [];
   if (drafts.length === 0) return null;
@@ -122,14 +97,15 @@ function DraftItems() {
         <div
           key={draft.id}
           role="row"
+          aria-busy={isPending}
           tabIndex={0}
           onClick={() => {
-            if (!isComposeOpen) setLoadingDraftId(draft.id);
+            void openDraft({ id: draft.id });
           }}
           onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
+            if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
               e.preventDefault();
-              if (!isComposeOpen) setLoadingDraftId(draft.id);
+              void openDraft({ id: draft.id });
             }
           }}
           className={cn(
@@ -198,7 +174,9 @@ export function MessageList() {
   const density = useUiStore((s) => s.density);
   const selectedMessageUid = useUiStore((s) => s.selectedMessageUid);
   const selectMessage = useUiStore((s) => s.selectMessage);
-  const showDrafts = !activeTagId && isDraftsFolder(activeFolder);
+  const { data: folders } = useFolders();
+  const showDrafts = !activeTagId && isDraftsFolder(activeFolder, folders?.folders.find((f) => f.name === activeFolder)?.attributes);
+  const { openDraft, isPending: openingDraft } = useOpenDraft();
   const selectedMessageUids = useUiStore((s) => s.selectedMessageUids);
   const bulkSelectMode = useUiStore((s) => s.bulkSelectMode);
   const keyboardNav = useUiStore((s) => s.keyboardNav);
@@ -346,10 +324,15 @@ export function MessageList() {
 
       // Plain click: normal single-message selection, clear bulk.
       clearBulkSelection();
-      selectMessage(uid);
+      const message = messages.find((m) => m.uid === uid);
+      if (showDrafts || message?.flags.split(",").includes("\\Draft")) {
+        void openDraft({ folder: message?.folder ?? activeFolder, uid });
+      } else {
+        selectMessage(uid);
+      }
       anchorUidRef.current = uid;
     },
-    [selectMessage, toggleBulkSelect, selectAllMessages, clearBulkSelection, messages, selectedMessageUid, selectedMessageUids],
+    [showDrafts, openDraft, activeFolder, selectMessage, toggleBulkSelect, selectAllMessages, clearBulkSelection, messages, selectedMessageUid, selectedMessageUids],
   );
 
   const allUids = messages.map((m) => m.uid);
@@ -365,7 +348,7 @@ export function MessageList() {
   }, [allSelected, allUids, clearBulkSelection, selectAllMessages]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="flex h-full min-h-0 flex-col bg-background" aria-busy={openingDraft}>
       <div className="flex shrink-0 items-center gap-2 px-4 pb-3 text-xs text-muted-foreground">
           {!isLoading && !isError && messages.length > 0 && (
             <button

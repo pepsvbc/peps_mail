@@ -63,7 +63,7 @@ interface DraftListResponse {
   drafts: DraftListItem[];
 }
 
-interface DraftDetail {
+export interface DraftDetail {
   id: string;
   to: string;
   cc: string;
