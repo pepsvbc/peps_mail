@@ -40,6 +40,7 @@ export function useKeyboardShortcuts() {
   const moveMessage = useMoveMessage();
   const deleteMessage = useDeleteMessage();
   const { data } = useMessages(activeFolder);
+  const unreadOnly = useUiStore((s) => s.unreadOnly);
 
   const normalizedQuery = normalizeSearchQuery(searchQuery);
   const hasActiveSearch = searchActive && isValidCommittedSearch(normalizedQuery);
@@ -55,8 +56,8 @@ export function useKeyboardShortcuts() {
   );
 
   const folderMessages = useMemo(
-    () => data?.pages.flatMap((page) => page.messages) ?? [],
-    [data?.pages],
+    () => (data?.pages.flatMap((page) => page.messages) ?? []).filter((message) => !unreadOnly || !message.flags.includes("\\Seen")),
+    [data?.pages, unreadOnly],
   );
 
   const findCurrentSearchIndex = useCallback((): number => {

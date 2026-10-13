@@ -605,7 +605,7 @@ export function ComposeDialog() {
                         ? "inset-4 sm:left-20"
                         : cn(
                             "inset-x-4 bottom-4 max-h-[80dvh] sm:bottom-8",
-                            isMinimized ? "sm:w-80" : "sm:w-[min(42rem,calc(100vw-6rem))]",
+                            isMinimized ? "sm:w-80" : "h-[min(42rem,80dvh)] sm:w-[min(42rem,calc(100vw-6rem))]",
                             position === "left" ? "sm:left-20 sm:right-auto" : "sm:left-auto sm:right-4",
                           )
                     )}
@@ -629,7 +629,7 @@ export function ComposeDialog() {
             )}
 
             {/* Header */}
-            <div className={cn("flex shrink-0 items-center justify-between gap-2 px-4 py-3", !isMinimized && "border-b border-border")}>
+            <div className={cn("flex shrink-0 items-center justify-between gap-2 rounded-t-xl bg-muted px-4 py-2.5", !isMinimized && "border-b border-border")}>
               <Dialog.Title className="min-w-0 flex-1 text-sm font-semibold">
                 {isMinimized ? (
                   <button
@@ -637,24 +637,23 @@ export function ComposeDialog() {
                     onClick={restoreCompose}
                     aria-label={t("Restore composer")}
                     title={t("Restore composer")}
-                    className="block w-full truncate rounded text-left hover:text-primary"
+                    className="flex w-full items-center gap-2 rounded text-left hover:text-primary"
                   >
-                    {subject.trim() || t("New Message")}
+                    <ChevronUp className="size-4 shrink-0" /><span className="truncate">{subject.trim() || t("New Message")}</span>
                   </button>
                 ) : t("New Message")}
               </Dialog.Title>
               <div className="flex shrink-0 items-center gap-1">
-                <button
-                  onClick={() => {
-                    setPosition((side) => side === "left" ? "right" : "left");
-                    setExpanded(false);
-                  }}
-                  className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                  aria-label={position === "right" ? t("Move composer to left") : t("Move composer to right")}
-                  title={position === "right" ? t("Move composer to left") : t("Move composer to right")}
-                >
-                  {position === "right" ? <PanelLeft className="size-4" /> : <PanelRight className="size-4" />}
-                </button>
+                {(["left", "right"] as const).map((side) => (
+                  <button key={side} type="button"
+                    onClick={() => { setPosition(side); setExpanded(false); }}
+                    className={cn("rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground", position === side && !expanded && "bg-background text-foreground shadow-sm")}
+                    aria-pressed={position === side && !expanded}
+                    aria-label={t(side === "left" ? "Move composer to left" : "Move composer to right")}
+                    title={t(side === "left" ? "Move composer to left" : "Move composer to right")}>
+                    {side === "left" ? <PanelLeft className="size-4" /> : <PanelRight className="size-4" />}
+                  </button>
+                ))}
                 {!isMinimized && (
                   <>
                     <button

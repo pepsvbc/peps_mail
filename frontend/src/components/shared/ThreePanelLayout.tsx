@@ -3,9 +3,14 @@
 import { useTranslation } from "@/lib/i18n";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Dialog } from "radix-ui";
+import { ArrowLeft, X, MailOpen } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { AnimatePresence } from "framer-motion";
 import { useUiStore } from "@/stores/useUiStore";
 import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
+import { MailboxHeader } from "@/components/mail/MailboxHeader";
 import { SearchBar } from "@/components/mail/SearchBar";
 import { SearchResults } from "@/components/mail/SearchResults";
 import { MessageActionBar } from "@/components/mail/MessageActionBar";
@@ -111,6 +116,9 @@ export function ThreePanelLayout({
 }: ThreePanelLayoutProps) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
+  const folderDrawerOpen = useUiStore((s) => s.folderDrawerOpen);
+  const setFolderDrawerOpen = useUiStore((s) => s.setFolderDrawerOpen);
+  const selectMessage = useUiStore((s) => s.selectMessage);
   const sidebarWidth = useUiStore((s) => s.sidebarWidth);
   const messageListWidth = useUiStore((s) => s.messageListWidth);
   const setSidebarWidth = useUiStore((s) => s.setSidebarWidth);
@@ -151,7 +159,7 @@ export function ThreePanelLayout({
 
     const remaining = Math.floor(
       containerWidth -
-      sidebarWidth -
+      (typeof window !== "undefined" && window.innerWidth < 1024 ? 0 : sidebarWidth) -
       RESIZE_HANDLE_BUDGET -
       MIN_READING_PANE_WIDTH,
     );
@@ -185,27 +193,40 @@ export function ThreePanelLayout({
   );
 
   return (
-    <div ref={containerRef} className="flex h-full min-h-0 w-full overflow-hidden">
+    <div ref={containerRef} className={cn("mail-workspace flex h-full min-h-0 w-full overflow-hidden", selectedMessageUid !== null && "has-message")}>
       {/* Folder sidebar */}
       <aside
-        className="shrink-0 overflow-y-auto bg-sidebar"
+        className="mail-folder-panel shrink-0 overflow-y-auto bg-sidebar"
         style={{ width: sidebarWidth }}
       >
         {sidebar}
       </aside>
 
       {/* Resize handle: sidebar | message list */}
-      <ResizeHandle onDrag={handleSidebarDrag} />
+      <div className="mail-folder-resizer flex"><ResizeHandle onDrag={handleSidebarDrag} /></div>
+      <Dialog.Root open={folderDrawerOpen ?? false} onOpenChange={setFolderDrawerOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
+          <Dialog.Content aria-describedby={undefined} className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-border bg-sidebar shadow-xl">
+            <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
+              <Dialog.Title className="font-semibold">{t("Folders")}</Dialog.Title>
+              <Dialog.Close asChild><Button variant="ghost" size="icon" aria-label={t("Close folders")}><X className="size-4" /></Button></Dialog.Close>
+            </div>
+            <div className="min-h-0 flex-1">{sidebar}</div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       {/* Center panel — search bar + message list or search results */}
       <main
         className={
           readingPaneVisible
-            ? "flex shrink-0 flex-col overflow-hidden border-x border-border"
-            : "flex min-w-0 flex-1 flex-col overflow-hidden border-l border-border"
+            ? "mail-list-panel flex shrink-0 flex-col overflow-hidden border-x border-border"
+            : "mail-list-panel flex min-w-0 flex-1 flex-col overflow-hidden border-l border-border"
         }
         style={readingPaneVisible ? { width: resolvedMessageListWidth ?? messageListWidth } : undefined}
       >
+        <MailboxHeader />
         <SearchBar />
         <AnimatePresence mode="wait" initial={false}>
           {showSearchResults ? (
@@ -238,7 +259,7 @@ export function ThreePanelLayout({
 
       {/* Resize handle: message list | reading pane */}
       <AnimatePresence initial={false}>
-        {readingPaneVisible && (
+        {(readingPaneVisible || selectedMessageUid !== null) && (
           <AnimatedDiv
             key="reading-pane"
             data-testid="three-panel-reading-pane-transition"
@@ -246,16 +267,20 @@ export function ThreePanelLayout({
             initial={readingPaneTransition.initial}
             animate={readingPaneTransition.animate}
             exit={readingPaneTransition.exit}
-            className="flex min-h-0 min-w-0 flex-1"
+            className={cn("mail-reader-panel flex min-h-0 min-w-0 flex-1", !readingPaneVisible && "md:!hidden")}
           >
             <ResizeHandle onDrag={handleMessageListDrag} />
             <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <div className="flex items-center border-b border-border md:hidden">
+                <Button variant="ghost" className="m-2 gap-2" onClick={() => selectMessage(null)}><ArrowLeft className="size-4" />{t("Back to messages")}</Button>
+              </div>
               <MessageActionBar />
               {selectedMessageUid !== null ? (
                 <div className="flex min-h-0 flex-1">{readingPane}</div>
               ) : (
-                <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-6 text-center">
-                  <p className="text-2xl font-bold tracking-tight text-primary">
+                <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-6 text-center">
+                  <MailOpen className="mb-1 size-10 stroke-1 text-muted-foreground/60" />
+                  <p className="text-lg font-semibold tracking-tight text-foreground">
                     {t("Mail")} · {brand.name}
                   </p>
                   <p className="text-sm text-muted-foreground">{t("Select a message to read it.")}</p>

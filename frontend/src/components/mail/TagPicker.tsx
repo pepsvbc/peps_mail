@@ -49,14 +49,15 @@ export function TagPicker({ folder, uid }: TagPickerProps) {
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
+        title={t("Tags")}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+          "inline-flex size-8 items-center justify-center rounded-md text-sm font-medium transition-colors",
           "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
           isOpen && "bg-accent text-accent-foreground",
         )}
       >
         <Tag className="size-4" />
-        <span className="hidden xl:inline">{t("Tags")}</span>
+        <span className="sr-only">{t("Tags")}</span>
       </button>
 
       {isOpen && (

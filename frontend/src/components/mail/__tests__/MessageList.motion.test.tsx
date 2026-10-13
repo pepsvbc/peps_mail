@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Children, isValidElement, type Key, type ReactNode } from "react";
 
 vi.mock("framer-motion", async () => {
@@ -49,6 +49,7 @@ vi.mock("framer-motion", async () => {
 const { mockUiState, mockUseMessages } = vi.hoisted(() => ({
   mockUiState: {
     activeFolder: "INBOX",
+    unreadOnly: false,
     activeTagId: null as string | null,
     density: "comfortable" as "compact" | "comfortable",
     selectedMessageUid: 1 as number | null,
@@ -145,8 +146,9 @@ function buildMessage(uid: number) {
   };
 }
 
-function setMessages(uids: number[]) {
-  const messages = uids.map((uid) => buildMessage(uid));
+function setMessages(uids: number[], readUids: number[] = [], hasNextPage = false) {
+  const messages = uids.map((uid) => ({ ...buildMessage(uid), flags: readUids.includes(uid) ? "\\Seen" : "" }));
+  const fetchNextPage = vi.fn();
   mockUseMessages.mockReturnValue({
     data: {
       pages: [{ messages, total_count: messages.length, syncing: false }],
@@ -155,13 +157,33 @@ function setMessages(uids: number[]) {
     isFetching: false,
     isError: false,
     refetch: vi.fn(),
-    fetchNextPage: vi.fn(),
-    hasNextPage: false,
+    fetchNextPage,
+    hasNextPage,
     isFetchingNextPage: false,
   });
+  return fetchNextPage;
 }
 
 describe("MessageList and MessageListItem motion transitions", () => {
+  beforeEach(() => { mockUiState.unreadOnly = false; });
+
+  it("filters read messages from the unread list", () => {
+    mockUiState.unreadOnly = true;
+    mockUiState.effectiveAnimationMode = "off";
+    setMessages([1, 2], [1]);
+    render(<MessageList />);
+    expect(screen.queryByText("Subject 1")).toBeNull();
+    expect(screen.getByText("Subject 2")).toBeTruthy();
+  });
+
+  it("continues loading unread messages when the first page contains only read mail", () => {
+    mockUiState.unreadOnly = true;
+    const nextPage = setMessages([1, 2], [1, 2], true);
+    render(<MessageList />);
+    expect(nextPage).toHaveBeenCalled();
+    expect(screen.queryByText("No unread messages")).toBeNull();
+  });
+
   it("animates message rows enter/exit in non-off modes", () => {
     mockUiState.effectiveAnimationMode = "medium";
     setMessages([1, 2]);
@@ -264,7 +286,7 @@ describe("MessageList and MessageListItem motion transitions", () => {
     const rows = screen.getAllByTestId("message-list-row-transition");
     const secondRow = rows[1];
 
-    expect(secondRow?.style.top).toBe("64px");
+    expect(secondRow?.style.top).toBe("124px");
     expect(secondRow?.style.transform).toBe("");
   });
 });

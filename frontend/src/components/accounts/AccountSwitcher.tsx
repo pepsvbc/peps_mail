@@ -150,8 +150,8 @@ export function AccountSwitcher() {
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
             "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-sm transition-colors",
-            "bg-primary/10 text-primary",
-            "hover:bg-primary/15"
+            "border border-border bg-background text-foreground",
+            "hover:bg-muted"
           )}
         >
           <div className="size-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium shrink-0">

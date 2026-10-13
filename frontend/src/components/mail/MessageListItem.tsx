@@ -188,10 +188,10 @@ export const MessageListItem = memo(function MessageListItem({
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         className={cn(
-          "flex h-9 cursor-pointer items-center gap-2 border-b border-border px-3 text-sm outline-none transition-colors",
+          "flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-border px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors",
           !suppressHover && "hover:bg-muted",
           isUnread ? "bg-background font-semibold" : "bg-transparent font-normal",
-          isSelected && "bg-primary/10 hover:bg-primary/10",
+          isSelected && "border-primary/30 bg-muted hover:bg-muted",
           isDragging && "opacity-50",
         )}
       >
@@ -311,17 +311,17 @@ export const MessageListItem = memo(function MessageListItem({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       className={cn(
-        "flex h-16 cursor-pointer flex-col justify-center border-b border-border px-3 py-1.5 outline-none transition-colors",
+        "flex h-[116px] cursor-pointer flex-col justify-center gap-2 rounded-lg border border-border px-3 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors",
         !suppressHover && "hover:bg-muted",
         isUnread ? "bg-background" : "bg-transparent",
-        isSelected && "bg-primary/10 hover:bg-primary/10",
+        isSelected && "border-primary/30 bg-muted hover:bg-muted",
         isDragging && "opacity-50",
       )}
     >
       {/* Top row: sender + date + star */}
       <div className="flex items-center gap-2 pl-6">
         {/* Sender name */}
-        <span className={cn("min-w-0 flex-1 truncate text-xs font-normal", isFlagged ? "text-primary" : "text-muted-foreground")}>{sender}</span>
+        <span className={cn("min-w-0 flex-1 truncate text-sm font-semibold", isFlagged ? "text-primary" : "text-foreground")}>{sender}</span>
 
         {/* Date / Size on hover */}
         <span className={cn("shrink-0 text-xs font-normal", isFlagged ? "text-primary" : "text-muted-foreground")}>
@@ -384,12 +384,7 @@ export const MessageListItem = memo(function MessageListItem({
           <span className={cn(isUnread ? "font-medium" : "font-normal", isFlagged ? "text-primary" : "text-foreground")}>
             {message.subject || t("(no subject)")}
           </span>
-          {message.snippet && (
-            <span className="font-normal text-muted-foreground">
-              {" "}
-              &mdash; {message.snippet}
-            </span>
-          )}
+
         </span>
 
         {/* Tag color dots */}
@@ -407,6 +402,7 @@ export const MessageListItem = memo(function MessageListItem({
           <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
         )}
       </div>
+      <p className="line-clamp-2 min-h-8 pl-6 text-xs leading-4 text-muted-foreground">{message.snippet || "\u00a0"}</p>
     </div>
   );
 

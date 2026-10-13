@@ -48,81 +48,76 @@
   --radius-4xl: calc(var(--radius) + 16px);
 }
 
-/*
- * PEPS VBC — club purple theme
- *
- * Light palette: pale lavender surfaces with the club's #731d7b purple.
- * Dark palette: the club's #140320 background with a lighter purple accent.
- */
+/* Neutral mail surfaces with PEPS VBC purple accents in both themes. */
 
 :root {
   --radius: 0.375rem;
   --background: hsl(0 0% 100%);
-  --foreground: #24172b;
-  --card: #f6f2f7;
-  --card-foreground: #24172b;
+  --foreground: #18181b;
+  --card: #ffffff;
+  --card-foreground: #18181b;
   --popover: hsl(0 0% 100%);
-  --popover-foreground: #24172b;
+  --popover-foreground: #18181b;
   --primary: #731d7b;
   --primary-foreground: hsl(0 0% 100%);
-  --secondary: #f6f2f7;
-  --secondary-foreground: #24172b;
-  --muted: #f6f2f7;
-  --muted-foreground: #706075;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
   --accent: #eee0f1;
   --accent-foreground: #49124f;
   --destructive: hsl(0 84% 60%);
   --destructive-foreground: hsl(0 0% 100%);
-  --border: #e5dce8;
-  --input: #e5dce8;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
   --ring: #731d7b;
   --chart-1: #731d7b;
   --chart-2: #a241aa;
   --chart-3: #6554a5;
   --chart-4: #a94378;
   --chart-5: #b97cbf;
-  --sidebar: #f6f2f7;
-  --sidebar-foreground: #24172b;
+  --sidebar: #fafafa;
+  --sidebar-foreground: #18181b;
   --sidebar-primary: #731d7b;
   --sidebar-primary-foreground: hsl(0 0% 100%);
   --sidebar-accent: #eee0f1;
   --sidebar-accent-foreground: #49124f;
-  --sidebar-border: #e5dce8;
+  --sidebar-border: #e4e4e7;
   --sidebar-ring: #731d7b;
 }
 
 .dark {
-  --background: #140320;
-  --foreground: #f8f2fa;
-  --card: #21102c;
-  --card-foreground: #f8f2fa;
-  --popover: #21102c;
-  --popover-foreground: #f8f2fa;
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #18181b;
+  --card-foreground: #fafafa;
+  --popover: #18181b;
+  --popover-foreground: #fafafa;
   --primary: #d99bdf;
-  --primary-foreground: #140320;
-  --secondary: #21102c;
-  --secondary-foreground: #f8f2fa;
-  --muted: #21102c;
-  --muted-foreground: #b7a6be;
-  --accent: #3b1e45;
-  --accent-foreground: #f8f2fa;
+  --primary-foreground: #09090b;
+  --secondary: #18181b;
+  --secondary-foreground: #fafafa;
+  --muted: #18181b;
+  --muted-foreground: #a1a1aa;
+  --accent: #27272a;
+  --accent-foreground: #fafafa;
   --destructive: hsl(0 84% 60%);
   --destructive-foreground: hsl(0 0% 100%);
-  --border: #3c2947;
-  --input: #3c2947;
+  --border: #27272a;
+  --input: #27272a;
   --ring: #d99bdf;
   --chart-1: #d99bdf;
   --chart-2: #b96fc2;
   --chart-3: #aa9bde;
   --chart-4: #de8cb6;
   --chart-5: #c8aed6;
-  --sidebar: #21102c;
-  --sidebar-foreground: #f8f2fa;
+  --sidebar: #18181b;
+  --sidebar-foreground: #fafafa;
   --sidebar-primary: #d99bdf;
-  --sidebar-primary-foreground: #140320;
-  --sidebar-accent: #3b1e45;
-  --sidebar-accent-foreground: #f8f2fa;
-  --sidebar-border: #3c2947;
+  --sidebar-primary-foreground: #09090b;
+  --sidebar-accent: #27272a;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: #27272a;
   --sidebar-ring: #d99bdf;
 }
 
@@ -223,4 +218,15 @@
 
 .animate-hdd-blink {
   animation: hdd-blink 400ms ease-in-out infinite;
+}
+
+/* Single-pane navigation on phones; the folder drawer is available on tablets. */
+@media (max-width: 1023px) {
+  .mail-folder-panel, .mail-folder-resizer { display: none; }
+}
+@media (max-width: 767px) {
+  .mail-list-panel { flex: 1 1 100% !important; min-width: 0; width: 100% !important; }
+  .mail-reader-panel { display: none !important; }
+  .mail-workspace.has-message .mail-list-panel { display: none; }
+  .mail-workspace.has-message .mail-reader-panel { display: flex !important; width: 100%; }
 }

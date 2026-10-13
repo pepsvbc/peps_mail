@@ -21,6 +21,8 @@ vi.mock("@/stores/useUiStore", () => {
   return { useUiStore };
 });
 
+vi.mock("@/components/mail/MailboxHeader", () => ({ MailboxHeader: () => <div /> }));
+
 vi.mock("@/components/mail/SearchBar", () => ({
   SearchBar: vi.fn(() => <div data-testid="search-bar" />),
 }));

@@ -1,5 +1,15 @@
 /** French translations for mail, composition, and message actions. */
 export const mailMessages: Record<string, string> = {
+  "Folders": "Dossiers",
+  "Open folders": "Ouvrir les dossiers",
+  "Close folders": "Fermer les dossiers",
+  "Filter messages": "Filtrer les messages",
+  "Refresh messages": "Actualiser les messages",
+  "No unread messages": "Aucun message non lu",
+  "Back to messages": "Retour aux messages",
+  "Main navigation": "Navigation principale",
+  "Switch to French": "Passer en français",
+  "Switch to English": "Passer en anglais",
   "Filter by sender": "Filtrer par expéditeur",
   "Filter by recipient": "Filtrer par destinataire",
   "Search subject only": "Rechercher dans l’objet",

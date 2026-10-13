@@ -203,6 +203,8 @@ describe("composer window controls", () => {
     const composer = screen.getByRole("dialog");
     fireEvent.click(screen.getByRole("button", { name: "Move composer to left" }));
     expect(screen.getByRole("button", { name: "Move composer to right" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Move composer to left" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Move composer to right" })).toHaveAttribute("aria-pressed", "false");
     const leftClasses = composer.className;
 
     fireEvent.click(screen.getByRole("button", { name: "Maximize composer" }));

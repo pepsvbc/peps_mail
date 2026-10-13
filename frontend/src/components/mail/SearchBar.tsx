@@ -204,8 +204,8 @@ export function SearchBar() {
   }, [searchActive, searchQuery]);
 
   return (
-    <div className="flex shrink-0 flex-col border-b border-border">
-      <div className="flex items-center gap-2 px-3 py-1.5">
+    <div className="flex shrink-0 flex-col">
+      <div className="flex items-center gap-2 px-4 py-3">
         <div className="relative flex flex-1 items-center">
           <Search className="pointer-events-none absolute left-2 size-4 text-muted-foreground" />
           <input
@@ -217,7 +217,7 @@ export function SearchBar() {
             onBlur={handleBlur}
             placeholder={t("Search mail... (Ctrl+K)")}
             data-search-input
-            className="h-8 w-full rounded-md border border-border bg-background py-1 pl-8 pr-14 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            className="h-9 w-full rounded-md border border-border bg-background py-1 pl-8 pr-14 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           />
           <div className="absolute right-2 flex items-center gap-1">
             {inputValue && (

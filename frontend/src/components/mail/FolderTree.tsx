@@ -2,9 +2,12 @@
 
 import { translate as t, useTranslation } from "@/lib/i18n";
 
+import { useComposeStore } from "@/stores/useComposeStore";
+
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Inbox,
+  PenLine,
   Send,
   FileText,
   Trash2,
@@ -278,8 +281,8 @@ function FolderItem({
           isDragOver
             ? "bg-primary/10 font-semibold text-primary"
             : isActive
-              ? "bg-primary/10 font-semibold text-primary"
-              : "font-medium text-sidebar-foreground hover:bg-sidebar-foreground/10",
+              ? "bg-foreground font-semibold text-background dark:bg-muted dark:text-foreground"
+              : "font-medium text-sidebar-foreground hover:bg-muted",
         )}
       >
         {getFolderIcon(folder.name)}
@@ -364,12 +367,18 @@ export function FolderTree() {
   return (
     <div className="flex h-full flex-col">
       {/* Account switcher */}
-      <div className="border-b border-sidebar-border p-2">
+      <div className="flex min-h-14 items-center border-b border-sidebar-border p-2">
         <AccountSwitcher />
       </div>
 
+      <div className="p-3">
+        <Button className="w-full justify-start gap-2" onClick={() => { useUiStore.getState().setFolderDrawerOpen(false); useComposeStore.getState().openCompose(); }}>
+          <PenLine className="size-4" />{t("New Message")}
+        </Button>
+      </div>
+
       {/* Folder list */}
-      <nav className="flex-1 overflow-y-auto">
+      <nav className="flex-1 overflow-y-auto px-2 pb-3">
         {isLoading && <SkeletonList />}
 
         {isError && (
@@ -384,7 +393,7 @@ export function FolderTree() {
         )}
 
         {data && (
-          <div className="flex flex-col gap-0.5">
+          <div className="flex flex-col gap-1">
             {[...data.folders]
               .sort(
                 (a, b) =>

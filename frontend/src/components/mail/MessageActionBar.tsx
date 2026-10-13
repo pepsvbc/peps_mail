@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { useFolders } from "@/hooks/useFolders";
 import { findJunkFolder } from "@/lib/mail-folders";
 import {
+  FolderInput,
   Reply,
   ReplyAll,
   Forward,
@@ -231,30 +232,30 @@ export function MessageActionBar() {
       initial="initial"
       animate="animate"
       exit="exit"
-      className="flex shrink-0 flex-wrap items-center gap-0.5 border-b border-border px-2 py-1"
+      className="flex min-h-14 shrink-0 flex-wrap items-center gap-0.5 border-b border-border px-2 py-2"
     >
       {/* Reply */}
-      <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" disabled={disabled} onClick={handleReply}>
+      <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled={disabled} title={t("Reply")} onClick={handleReply}>
         <Reply className="size-4" />
-        <span className="hidden xl:inline">{t("Reply")}</span>
+        <span className="sr-only">{t("Reply")}</span>
       </Button>
 
       {/* Reply All — disabled for 1-to-1 conversations */}
-      <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" disabled={disabled || isDirectConversation} onClick={handleReplyAll}>
+      <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled={disabled || isDirectConversation} title={t("Reply all")} onClick={handleReplyAll}>
         <ReplyAll className="size-4" />
-        <span className="hidden xl:inline">{t("Reply all")}</span>
+        <span className="sr-only">{t("Reply all")}</span>
       </Button>
 
       {/* Forward */}
-      <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" disabled={disabled} onClick={handleForward}>
+      <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled={disabled} title={t("Forward")} onClick={handleForward}>
         <Forward className="size-4" />
-        <span className="hidden xl:inline">{t("Forward")}</span>
+        <span className="sr-only">{t("Forward")}</span>
       </Button>
 
       <div className="mx-0.5 h-5 w-px shrink-0 bg-border" />
 
       {/* Delete */}
-      <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" disabled={disabled} onClick={handleDelete}>
+      <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled={disabled} title={t("Delete")} onClick={handleDelete}>
         {shouldAnimate ? (
           <AnimatePresence mode="wait" initial={false}>
             <motion.span
@@ -277,11 +278,11 @@ export function MessageActionBar() {
         ) : (
           <Trash2 className="size-4" />
         )}
-        <span className="hidden xl:inline">{activeFolder === "Trash" ? t("Delete") : t("Delete")}</span>
+        <span className="sr-only">{activeFolder === "Trash" ? t("Delete") : t("Delete")}</span>
       </Button>
 
       {/* Archive */}
-      <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" disabled={disabled || activeFolder === "Archive"} onClick={handleArchive}>
+      <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled={disabled || activeFolder === "Archive"} title={t("Archive")} onClick={handleArchive}>
         {shouldAnimate ? (
           <AnimatePresence mode="wait" initial={false}>
             <motion.span
@@ -304,7 +305,7 @@ export function MessageActionBar() {
         ) : (
           <Archive className="size-4" />
         )}
-        <span className="hidden xl:inline">{t("Archive")}</span>
+        <span className="sr-only">{t("Archive")}</span>
       </Button>
 
       {/* Move to */}
@@ -321,13 +322,13 @@ export function MessageActionBar() {
             className="inline-flex"
           >
             {actionFeedback === "move" ? (
-              <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" disabled>
+              <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled>
                 <Loader2 className="size-4 animate-spin" />
-                <span className="hidden xl:inline">{t("Move to...")}</span>
+                <span className="sr-only">{t("Move to...")}</span>
               </Button>
             ) : disabled ? (
-              <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" disabled>
-                <span className="hidden xl:inline">{t("Move to...")}</span>
+              <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled>
+                <FolderInput className="size-4" /><span className="sr-only">{t("Move to...")}</span>
               </Button>
             ) : (
               <MoveToFolderMenu
@@ -344,8 +345,8 @@ export function MessageActionBar() {
           </motion.span>
         </AnimatePresence>
       ) : disabled ? (
-        <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" disabled>
-          <span className="hidden xl:inline">{t("Move to...")}</span>
+        <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled>
+          <FolderInput className="size-4" /><span className="sr-only">{t("Move to...")}</span>
         </Button>
       ) : (
         <MoveToFolderMenu
@@ -357,13 +358,13 @@ export function MessageActionBar() {
       )}
 
       {/* Junk */}
-      <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" disabled={disabled || moveMessage.isPending || activeFolder === findJunkFolder(folderData?.folders ?? [])} onClick={handleJunk}>
+      <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled={disabled || moveMessage.isPending || activeFolder === findJunkFolder(folderData?.folders ?? [])} title={t("Junk")} onClick={handleJunk}>
         <AlertCircle className="size-4" />
-        <span className="hidden xl:inline">{t("Junk")}</span>
+        <span className="sr-only">{t("Junk")}</span>
       </Button>
 
       {/* Star/Unstar */}
-      <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" disabled={disabled} onClick={handleToggleStar}>
+      <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled={disabled} title={isFlagged ? t("Unstar") : t("Star")} onClick={handleToggleStar}>
         {shouldAnimate ? (
           <AnimatePresence mode="wait" initial={false}>
             <motion.span
@@ -388,11 +389,11 @@ export function MessageActionBar() {
         ) : (
           <Star className="size-4" />
         )}
-        <span className="hidden xl:inline">{isFlagged ? t("Unstar") : t("Star")}</span>
+        <span className="sr-only">{isFlagged ? t("Unstar") : t("Star")}</span>
       </Button>
 
       {/* Mark read/unread */}
-      <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" disabled={disabled} onClick={handleToggleRead}>
+      <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled={disabled} title={isSeen ? t("Unread") : t("Read")} onClick={handleToggleRead}>
         {shouldAnimate ? (
           <AnimatePresence mode="wait" initial={false}>
             <motion.span
@@ -417,7 +418,7 @@ export function MessageActionBar() {
         ) : (
           <Mail className="size-4" />
         )}
-        <span className="hidden xl:inline">{isSeen ? t("Unread") : t("Read")}</span>
+        <span className="sr-only">{isSeen ? t("Unread") : t("Read")}</span>
       </Button>
 
       {/* Tags */}

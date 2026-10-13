@@ -50,12 +50,14 @@ export function MoveToFolderMenu({
     <div ref={containerRef} className="relative">
       <Button
         variant="ghost"
-        size="sm"
+        size="icon"
+        title={t("Move to...")}
+        aria-label={t("Move to...")}
         onClick={() => setOpen((prev) => !prev)}
-        className="gap-1.5"
+        className="size-8 shrink-0"
       >
         <FolderInput className="size-4" />
-        {t("Move to...")}
+        <span className="sr-only">{t("Move to...")}</span>
       </Button>
 
       <AnimatePresence>

@@ -6,9 +6,9 @@ import { useRef, useCallback, useEffect, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { AnimatePresence } from "framer-motion";
 import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
-import { PenLine, X, PanelRight } from "lucide-react";
+import { PenLine, X, PanelRight, Inbox } from "lucide-react";
 import { useMessages } from "@/hooks/useMessages";
-import { useTags, useTagMessages } from "@/hooks/useTags";
+import { useTagMessages } from "@/hooks/useTags";
 import { useListDrafts, useGetDraft, useDeleteDraft } from "@/hooks/useCompose";
 import { createFadeSlideVariants, type MotionVariants } from "@/lib/motion/variants";
 import type { AnimationMode } from "@/lib/motion/config";
@@ -16,7 +16,7 @@ import { ANIMATION_MODES } from "@/lib/motion/config";
 import { useUiStore } from "@/stores/useUiStore";
 import { useComposeStore } from "@/stores/useComposeStore";
 import { MessageListItem } from "./MessageListItem";
-import { formatFolderName, isDraftsFolder } from "./FolderTree";
+import { isDraftsFolder } from "./FolderTree";
 import { BulkActionBar } from "./BulkActionBar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -193,6 +193,7 @@ function ToggleReadingPaneButton() {
 export function MessageList() {
   useTranslation();
   const activeFolder = useUiStore((s) => s.activeFolder);
+  const unreadOnly = useUiStore((s) => s.unreadOnly);
   const activeTagId = useUiStore((s) => s.activeTagId);
   const density = useUiStore((s) => s.density);
   const selectedMessageUid = useUiStore((s) => s.selectedMessageUid);
@@ -209,7 +210,6 @@ export function MessageList() {
 
   const folderQuery = useMessages(activeFolder);
   const tagQuery = useTagMessages(activeTagId);
-  const { data: tagsData } = useTags();
 
   // Select the right data source based on whether a tag filter is active.
   const isTagView = !!activeTagId;
@@ -225,17 +225,15 @@ export function MessageList() {
   // Flatten all pages into a single array of messages.
   const folderMessages = data?.pages.flatMap((page) => page.messages) ?? [];
   const tagMessages = isTagView ? (tagQuery.data?.messages ?? []) : [];
-  const messages = isTagView ? tagMessages : folderMessages;
+  const allMessages = isTagView ? tagMessages : folderMessages;
+  const messages = unreadOnly && !showDrafts ? allMessages.filter((message) => !message.flags.includes("\\Seen")) : allMessages;
   const totalCount = isTagView
     ? (tagQuery.data?.total_count ?? 0)
     : (data?.pages[0]?.total_count ?? 0);
   const isSyncing = isDraftsFolder(activeFolder) ? false : (data?.pages[0]?.syncing ?? false);
 
-  // Resolve tag name for header display.
-  const activeTagName = tagsData?.tags.find((t) => t.id === activeTagId)?.name;
-
   const parentRef = useRef<HTMLDivElement>(null);
-  const rowHeight = density === "compact" ? 36 : 64;
+  const rowHeight = density === "compact" ? 44 : 124;
   const prevSelectedUidRef = useRef<number | null>(null);
 
   // eslint-disable-next-line react-hooks/incompatible-library -- useVirtualizer is designed for this usage
@@ -307,11 +305,11 @@ export function MessageList() {
   const lastItemIndex = lastItem?.index;
 
   useEffect(() => {
-    if (lastItemIndex == null) return;
-    if (lastItemIndex >= messages.length - 10 && hasNextPage && !isFetchingNextPage) {
+    if (lastItemIndex == null && !(unreadOnly && messages.length === 0)) return;
+    if ((lastItemIndex ?? 0) >= messages.length - 10 && hasNextPage && !isFetchingNextPage) {
       fetchNextPage();
     }
-  }, [lastItemIndex, messages.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [lastItemIndex, messages.length, unreadOnly, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // Anchor UID for shift-click range selection.
   const anchorUidRef = useRef<number | null>(null);
@@ -367,11 +365,8 @@ export function MessageList() {
   }, [allSelected, allUids, clearBulkSelection, selectAllMessages]);
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Header bar */}
-      <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2">
-        <div className="flex items-center gap-2">
-          {/* Select all checkbox */}
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <div className="flex shrink-0 items-center gap-2 px-4 pb-3 text-xs text-muted-foreground">
           {!isLoading && !isError && messages.length > 0 && (
             <button
               type="button"
@@ -399,21 +394,10 @@ export function MessageList() {
               )}
             </button>
           )}
-          <h2 className="text-sm font-semibold">
-            {isTagView ? t("Tag: {name}", { name: activeTagName ?? "..." }) : formatFolderName(activeFolder)}
-          </h2>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground">
-            {isLoading && !data ? "\u2026" : t(totalCount === 1 ? "{count} message" : "{count} messages", { count: totalCount })}
-          </span>
-          {isSyncing && (
-            <span className="animate-pulse text-xs text-primary">{t("syncing…")}</span>
-          )}
-          <ToggleReadingPaneButton />
-        </div>
+        <span className="flex-1">{isLoading && !data ? "…" : t(totalCount === 1 ? "{count} message" : "{count} messages", { count: totalCount })}</span>
+        {isSyncing && <span className="animate-pulse text-primary">{t("syncing…")}</span>}
+        <ToggleReadingPaneButton />
       </div>
-
       {/* Bulk action bar */}
       <BulkActionBar />
 
@@ -442,17 +426,18 @@ export function MessageList() {
       )}
 
       {/* Empty state (only when not a drafts folder or no drafts either) */}
-      {!isLoading && !isError && messages.length === 0 && !showDrafts && (
-        <div className="flex flex-1 items-center justify-center text-muted-foreground">
-          {isTagView ? t("No messages with this tag") : t("No messages in this folder")}
+      {!isLoading && !isError && messages.length === 0 && !showDrafts && !isFetchingNextPage && !(unreadOnly && hasNextPage) && (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center text-sm text-muted-foreground">
+          <Inbox className="size-9 opacity-50" />
+          {unreadOnly ? t("No unread messages") : isTagView ? t("No messages with this tag") : t("No messages in this folder")}
         </div>
       )}
 
       {/* Scrollable content: drafts + virtualized message list */}
-      {!isLoading && !isError && (showDrafts || messages.length > 0) && (
+      {!isLoading && !isError && (showDrafts || messages.length > 0 || (unreadOnly && hasNextPage)) && (
         <div
           ref={parentRef}
-          className="flex-1 overflow-y-auto"
+          className="min-h-0 flex-1 overflow-y-auto px-4 pb-4"
           onMouseMove={keyboardNav ? () => useUiStore.getState().setKeyboardNav(false) : undefined}
         >
           {/* Local drafts at top of the Drafts folder */}

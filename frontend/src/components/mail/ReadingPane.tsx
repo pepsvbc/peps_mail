@@ -148,7 +148,10 @@ export function ReadingPane() {
       className="flex h-full w-full flex-col overflow-hidden"
     >
       {/* Header area */}
-      <div className="shrink-0 space-y-1 overflow-x-hidden border-b border-border p-4">
+      <div className="relative shrink-0 space-y-1 overflow-x-hidden border-b border-border p-4 pl-16">
+        <div aria-hidden="true" className="absolute left-4 top-4 flex size-9 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
+          {(data.from_name || data.from_address).split(/\s+/).map((word) => word[0]).slice(0, 2).join("").toUpperCase()}
+        </div>
         <h2 className="text-lg font-bold leading-tight">{data.subject}</h2>
 
         {headerMode === "summary" ? (

@@ -55,6 +55,10 @@ export interface AnimationModeState {
 
 export interface UiState {
   activeFolder: string;
+  unreadOnly: boolean;
+  folderDrawerOpen: boolean;
+  setUnreadOnly: (value: boolean) => void;
+  setFolderDrawerOpen: (open: boolean) => void;
   selectedMessageUid: number | null;
   sidebarWidth: number;
   messageListWidth: number;
@@ -106,6 +110,10 @@ const initial = loadSettings();
 
 export const useUiStore: UseBoundStore<StoreApi<UiState>> = create<UiState>((set) => ({
   activeFolder: "INBOX",
+  unreadOnly: false,
+  folderDrawerOpen: false,
+  setUnreadOnly: (unreadOnly) => set({ unreadOnly, selectedMessageUid: null, selectedMessageUids: [], bulkSelectMode: false }),
+  setFolderDrawerOpen: (folderDrawerOpen) => set({ folderDrawerOpen }),
   selectedMessageUid: null,
   sidebarWidth: initial.sidebarWidth,
   messageListWidth: initial.messageListWidth,
@@ -128,9 +136,9 @@ export const useUiStore: UseBoundStore<StoreApi<UiState>> = create<UiState>((set
   searchResultCount: null,
 
   setActiveTag: (tagId) =>
-    set({ activeTagId: tagId, selectedMessageUid: null, selectedMessageUids: [], bulkSelectMode: false }),
+    set({ activeTagId: tagId, folderDrawerOpen: false, selectedMessageUid: null, selectedMessageUids: [], bulkSelectMode: false }),
   setActiveFolder: (folder) =>
-    set({ activeFolder: folder, activeTagId: null, selectedMessageUid: null, selectedMessageUids: [], bulkSelectMode: false }),
+    set({ activeFolder: folder, folderDrawerOpen: false, unreadOnly: false, activeTagId: null, selectedMessageUid: null, selectedMessageUids: [], bulkSelectMode: false }),
   selectMessage: (uid) => set({ selectedMessageUid: uid }),
   setSidebarWidth: (width) => {
     saveSettings({ sidebarWidth: width });

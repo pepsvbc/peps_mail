@@ -2,7 +2,7 @@
 
 import { STORAGE_KEYS, writeStoredPreference } from "@/lib/browser-storage";
 
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, useLanguageStore } from "@/lib/i18n";
 
 import { useCallback, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -58,6 +58,7 @@ function NavButton({
           type="button"
           onClick={onClick}
           aria-label={tooltipLabel}
+          aria-current={active ? "page" : undefined}
           className={cn(
             "relative flex size-10 items-center justify-center rounded-lg transition-colors",
             disabled
@@ -102,7 +103,8 @@ function useResolvedTheme() {
 const THEME_STORAGE_KEY = STORAGE_KEYS.theme;
 
 export function NavRail() {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const setLanguage = useLanguageStore((state) => state.setLanguage);
   const { status: wsStatus, failCount: wsFailCount } = useWsStatus();
   const router = useRouter();
   const viewMode = useUiStore((s) => s.viewMode);
@@ -154,7 +156,7 @@ export function NavRail() {
 
   return (
     <Tooltip.Provider delayDuration={400}>
-      <div className="relative flex h-full w-14 flex-col items-center border-r border-border bg-sidebar py-3">
+      <nav aria-label={t("Main navigation")} className="relative flex h-full w-14 shrink-0 flex-col items-center border-r border-border bg-background py-2">
         {/* Logo */}
         <button
           type="button"
@@ -211,6 +213,12 @@ export function NavRail() {
 
         <ConnectionStatus status={wsStatus} failCount={wsFailCount} />
 
+        <NavButton
+          icon={<span className="text-[11px] font-semibold">{language.toUpperCase()}</span>}
+          label={t(language === "en" ? "Switch to French" : "Switch to English")}
+          onClick={() => setLanguage(language === "en" ? "fr" : "en")}
+        />
+
         {/* Bottom actions */}
         <div className="flex flex-col items-center gap-1">
           <NavButton
@@ -236,7 +244,7 @@ export function NavRail() {
           />
         </div>
 
-      </div>
+      </nav>
     </Tooltip.Provider>
   );
 }
