@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { AddAccountModal } from "./AddAccountModal";
 import { createScaleFadeVariants } from "@/lib/motion/variants";
 import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
+import { useAccountUnreadCounts } from "@/hooks/useAccountUnreadCounts";
 
 export function AccountSwitcher() {
   const accounts = useAuthStore((s) => s.accounts);
@@ -21,6 +22,7 @@ export function AccountSwitcher() {
   const removeAccount = useAuthStore((s) => s.removeAccount);
   const setAccounts = useAuthStore((s) => s.setAccounts);
   const queryClient = useQueryClient();
+  const unreadCounts = useAccountUnreadCounts();
   const router = useRouter();
   const [showAddModal, setShowAddModal] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -63,6 +65,21 @@ export function AccountSwitcher() {
   }
 
   const activeAccount = accounts.find((a) => a.id === activeAccountId);
+  const otherAccounts = accounts.filter((account) => account.id !== activeAccountId);
+  const otherCounts = otherAccounts.map((account) => unreadCounts[account.id]);
+  const otherUnreadCount = otherCounts.reduce(
+    (total, unread) => total + (unread?.isError ? 0 : unread?.count ?? 0),
+    0,
+  );
+  const otherCountsUnknown = otherCounts.some((unread) => unread?.count == null || unread.isError);
+  const otherCountsLoading = otherCounts.some((unread) => !unread || unread.isLoading);
+  const otherInboxSummary = `Other ${otherAccounts.length === 1 ? "inbox" : "inboxes"}: ${
+    otherCountsUnknown
+      ? otherUnreadCount > 0
+        ? `${otherUnreadCount}+ unread`
+        : otherCountsLoading ? "checking…" : "unavailable"
+      : `${otherUnreadCount} unread`
+  }`;
 
   const handleSwitchAccount = async (accountId: string) => {
     if (accountId === activeAccountId) {
@@ -76,7 +93,7 @@ export function AccountSwitcher() {
     await new Promise((r) => setTimeout(r, 150));
 
     setActiveAccount(accountId);
-    queryClient.clear();
+    queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== "account-unread" });
 
     await new Promise((r) => setTimeout(r, 100));
     setIsSwitching(false);
@@ -88,6 +105,7 @@ export function AccountSwitcher() {
     try {
       await apiDelete(`/auth/accounts/${accountId}`);
       removeAccount(accountId);
+      queryClient.removeQueries({ queryKey: ["account-unread", accountId], exact: true });
       if (accountId === activeAccountId) {
         queryClient.clear();
       }
@@ -139,6 +157,14 @@ export function AccountSwitcher() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="truncate">{activeAccount?.email}</div>
+            {otherAccounts.length > 0 && (
+              <div
+                className={cn("truncate text-xs", otherUnreadCount > 0 ? "font-medium text-primary" : "text-muted-foreground")}
+                title={otherInboxSummary}
+              >
+                {otherInboxSummary}
+              </div>
+            )}
           </div>
           <ChevronRight
             className={cn(
@@ -169,6 +195,11 @@ export function AccountSwitcher() {
                 {accounts.map((account) => {
                   const isActive = account.id === activeAccountId;
                   const isLoggingOut = loggingOut === account.id;
+                  const unread = unreadCounts[account.id];
+                  const unreadCount = unread?.isError ? undefined : unread?.count;
+                  const unreadLabel = unreadCount != null
+                    ? `${unreadCount} unread messages in Inbox`
+                    : unread?.isError ? "Unread Inbox count unavailable" : "Checking unread Inbox count";
 
                   return (
                     <div
@@ -202,6 +233,18 @@ export function AccountSwitcher() {
                           {account.email}
                         </div>
                       </div>
+                      <span
+                        aria-label={unreadLabel}
+                        title={unreadLabel}
+                        className={cn(
+                          "inline-flex min-w-6 shrink-0 items-center justify-center rounded-full px-2 py-0.5 text-xs font-medium tabular-nums",
+                          unreadCount != null && unreadCount > 0
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {unreadCount ?? (unread?.isError ? "—" : "…")}
+                      </span>
                       <div className="shrink-0 w-8 flex items-center justify-center">
                         {isActive && (
                           <Check className="size-4 text-primary" />

@@ -49,7 +49,7 @@ function AddAccountForm({ onClose }: Pick<AddAccountModalProps, "onClose">) {
       const accountsData = await fetchAccounts();
       setAccounts(accountsData.accounts);
       setActiveAccount(response.account.id);
-      queryClient.clear();
+      queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== "account-unread" });
       onClose();
     } catch (err) {
       setError(

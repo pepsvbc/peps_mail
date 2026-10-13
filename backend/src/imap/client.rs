@@ -33,6 +33,14 @@ pub trait ImapClient: Send + Sync {
     /// List all folders (mailboxes) on the server.
     async fn list_folders(&self, creds: &ImapCredentials) -> Result<Vec<ImapFolder>, ImapError>;
 
+    /// Read unread mail using the standard STATUS UNSEEN item only, without
+    /// requiring optional extensions such as CONDSTORE.
+    async fn folder_unread_count(
+        &self,
+        creds: &ImapCredentials,
+        folder: &str,
+    ) -> Result<u32, ImapError>;
+
     /// Perform a lightweight `SELECT` on a folder to get its status
     /// (UIDVALIDITY, EXISTS count, UIDNEXT) without fetching any messages.
     async fn folder_status(
@@ -195,6 +203,23 @@ pub struct RealImapClient;
 
 #[async_trait]
 impl ImapClient for RealImapClient {
+    async fn folder_unread_count(
+        &self,
+        creds: &ImapCredentials,
+        folder: &str,
+    ) -> Result<u32, ImapError> {
+        let mut session = connect(creds).await?;
+        let status = session
+            .status(folder, "(UNSEEN)")
+            .await
+            .map_err(map_imap_error);
+        let _ = session.logout().await;
+
+        status?.unseen.ok_or_else(|| {
+            ImapError::ProtocolError("IMAP STATUS response is missing UNSEEN".to_string())
+        })
+    }
+
     async fn folder_status(
         &self,
         creds: &ImapCredentials,

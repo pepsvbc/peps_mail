@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
 vi.mock("framer-motion", async () => {
@@ -15,7 +15,7 @@ vi.mock("framer-motion", async () => {
   };
 });
 
-const { mockAuthState, mockUiState } = vi.hoisted(() => ({
+const { mockAuthState, mockUiState, mockUnreadCounts, mockQueryClient } = vi.hoisted(() => ({
   mockAuthState: {
     accounts: [
       { id: "a1", email: "admin@example.com", imapHost: "mail.example.com" },
@@ -29,6 +29,12 @@ const { mockAuthState, mockUiState } = vi.hoisted(() => ({
   mockUiState: {
     effectiveAnimationMode: "medium" as "rich" | "medium" | "subtle" | "off",
   },
+  mockUnreadCounts: {} as Record<string, { count: number | undefined; isLoading: boolean; isError: boolean }>,
+  mockQueryClient: { clear: vi.fn(), removeQueries: vi.fn() },
+}));
+
+vi.mock("@/hooks/useAccountUnreadCounts", () => ({
+  useAccountUnreadCounts: () => mockUnreadCounts,
 }));
 
 vi.mock("@/stores/useAuthStore", () => ({
@@ -40,7 +46,7 @@ vi.mock("@/stores/useUiStore", () => ({
 }));
 
 vi.mock("@tanstack/react-query", () => ({
-  useQueryClient: () => ({ clear: vi.fn() }),
+  useQueryClient: () => mockQueryClient,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -58,6 +64,18 @@ vi.mock("../AddAccountModal", () => ({
 
 import { AccountSwitcher } from "../AccountSwitcher";
 
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockAuthState.activeAccountId = "a1";
+  mockUnreadCounts.a1 = { count: 3, isLoading: false, isError: false };
+  mockUnreadCounts.a2 = { count: 7, isLoading: false, isError: false };
+});
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+
 describe("AccountSwitcher motion transitions", () => {
   it("animates dropdown open path in non-off modes", () => {
     mockUiState.effectiveAnimationMode = "medium";
@@ -74,5 +92,55 @@ describe("AccountSwitcher motion transitions", () => {
     fireEvent.click(screen.getByRole("button", { name: /admin@example.com/i }));
     expect(screen.queryByTestId("account-switcher-dropdown-transition")).toBeNull();
     expect(screen.getByText("Add account")).toBeTruthy();
+  });
+});
+
+describe("account Inbox counts", () => {
+  it("shows the other Inbox count without opening the menu or switching accounts", () => {
+    render(<AccountSwitcher />);
+
+    expect(screen.getByText("Other inbox: 7 unread")).toBeTruthy();
+    expect(mockAuthState.setActiveAccount).not.toHaveBeenCalled();
+  });
+
+  it("shows a separate unread count for each account in the menu", () => {
+    render(<AccountSwitcher />);
+    fireEvent.click(screen.getByRole("button", { name: /admin@example.com/i }));
+
+    const otherAccount = screen.getByRole("button", { name: /ops@example.com/i });
+    expect(within(otherAccount).getByLabelText("7 unread messages in Inbox").textContent).toBe("7");
+    expect(screen.getByLabelText("3 unread messages in Inbox").textContent).toBe("3");
+  });
+
+  it("shows a known empty Inbox as zero", () => {
+    mockUnreadCounts.a2.count = 0;
+    render(<AccountSwitcher />);
+    expect(screen.getByText("Other inbox: 0 unread")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /admin@example.com/i }));
+    expect(screen.getByLabelText("0 unread messages in Inbox").textContent).toBe("0");
+  });
+
+  it.each([false, true])("does not present an unknown Inbox count as zero (error=%s)", (isError) => {
+    mockUnreadCounts.a2 = { count: undefined, isLoading: !isError, isError };
+    render(<AccountSwitcher />);
+    expect(screen.getByText(isError ? "Other inbox: unavailable" : "Other inbox: checking…")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /admin@example.com/i }));
+    expect(screen.queryByLabelText("0 unread messages in Inbox")).toBeNull();
+    expect(screen.getByLabelText(isError ? "Unread Inbox count unavailable" : "Checking unread Inbox count")).toBeTruthy();
+  });
+
+  it("keeps unread caches when switching accounts while removing mailbox caches", async () => {
+    vi.useFakeTimers();
+    render(<AccountSwitcher />);
+    fireEvent.click(screen.getByRole("button", { name: /admin@example.com/i }));
+    fireEvent.click(screen.getByRole("button", { name: /ops@example.com/i }));
+    await act(async () => { vi.advanceTimersByTime(150); });
+
+    expect(mockAuthState.setActiveAccount).toHaveBeenCalledWith("a2");
+    const { predicate } = mockQueryClient.removeQueries.mock.calls[0][0];
+    expect(predicate({ queryKey: ["account-unread", "a1"] })).toBe(false);
+    expect(predicate({ queryKey: ["account-unread", "a2"] })).toBe(false);
+    expect(predicate({ queryKey: ["messages", "INBOX"] })).toBe(true);
+    await act(async () => { vi.advanceTimersByTime(100); });
   });
 });

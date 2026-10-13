@@ -90,6 +90,7 @@ describe("adding another account", () => {
   function renderModal() {
     const client = new QueryClient();
     client.setQueryData(["messages", existingAccount.id], ["cached message"]);
+    client.setQueryData(["account-unread", existingAccount.id], { inbox_unread_count: 5 });
     const onClose = vi.fn();
     const modal = (open: boolean) => (
       <QueryClientProvider client={client}>
@@ -119,7 +120,8 @@ describe("adding another account", () => {
     });
     expect(useAuthStore.getState().accounts).toEqual([existingAccount, newAccount]);
     expect(useAuthStore.getState().activeAccountId).toBe(newAccount.id);
-    expect(client.getQueryCache().getAll()).toEqual([]);
+    expect(client.getQueryData(["messages", existingAccount.id])).toBeUndefined();
+    expect(client.getQueryData(["account-unread", existingAccount.id])).toEqual({ inbox_unread_count: 5 });
   });
 
   it("keeps the existing account and cache after failed authentication", async () => {

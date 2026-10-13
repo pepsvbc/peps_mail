@@ -2,11 +2,38 @@ import { describe, it, expect, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { useMessages, useMoveMessage } from "../useMessages";
-import { apiGet, apiPost } from "@/lib/api";
+import { useDeleteMessage, useMessages, useMoveMessage, useUpdateFlags } from "../useMessages";
+import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/api";
 
 vi.mock("@/lib/api", () => ({ apiGet: vi.fn(), apiPatch: vi.fn(), apiPost: vi.fn(), apiDelete: vi.fn() }));
 vi.mock("@/lib/ws-context", () => ({ useWsStatus: () => ({ status: "connected" }) }));
+
+describe("account unread updates", () => {
+  it.each(["flags", "move", "delete"] as const)("refreshes account counts after a %s mutation", async (operation) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    vi.mocked(apiPatch).mockResolvedValue({ status: "ok" });
+    vi.mocked(apiPost).mockResolvedValue({ status: "ok" });
+    vi.mocked(apiDelete).mockResolvedValue({ status: "ok" });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const { result, unmount } = renderHook(() => ({
+      flags: useUpdateFlags(),
+      move: useMoveMessage(),
+      delete: useDeleteMessage(),
+    }), { wrapper });
+
+    act(() => {
+      if (operation === "flags") result.current.flags.mutate({ folder: "INBOX", uid: 1, flags: ["\\Seen"], add: true });
+      if (operation === "move") result.current.move.mutate({ fromFolder: "INBOX", toFolder: "Archive", uid: 1 });
+      if (operation === "delete") result.current.delete.mutate({ folder: "INBOX", uid: 1 });
+    });
+
+    await waitFor(() => expect(result.current[operation].isSuccess).toBe(true));
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["account-unread"] });
+    unmount();
+    client.clear();
+  });
+});
 
 describe("folder navigation", () => {
   it("never inserts the source UID into Spam during or after a move", async () => {

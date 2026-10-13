@@ -37,16 +37,15 @@ function handleAccountSessionExpired(error: ApiError): void {
   }
 }
 
-async function parseErrorResponse(res: Response): Promise<Error> {
+async function parseErrorResponse(res: Response, handleSessionExpiry = true): Promise<Error> {
   const data: ErrorResponse = await res.json();
   const error = data.error ?? {};
-  handleAccountSessionExpired(error);
+  if (handleSessionExpiry) handleAccountSessionExpired(error);
   return new Error(error.message ?? "An unexpected error occurred");
 }
 
-function getActiveAccountHeader(): Record<string, string> {
-  const activeId = useAuthStore.getState().activeAccountId;
-  return activeId ? { "X-Active-Account": activeId } : {};
+function getActiveAccountHeader(accountId = useAuthStore.getState().activeAccountId): Record<string, string> {
+  return accountId ? { "X-Active-Account": accountId } : {};
 }
 
 export async function fetchAccounts(): Promise<AccountsResponse> {
@@ -89,16 +88,20 @@ export async function apiPost<T>(
   return res.json();
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
+export async function apiGet<T>(
+  path: string,
+  options: { accountId?: string; signal?: AbortSignal; handleSessionExpiry?: boolean } = {},
+): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
-      ...getActiveAccountHeader(),
+      ...getActiveAccountHeader(options.accountId),
     },
     credentials: "same-origin",
+    signal: options.signal,
   });
 
   if (!res.ok) {
-    throw await parseErrorResponse(res);
+    throw await parseErrorResponse(res, options.handleSessionExpiry);
   }
 
   return res.json();

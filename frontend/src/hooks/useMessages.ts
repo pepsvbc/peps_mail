@@ -73,6 +73,7 @@ export function useUpdateFlags() {
       queryClient.invalidateQueries({ queryKey: ["messages", folder] });
       queryClient.invalidateQueries({ queryKey: ["message", folder, uid] });
       queryClient.invalidateQueries({ queryKey: ["folders"] });
+      queryClient.invalidateQueries({ queryKey: ["account-unread"] });
     },
   });
 }
@@ -184,6 +185,7 @@ export function useMoveMessage() {
       queryClient.invalidateQueries({ queryKey: ["messages", fromFolder] });
       queryClient.invalidateQueries({ queryKey: ["messages", toFolder] });
       queryClient.invalidateQueries({ queryKey: ["folders"] });
+      queryClient.invalidateQueries({ queryKey: ["account-unread"] });
       if (queryClient.isMutating({ mutationKey: ["move-message"] }) === 1) {
         queryClient.invalidateQueries({ queryKey: ["search"] });
       }
@@ -239,6 +241,7 @@ export function useDeleteMessage() {
     onSettled: (_, _err, { folder }) => {
       queryClient.invalidateQueries({ queryKey: ["messages", folder] });
       queryClient.invalidateQueries({ queryKey: ["folders"] });
+      queryClient.invalidateQueries({ queryKey: ["account-unread"] });
     },
   });
 }

@@ -12,8 +12,11 @@ pub struct MockImapClient {
     bodies: Mutex<Vec<ImapMessageBody>>,
     folder_status: Mutex<Option<FolderStatus>>,
     folder_status_ext: Mutex<Option<FolderStatusExtended>>,
+    unread_count: Mutex<u32>,
     should_fail: Mutex<Option<ImapError>>,
     pub appended: Mutex<Vec<(String, Vec<u8>)>>,
+    pub folder_status_calls: Mutex<Vec<(ImapCredentials, String)>>,
+    pub unread_count_calls: Mutex<Vec<(ImapCredentials, String)>>,
 }
 
 impl MockImapClient {
@@ -25,8 +28,11 @@ impl MockImapClient {
             bodies: Mutex::new(Vec::new()),
             folder_status: Mutex::new(None),
             folder_status_ext: Mutex::new(None),
+            unread_count: Mutex::new(0),
             should_fail: Mutex::new(None),
             appended: Mutex::new(Vec::new()),
+            folder_status_calls: Mutex::new(Vec::new()),
+            unread_count_calls: Mutex::new(Vec::new()),
         }
     }
 
@@ -53,6 +59,12 @@ impl MockImapClient {
     #[allow(dead_code)]
     pub fn with_folder_status_extended(self, status: FolderStatusExtended) -> Self {
         *self.folder_status_ext.lock().unwrap() = Some(status);
+        self
+    }
+
+    /// Pre-load the unread count returned by the standard STATUS-only method.
+    pub fn with_unread_count(self, unread_count: u32) -> Self {
+        *self.unread_count.lock().unwrap() = unread_count;
         self
     }
 
@@ -86,6 +98,21 @@ fn clone_error(err: &ImapError) -> ImapError {
 
 #[async_trait]
 impl ImapClient for MockImapClient {
+    async fn folder_unread_count(
+        &self,
+        creds: &ImapCredentials,
+        folder: &str,
+    ) -> Result<u32, ImapError> {
+        self.unread_count_calls
+            .lock()
+            .unwrap()
+            .push((creds.clone(), folder.to_string()));
+        if let Some(ref err) = *self.should_fail.lock().unwrap() {
+            return Err(clone_error(err));
+        }
+        Ok(*self.unread_count.lock().unwrap())
+    }
+
     async fn list_folders(
         &self,
         _creds: &ImapCredentials,
@@ -297,9 +324,13 @@ impl ImapClient for MockImapClient {
 
     async fn folder_status_extended(
         &self,
-        _creds: &ImapCredentials,
-        _folder: &str,
+        creds: &ImapCredentials,
+        folder: &str,
     ) -> Result<FolderStatusExtended, ImapError> {
+        self.folder_status_calls
+            .lock()
+            .unwrap()
+            .push((creds.clone(), folder.to_string()));
         {
             let fail = self.should_fail.lock().unwrap();
             if let Some(ref err) = *fail {

@@ -39,20 +39,18 @@ export function useWebSocket(onEvent?: (event: MailEvent) => void) {
   const wsRef = useRef<WebSocket | null>(null);
   const backoffRef = useRef(1000);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const mountedRef = useRef(true);
-  const connectRef = useRef<(() => void) | null>(null);
 
   // Debounce WebSocket-driven cache invalidations (300ms quiet period).
-  const pendingInvalidationsRef = useRef<Set<string>>(new Set());
+  const pendingInvalidationsRef = useRef<Map<string, string[]>>(new Map());
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scheduleInvalidation = useCallback(
-    (key: string) => {
-      pendingInvalidationsRef.current.add(key);
+    (queryKey: string[]) => {
+      pendingInvalidationsRef.current.set(JSON.stringify(queryKey), queryKey);
       if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
       flushTimerRef.current = setTimeout(() => {
-        for (const k of pendingInvalidationsRef.current) {
-          queryClient.invalidateQueries({ queryKey: k === "folders" ? ["folders"] : ["messages", k] });
+        for (const key of pendingInvalidationsRef.current.values()) {
+          queryClient.invalidateQueries({ queryKey: key });
         }
         pendingInvalidationsRef.current.clear();
         flushTimerRef.current = null;
@@ -62,10 +60,11 @@ export function useWebSocket(onEvent?: (event: MailEvent) => void) {
   );
 
   useEffect(() => {
-    mountedRef.current = true;
+    let disposed = false;
+    const pendingInvalidations = pendingInvalidationsRef.current;
 
     const connect = () => {
-      if (!mountedRef.current) return;
+      if (disposed) return;
 
       setStatus("connecting");
 
@@ -75,17 +74,23 @@ export function useWebSocket(onEvent?: (event: MailEvent) => void) {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        if (!mountedRef.current) return;
+        if (disposed || wsRef.current !== ws) return;
         setStatus("connected");
         setFailCount(0);
         backoffRef.current = 1000; // Reset backoff on successful connect
+        queryClient.invalidateQueries({ queryKey: ["account-unread"] });
       };
 
       ws.onmessage = (event) => {
+        if (disposed || wsRef.current !== ws) return;
         try {
           const message: WebSocketMessage = JSON.parse(event.data);
           const mailEvent = message.event;
           const accountId = message.accountId;
+
+          if (mailEvent.type === "NewMessages" || mailEvent.type === "FlagsChanged" || mailEvent.type === "FolderUpdated") {
+            scheduleInvalidation(["account-unread", accountId]);
+          }
 
           const activeAccountId = useAuthStore.getState().activeAccountId;
           if (accountId !== activeAccountId) {
@@ -97,18 +102,18 @@ export function useWebSocket(onEvent?: (event: MailEvent) => void) {
           switch (mailEvent.type) {
             case "NewMessages":
               if (mailEvent.data?.folder) {
-                scheduleInvalidation(mailEvent.data.folder);
+                scheduleInvalidation(["messages", mailEvent.data.folder]);
               }
-              scheduleInvalidation("folders");
+              scheduleInvalidation(["folders"]);
               break;
             case "FlagsChanged":
               if (mailEvent.data?.folder) {
-                scheduleInvalidation(mailEvent.data.folder);
+                scheduleInvalidation(["messages", mailEvent.data.folder]);
               }
-              scheduleInvalidation("folders");
+              scheduleInvalidation(["folders"]);
               break;
             case "FolderUpdated":
-              scheduleInvalidation("folders");
+              scheduleInvalidation(["folders"]);
               break;
           }
         } catch {
@@ -117,7 +122,7 @@ export function useWebSocket(onEvent?: (event: MailEvent) => void) {
       };
 
       ws.onclose = () => {
-        if (!mountedRef.current) return;
+        if (disposed || wsRef.current !== ws) return;
         setStatus("disconnected");
         setFailCount((c) => c + 1);
         wsRef.current = null;
@@ -125,7 +130,7 @@ export function useWebSocket(onEvent?: (event: MailEvent) => void) {
         // Reconnect with exponential backoff
         const delay = backoffRef.current;
         backoffRef.current = Math.min(delay * 2, 30000);
-        reconnectTimerRef.current = setTimeout(() => connectRef.current?.(), delay);
+        reconnectTimerRef.current = setTimeout(connect, delay);
       };
 
       ws.onerror = () => {
@@ -133,17 +138,17 @@ export function useWebSocket(onEvent?: (event: MailEvent) => void) {
       };
     };
 
-    connectRef.current = connect;
     connect();
 
     return () => {
-      mountedRef.current = false;
+      disposed = true;
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current);
       }
       if (flushTimerRef.current) {
         clearTimeout(flushTimerRef.current);
       }
+      pendingInvalidations.clear();
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;

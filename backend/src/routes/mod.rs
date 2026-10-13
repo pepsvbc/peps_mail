@@ -1,3 +1,4 @@
+pub mod account;
 mod attachment_response;
 pub mod attachments;
 pub mod auth;
@@ -72,6 +73,7 @@ impl KeyExtractor for PeerIpKeyExtractorFallback {
 /// - `POST /api/auth/login`                    — login (public, CSRF only)
 /// - `GET  /api/auth/session`                  — get session (auth_guard + CSRF)
 /// - `POST /api/auth/logout`                   — logout (auth_guard + CSRF)
+/// - `GET  /api/account/unread`                — Inbox unread count (auth_guard + CSRF)
 /// - `GET  /api/folders`                       — list folders (auth_guard + CSRF)
 /// - `GET  /api/folders/:folder/messages`      — list messages (auth_guard + CSRF)
 /// - `GET  /api/messages/:folder/:uid`         — get message detail (auth_guard + CSRF)
@@ -131,6 +133,7 @@ pub fn create_router(
 
     // Protected data routes (auth_guard + CSRF).
     let protected_data = Router::new()
+        .route("/account/unread", get(account::get_unread))
         .route(
             "/folders",
             get(folders::list_folders).post(folder_mgmt::create_folder),
