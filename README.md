@@ -79,6 +79,8 @@ Or use our image with this `compose.yaml`:
 services:
   app:
     image: ghcr.io/pepsvbc/peps_mail:latest
+    container_name: peps-mail
+    restart: unless-stopped
     ports:
       - "3001:3001"
     env_file:

@@ -1,5 +1,7 @@
 services:
   app:
+    container_name: peps-mail
+    restart: unless-stopped
     build:
       context: .
       args:
