@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { useUiStore } from "@/stores/useUiStore";
+import { useAuthStore } from "@/stores/useAuthStore";
 
 export interface ReplyParams {
   to: string;
@@ -42,6 +43,8 @@ export interface ComposeAttachment {
 
 interface ComposeState {
   isOpen: boolean;
+  isMinimized: boolean;
+  accountId: string | null;
   to: string;
   cc: string;
   bcc: string;
@@ -58,11 +61,13 @@ interface ComposeState {
   signatureHtml: string;
   signatureEnabled: boolean;
 
-  openCompose: () => void;
+  openCompose: (to?: string) => void;
   openReply: (params: ReplyParams) => void;
   openForward: (params: ForwardParams) => void;
   openDraft: (params: DraftResumeParams) => void;
   closeCompose: () => void;
+  minimizeCompose: () => void;
+  restoreCompose: () => void;
   setField: (field: "to" | "cc" | "bcc" | "subject" | "body", value: string) => void;
   setShowCc: (show: boolean) => void;
   setShowBcc: (show: boolean) => void;
@@ -122,6 +127,8 @@ export function removeSignatureFromBody(body: string): string {
 
 const initialState = {
   isOpen: false,
+  isMinimized: false,
+  accountId: null as string | null,
   to: "",
   cc: "",
   bcc: "",
@@ -142,16 +149,19 @@ const initialState = {
 export const useComposeStore = create<ComposeState>((set) => ({
   ...initialState,
 
-  openCompose: () => set({
+  openCompose: (to = "") => set((state) => state.isOpen ? { isMinimized: false } : {
     ...initialState,
     isOpen: true,
+    accountId: useAuthStore.getState().activeAccountId,
+    to,
     isHtml: useUiStore.getState().composeFormat !== "text",
   }),
 
   openReply: (params) =>
-    set({
+    set((state) => state.isOpen ? { isMinimized: false } : {
       ...initialState,
       isOpen: true,
+      accountId: useAuthStore.getState().activeAccountId,
       to: params.to,
       cc: params.cc,
       subject: params.subject,
@@ -164,18 +174,20 @@ export const useComposeStore = create<ComposeState>((set) => ({
     }),
 
   openForward: (params) =>
-    set({
+    set((state) => state.isOpen ? { isMinimized: false } : {
       ...initialState,
       isOpen: true,
+      accountId: useAuthStore.getState().activeAccountId,
       subject: params.subject,
       body: params.body,
       isHtml: params.isHtml ?? true,
     }),
 
   openDraft: (params) =>
-    set({
+    set((state) => state.isOpen ? { isMinimized: false } : {
       ...initialState,
       isOpen: true,
+      accountId: useAuthStore.getState().activeAccountId,
       draftId: params.id,
       to: params.to,
       cc: params.cc,
@@ -190,7 +202,9 @@ export const useComposeStore = create<ComposeState>((set) => ({
       isHtml: params.isHtml ?? true,
     }),
 
-  closeCompose: () => set({ isOpen: false }),
+  closeCompose: () => set({ isOpen: false, isMinimized: false }),
+  minimizeCompose: () => set((state) => ({ isMinimized: state.isOpen })),
+  restoreCompose: () => set({ isMinimized: false }),
 
   setField: (field, value) => set({ [field]: value }),
 

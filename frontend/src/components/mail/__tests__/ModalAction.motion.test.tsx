@@ -75,6 +75,8 @@ const {
   },
   mockComposeState: {
     isOpen: true,
+    isMinimized: false,
+    accountId: null as string | null,
     to: "to@example.com",
     cc: "",
     bcc: "",
@@ -91,6 +93,8 @@ const {
     signatureHtml: "",
     signatureEnabled: false,
     closeCompose: vi.fn(),
+    minimizeCompose: vi.fn(),
+    restoreCompose: vi.fn(),
     setField: vi.fn(),
     setShowCc: vi.fn(),
     setShowBcc: vi.fn(),
@@ -296,18 +300,17 @@ function setMessage(flags: string[] = ["\\Seen"]) {
 }
 
 describe("Modal and action motion transitions", () => {
-  it("applies ComposeDialog modal transitions and send-state feedback for non-off modes", () => {
+  it("applies ComposeDialog window transitions and send-state feedback for non-off modes", () => {
     mockUiState.effectiveAnimationMode = "medium";
     mockComposeState.isOpen = true;
     mockSendMessage.isPending = true;
 
     const { rerender } = render(<ComposeDialog />);
 
-    expect(screen.getByTestId("compose-dialog-overlay-transition")).toBeTruthy();
+    expect(screen.queryByTestId("compose-dialog-overlay-transition")).toBeNull();
     expect(screen.getByTestId("compose-dialog-content-transition")).toBeTruthy();
     expect(screen.getByTestId("compose-send-feedback-transition")).toBeTruthy();
     const modalSerialized = [
-      screen.getByTestId("compose-dialog-overlay-transition").getAttribute("data-motion-props") ?? "",
       screen.getByTestId("compose-dialog-content-transition").getAttribute("data-motion-props") ?? "",
       screen.getByTestId("compose-send-feedback-transition").getAttribute("data-motion-props") ?? "",
     ].join(" ");

@@ -14,6 +14,9 @@ import {
   Save,
   Maximize2,
   Minimize2,
+  Minus,
+  PanelLeft,
+  PanelRight,
   Upload,
   FileText,
   Code,
@@ -36,6 +39,7 @@ import {
 import { useIdentities } from "@/hooks/useIdentities";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/useUiStore";
+import { useAuthStore } from "@/stores/useAuthStore";
 import { createFadeSlideVariants, createScaleFadeVariants } from "@/lib/motion/variants";
 import {
   countRecipients,
@@ -56,6 +60,8 @@ const RichTextEditor = dynamic(
 export function ComposeDialog() {
   const {
     isOpen,
+    isMinimized,
+    accountId,
     to,
     cc,
     bcc,
@@ -72,6 +78,8 @@ export function ComposeDialog() {
     signatureHtml,
     signatureEnabled,
     closeCompose,
+    minimizeCompose,
+    restoreCompose,
     setField,
     setShowCc,
     setShowBcc,
@@ -94,15 +102,23 @@ export function ComposeDialog() {
   const [draftSaved, setDraftSaved] = useState(false);
   const [showDiscardAlert, setShowDiscardAlert] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [position, setPosition] = useState<"left" | "right">("right");
   const [previewAttId, setPreviewAttId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const dragCounterRef = useRef(0);
   const toInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastSavedHashRef = useRef<string>("");
+  const contentRef = useRef<HTMLDivElement>(null);
+  const restoreButtonRef = useRef<HTMLButtonElement>(null);
+  const activeAccountId = useAuthStore((s) => s.activeAccountId);
+  const accountMismatch = accountId != null && accountId !== activeAccountId;
+  const isCurrentAccount = useCallback(
+    () => accountId == null || accountId === useAuthStore.getState().activeAccountId,
+    [accountId],
+  );
   const effectiveAnimationMode = useUiStore((s) => s.effectiveAnimationMode);
   const shouldAnimate = effectiveAnimationMode !== "off";
-  const overlayMotionProps = useMemo(() => createFadeSlideVariants(effectiveAnimationMode, "y"), [effectiveAnimationMode]);
   const contentMotionProps = useMemo(() => createScaleFadeVariants(effectiveAnimationMode), [effectiveAnimationMode]);
   const sendFeedbackMotionProps = useMemo(() => createFadeSlideVariants(effectiveAnimationMode, "y"), [effectiveAnimationMode]);
   const serializedSendFeedbackMotionProps = useMemo(() => JSON.stringify(sendFeedbackMotionProps), [sendFeedbackMotionProps]);
@@ -121,7 +137,7 @@ export function ComposeDialog() {
   // Auto-select the default identity when dialog opens and no identity is set,
   // and inject signature into body
   useEffect(() => {
-    if (isOpen && fromIdentityId === null && identities && identities.length > 0) {
+    if (isOpen && !accountMismatch && fromIdentityId === null && identities && identities.length > 0) {
       const defaultIdentity = identities.find((i) => i.is_default) ?? identities[0];
       setFromIdentityId(defaultIdentity.id);
       // Inject signature from the default identity
@@ -130,18 +146,22 @@ export function ComposeDialog() {
         setField("body", injectSignature(body, defaultIdentity.signature_html));
       }
     }
-  }, [isOpen, fromIdentityId, identities, setFromIdentityId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen, accountMismatch, fromIdentityId, identities, setFromIdentityId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-focus the To field when dialog opens
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !isMinimized && !accountMismatch) {
       const focusInput = () => toInputRef.current?.focus();
       const rafId = requestAnimationFrame(() => {
         requestAnimationFrame(focusInput);
       });
       return () => cancelAnimationFrame(rafId);
     }
-  }, [isOpen]);
+  }, [isOpen, isMinimized, accountMismatch]);
+
+  useEffect(() => {
+    if (isMinimized) restoreButtonRef.current?.focus();
+  }, [isMinimized]);
 
   // Compute a simple hash of compose fields for dirty tracking
   const computeHash = useCallback(() => {
@@ -151,6 +171,7 @@ export function ComposeDialog() {
   // Save draft function. When force=true, skip the hash guard (used for explicit save/close).
   const saveDraft = useCallback(
     (force = false) => {
+      if (!isCurrentAccount()) return;
       const hash = computeHash();
       // Don't save if nothing changed (unless forced) or compose is empty
       if (!force && hash === lastSavedHashRef.current) return;
@@ -204,6 +225,7 @@ export function ComposeDialog() {
       inReplyTo,
       references,
       saveDraftMutation,
+      isCurrentAccount,
     ]
   );
 
@@ -224,6 +246,11 @@ export function ComposeDialog() {
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const doSend = useCallback(() => {
+    if (!isCurrentAccount()) {
+      toast.error("Switch back to this draft's account before sending.");
+      useComposeStore.setState({ isOpen: true, isMinimized: false });
+      return;
+    }
     let plainText: string;
     let sendHtml: string | null;
     if (isHtml) {
@@ -273,9 +300,11 @@ export function ComposeDialog() {
     fromIdentityId,
     sendMutation,
     reset,
+    isCurrentAccount,
   ]);
 
   const handleSend = useCallback(() => {
+    if (!isCurrentAccount()) return;
     if (!to.trim() && !cc.trim() && !bcc.trim()) return;
     closeCompose();
 
@@ -296,7 +325,7 @@ export function ComposeDialog() {
         },
       },
     });
-  }, [to, cc, bcc, closeCompose, doSend]);
+  }, [to, cc, bcc, closeCompose, doSend, isCurrentAccount]);
 
   const handleDiscard = useCallback(() => {
     if (hasContent()) {
@@ -308,22 +337,27 @@ export function ComposeDialog() {
 
   const confirmDiscard = useCallback(() => {
     setShowDiscardAlert(false);
-    if (draftId) {
+    if (draftId && isCurrentAccount()) {
       deleteDraftMutation.mutate(draftId);
     }
     reset();
-  }, [draftId, deleteDraftMutation, reset]);
+  }, [draftId, deleteDraftMutation, reset, isCurrentAccount]);
 
   // Save draft and close the dialog without discarding.
   const handleSaveAndClose = useCallback(() => {
+    if (!isCurrentAccount()) {
+      toast.error("Switch back to this draft's account before saving or closing it.");
+      return;
+    }
     if (hasContent()) {
       saveDraft(true);
     }
     closeCompose();
-  }, [hasContent, saveDraft, closeCompose]);
+  }, [hasContent, saveDraft, closeCompose, isCurrentAccount]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (isMinimized || accountMismatch) return;
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
         e.preventDefault();
         handleSend();
@@ -333,7 +367,7 @@ export function ComposeDialog() {
         saveDraft(true);
       }
     },
-    [handleSend, saveDraft]
+    [handleSend, saveDraft, isMinimized, accountMismatch]
   );
 
   const handleAttachFiles = useCallback(() => {
@@ -342,6 +376,7 @@ export function ComposeDialog() {
 
   const handleFileSelected = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!isCurrentAccount()) return;
       const files = e.target.files;
       if (!files || files.length === 0) return;
 
@@ -374,11 +409,12 @@ export function ComposeDialog() {
       // Reset the input so the same file can be re-selected
       e.target.value = "";
     },
-    [draftId, setDraftId, uploadMutation, addAttachments]
+    [draftId, setDraftId, uploadMutation, addAttachments, isCurrentAccount]
   );
 
   const handleImageUpload = useCallback(
     async (file: File): Promise<string | null> => {
+      if (!isCurrentAccount()) return null;
       // Ensure we have a draft ID for the upload
       let currentDraftId = draftId;
       if (!currentDraftId) {
@@ -418,12 +454,12 @@ export function ComposeDialog() {
         );
       });
     },
-    [draftId, setDraftId, uploadMutation, addAttachments]
+    [draftId, setDraftId, uploadMutation, addAttachments, isCurrentAccount]
   );
 
   const handleRemoveAttachment = useCallback(
     (attachmentId: string) => {
-      if (!draftId) return;
+      if (!draftId || !isCurrentAccount()) return;
       deleteMutation.mutate(
         { draftId, attachmentId },
         {
@@ -436,22 +472,23 @@ export function ComposeDialog() {
         }
       );
     },
-    [draftId, deleteMutation, removeAttachment]
+    [draftId, deleteMutation, removeAttachment, isCurrentAccount]
   );
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (isMinimized || !isCurrentAccount()) return;
     dragCounterRef.current += 1;
     if (e.dataTransfer.types.includes("Files")) {
       setIsDragging(true);
     }
-  }, []);
+  }, [isMinimized, isCurrentAccount]);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    dragCounterRef.current -= 1;
+    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
     if (dragCounterRef.current === 0) {
       setIsDragging(false);
     }
@@ -468,6 +505,8 @@ export function ComposeDialog() {
       e.stopPropagation();
       setIsDragging(false);
       dragCounterRef.current = 0;
+
+      if (isMinimized || !isCurrentAccount()) return;
 
       const files = Array.from(e.dataTransfer.files);
       if (files.length === 0) return;
@@ -498,7 +537,7 @@ export function ComposeDialog() {
         }
       );
     },
-    [draftId, setDraftId, uploadMutation, addAttachments]
+    [draftId, setDraftId, uploadMutation, addAttachments, isCurrentAccount, isMinimized]
   );
 
   const handleToggleHtml = useCallback(() => {
@@ -524,6 +563,7 @@ export function ComposeDialog() {
     <>
       <Dialog.Root
         open={isOpen}
+        modal={false}
         onOpenChange={(open) => {
           if (!open) {
             handleSaveAndClose();
@@ -534,18 +574,19 @@ export function ComposeDialog() {
           <AnimatePresence>
             {isOpen ? (
               <Fragment key="compose-dialog-open">
-                <Dialog.Overlay forceMount asChild>
+                <Dialog.Content
+                  forceMount
+                  asChild
+                  aria-describedby={undefined}
+                  onInteractOutside={(event) => event.preventDefault()}
+                  onEscapeKeyDown={(event) => {
+                    if (!contentRef.current?.contains(document.activeElement)) {
+                      event.preventDefault();
+                    }
+                  }}
+                >
                   <AnimatedDiv
-                    data-testid="compose-dialog-overlay-transition"
-                    variants={overlayMotionProps}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    className="fixed inset-0 z-40 bg-black/40"
-                  />
-                </Dialog.Overlay>
-                <Dialog.Content forceMount asChild>
-                  <AnimatedDiv
+                    ref={contentRef}
                     data-testid="compose-dialog-content-transition"
                     variants={contentMotionProps}
                     initial="initial"
@@ -553,9 +594,13 @@ export function ComposeDialog() {
                     exit="exit"
                     className={cn(
                       "fixed z-50 flex flex-col rounded-xl border border-border bg-background shadow-2xl",
-                      expanded
+                      expanded && !isMinimized
                         ? "inset-4 sm:left-20"
-                        : "inset-x-4 bottom-4 top-auto mx-auto max-h-[80vh] w-full max-w-2xl sm:inset-x-auto sm:bottom-8 sm:ml-20"
+                        : cn(
+                            "inset-x-4 bottom-4 max-h-[80dvh] sm:bottom-8",
+                            isMinimized ? "sm:w-80" : "sm:w-[min(42rem,calc(100vw-6rem))]",
+                            position === "left" ? "sm:left-20 sm:right-auto" : "sm:left-auto sm:right-4",
+                          )
                     )}
                     onKeyDown={handleKeyDown}
                     onDragEnter={handleDragEnter}
@@ -564,7 +609,7 @@ export function ComposeDialog() {
                     onDrop={handleDrop}
                   >
             {/* Drop overlay */}
-            {isDragging && (
+            {isDragging && !isMinimized && !accountMismatch && (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-xl bg-background/90 backdrop-blur-sm">
                 <Upload className="size-10 text-primary" />
                 <p className="mt-3 text-sm font-medium text-foreground">
@@ -577,26 +622,57 @@ export function ComposeDialog() {
             )}
 
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <Dialog.Title className="text-sm font-semibold">
-                New Message
+            <div className={cn("flex shrink-0 items-center justify-between gap-2 px-4 py-3", !isMinimized && "border-b border-border")}>
+              <Dialog.Title className="min-w-0 flex-1 text-sm font-semibold">
+                {isMinimized ? (
+                  <button
+                    ref={restoreButtonRef}
+                    onClick={restoreCompose}
+                    aria-label="Restore composer"
+                    title="Restore composer"
+                    className="block w-full truncate rounded text-left hover:text-primary"
+                  >
+                    {subject.trim() || "New Message"}
+                  </button>
+                ) : "New Message"}
               </Dialog.Title>
-              <div className="flex items-center gap-1">
+              <div className="flex shrink-0 items-center gap-1">
                 <button
-                  onClick={() => setExpanded((e) => !e)}
+                  onClick={() => {
+                    setPosition((side) => side === "left" ? "right" : "left");
+                    setExpanded(false);
+                  }}
                   className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                  title={expanded ? "Minimize" : "Maximize"}
+                  aria-label={position === "right" ? "Move composer to left" : "Move composer to right"}
+                  title={position === "right" ? "Move composer to left" : "Move composer to right"}
                 >
-                  {expanded ? (
-                    <Minimize2 className="size-4" />
-                  ) : (
-                    <Maximize2 className="size-4" />
-                  )}
+                  {position === "right" ? <PanelLeft className="size-4" /> : <PanelRight className="size-4" />}
                 </button>
+                {!isMinimized && (
+                  <>
+                    <button
+                      onClick={minimizeCompose}
+                      className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      aria-label="Minimize composer"
+                      title="Minimize composer"
+                    >
+                      <Minus className="size-4" />
+                    </button>
+                    <button
+                      onClick={() => setExpanded((e) => !e)}
+                      className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      aria-label={expanded ? "Restore composer size" : "Maximize composer"}
+                      title={expanded ? "Restore composer size" : "Maximize composer"}
+                    >
+                      {expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+                    </button>
+                  </>
+                )}
                 <Dialog.Close asChild>
                   <button
                     className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                    title="Close"
+                    aria-label="Close composer"
+                    title="Save draft and close"
                   >
                     <X className="size-4" />
                   </button>
@@ -604,6 +680,19 @@ export function ComposeDialog() {
               </div>
             </div>
 
+            {accountMismatch && !isMinimized && (
+              <div className="space-y-3 p-4 text-sm text-muted-foreground">
+                <p>Switch back to this draft&apos;s account to continue composing.</p>
+                <button onClick={handleDiscard} className="rounded-md border border-border px-3 py-2 hover:bg-accent">
+                  Discard
+                </button>
+              </div>
+            )}
+
+            <div
+              hidden={isMinimized || accountMismatch}
+              className={cn(!isMinimized && !accountMismatch && "flex min-h-0 flex-1 flex-col overflow-y-auto")}
+            >
             {/* Fields */}
             <div className="flex flex-col border-b border-border">
               {identities && identities.length > 1 && (
@@ -900,6 +989,7 @@ export function ComposeDialog() {
                 </button>
               </div>
             </div>
+            </div>
                   </AnimatedDiv>
                 </Dialog.Content>
               </Fragment>
@@ -915,7 +1005,7 @@ export function ComposeDialog() {
       />
 
       {/* Attachment preview dialog */}
-      {previewAttachment && draftId && (
+      {previewAttachment && draftId && !accountMismatch && !isMinimized && (
         <AttachmentPreviewDialog
           attachment={{
             id: previewAttachment.id,
