@@ -4,11 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useComposeStore } from "@/stores/useComposeStore";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useUiStore } from "@/stores/useUiStore";
+import type { Identity } from "@/types/identity";
 import { ComposeDialog } from "../ComposeDialog";
 
-const { saveDraft, sendMessage } = vi.hoisted(() => ({
+const { saveDraft, sendMessage, identities } = vi.hoisted(() => ({
   saveDraft: { isPending: false, mutate: vi.fn() },
   sendMessage: { isPending: false, mutate: vi.fn() },
+  identities: { data: [] as Identity[] },
 }));
 
 vi.mock("@/hooks/useCompose", () => ({
@@ -20,7 +22,7 @@ vi.mock("@/hooks/useCompose", () => ({
 }));
 
 vi.mock("@/hooks/useIdentities", () => ({
-  useIdentities: () => ({ data: [] }),
+  useIdentities: () => identities,
 }));
 
 vi.mock("@/hooks/useAutocomplete", () => ({
@@ -53,10 +55,11 @@ function openComposer() {
   });
 }
 
-describe("composer minimize and docking", () => {
+describe("composer window controls", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    identities.data = [];
     useUiStore.setState({ effectiveAnimationMode: "off" });
     useAuthStore.setState({
       activeAccountId: "account-a",
@@ -72,6 +75,71 @@ describe("composer minimize and docking", () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("closes an empty new message without creating a draft", () => {
+    useComposeStore.getState().reset();
+    useComposeStore.getState().openCompose();
+    render(<ComposeDialog />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(useComposeStore.getState().isOpen).toBe(false);
+    expect(saveDraft.mutate).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])("saves and closes a new message when randomUUID is available: %s", (hasRandomUUID) => {
+    if (!hasRandomUUID) {
+      vi.stubGlobal("crypto", {
+        getRandomValues: crypto.getRandomValues.bind(crypto),
+      });
+    }
+    useComposeStore.getState().reset();
+    useComposeStore.getState().openCompose();
+    render(<ComposeDialog />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Message body" }), {
+      target: { value: "<p>Training on Tuesday.</p>" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(useComposeStore.getState().isOpen).toBe(false);
+    expect(saveDraft.mutate).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      id: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
+      htmlBody: "<p>Training on Tuesday.</p>",
+    }), expect.any(Object));
+    expect(sendMessage.mutate).not.toHaveBeenCalled();
+  });
+
+  it("saves and closes a signature-only message without randomUUID", () => {
+    vi.stubGlobal("crypto", {
+      getRandomValues: crypto.getRandomValues.bind(crypto),
+    });
+    identities.data = [{
+      id: 1,
+      display_name: "Coach",
+      email: "coach@example.com",
+      signature_html: "<p>Coach</p>",
+      is_default: true,
+      created_at: "2026-10-13T00:00:00Z",
+      updated_at: "2026-10-13T00:00:00Z",
+    }];
+    useComposeStore.getState().reset();
+    useComposeStore.getState().openCompose();
+    render(<ComposeDialog />);
+    const signatureBody = useComposeStore.getState().body;
+    expect(signatureBody).toContain(identities.data[0].signature_html);
+
+    fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(useComposeStore.getState().isOpen).toBe(false);
+    expect(saveDraft.mutate).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      htmlBody: signatureBody,
+    }), expect.any(Object));
   });
 
   it("keeps the editor mounted and all content intact while minimized", () => {
