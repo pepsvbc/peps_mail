@@ -113,15 +113,15 @@ describe("account Inbox counts", () => {
     const { rerender } = render(<AccountSwitcher />);
 
     const trigger = screen.getByRole("button", { name: /admin@example.com/i });
-    expect(within(trigger).getByText("7 unread")).toBeTruthy();
+    expect(within(trigger).getByTitle("Unread messages in other inboxes").textContent).toBe("7 unread");
     expect(screen.queryByText(/Other inbox/)).toBeNull();
     expect(mockAuthState.setActiveAccount).not.toHaveBeenCalled();
 
     mockAuthState.activeAccountId = "a2";
     rerender(<AccountSwitcher />);
-    expect(within(screen.getByRole("button", { name: /ops@example.com/i })).getByText("3 unread")).toBeTruthy();
+    expect(within(screen.getByRole("button", { name: /ops@example.com/i })).getByTitle("Unread messages in other inboxes").textContent).toBe("3 unread");
     act(() => useLanguageStore.getState().setLanguage("fr"));
-    expect(screen.getByText("3 non lus")).toBeTruthy();
+    expect(screen.getByTitle("Messages non lus dans les autres boîtes de réception").textContent).toBe("3 non lus");
   });
 
   it("shows a separate unread count for each account in the menu", () => {
@@ -136,7 +136,7 @@ describe("account Inbox counts", () => {
   it("shows a known empty Inbox as zero", () => {
     mockUnreadCounts.a2.count = 0;
     render(<AccountSwitcher />);
-    expect(screen.getByText("0 unread")).toBeTruthy();
+    expect(screen.getByTitle("Unread messages in other inboxes").textContent).toBe("0 unread");
     fireEvent.click(screen.getByRole("button", { name: /admin@example.com/i }));
     expect(screen.getByLabelText("0 unread messages in Inbox").textContent).toBe("0");
   });

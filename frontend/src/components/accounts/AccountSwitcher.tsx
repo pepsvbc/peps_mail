@@ -76,11 +76,12 @@ export function AccountSwitcher() {
   );
   const otherCountsUnknown = otherCounts.some((unread) => unread?.count == null || unread.isError);
   const otherCountsLoading = otherCounts.some((unread) => !unread || unread.isLoading);
-  const otherUnreadSummary = otherCountsUnknown && otherUnreadCount === 0
+  const otherUnreadNumber = otherCountsUnknown && otherUnreadCount === 0
     ? otherCountsLoading ? "…" : "—"
-    : t(otherUnreadCount === 1 && !otherCountsUnknown ? "{count} unread message" : "{count} unread", {
-      count: `${otherUnreadCount}${otherCountsUnknown ? "+" : ""}`,
-    });
+    : `${otherUnreadCount}${otherCountsUnknown ? "+" : ""}`;
+  const [beforeCount, afterCount] = otherCountsUnknown && otherUnreadCount === 0
+    ? ["", ""]
+    : t(otherUnreadCount === 1 && !otherCountsUnknown ? "{count} unread message" : "{count} unread").split("{count}");
 
   const handleSwitchAccount = async (accountId: string) => {
     if (accountId === activeAccountId) {
@@ -160,10 +161,19 @@ export function AccountSwitcher() {
             <div className="truncate">{activeAccount?.email}</div>
             {otherAccounts.length > 0 && (
               <div
-                className={cn("truncate text-xs", otherUnreadCount > 0 ? "font-medium text-primary" : "text-muted-foreground")}
+                className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"
                 title={t("Unread messages in other inboxes")}
               >
-                {otherUnreadSummary}
+                {beforeCount}
+                <span
+                  className={cn(
+                    "inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums",
+                    otherUnreadCount > 0 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+                  )}
+                >
+                  {otherUnreadNumber}
+                </span>
+                {afterCount}
               </div>
             )}
           </div>
