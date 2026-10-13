@@ -42,7 +42,7 @@ mod tests {
             smtp_host: None,
             smtp_port: 587,
             tls_enabled: true,
-            data_dir: "/tmp/oxi-test".to_string(),
+            data_dir: "/tmp/peps-mail-test".to_string(),
             session_timeout_hours: 24,
             static_dir: "nonexistent_static_dir".to_string(),
             environment: "development".to_string(),
@@ -52,7 +52,7 @@ mod tests {
         let imap_client: Arc<dyn ImapClient> = Arc::new(MockImapClient::new());
         let smtp_client: Arc<dyn SmtpClient> = Arc::new(MockSmtpClient::new());
         let search_engine = Arc::new(crate::search::engine::SearchEngine::new(
-            std::path::PathBuf::from("/tmp/oxi-test"),
+            std::path::PathBuf::from("/tmp/peps-mail-test"),
         ));
         let event_bus = Arc::new(crate::realtime::events::EventBus::new());
         let idle_manager = Arc::new(crate::realtime::idle::IdleManager::new());

@@ -6,7 +6,7 @@
 
 **The email client for PEPS VBC volleyball club.**
 
-A fork of [oxi](https://github.com/c0h1b4/oxi), built with React + Rust.\
+Built with React + Rust.\
 Connects to an existing IMAP/SMTP mail server.
 
 [![CI](https://github.com/pepsvbc/peps_mail/actions/workflows/ci.yml/badge.svg)](https://github.com/pepsvbc/peps_mail/actions/workflows/ci.yml)
@@ -17,7 +17,7 @@ Connects to an existing IMAP/SMTP mail server.
 
 ---
 
-## This fork
+## PEPS VBC customizations
 
 - Updates the theme, logo, app title, and icons to match PEPS VBC branding.
 - Restricts login to the configured mail servers and strengthens account and session checks.
@@ -63,7 +63,7 @@ Branding can be customized in these files:
 
 ### Docker (recommended)
 
-Build this fork using the included [`docker-compose.yml`](docker-compose.yml). From the repository root:
+Build the app using the included [`docker-compose.yml`](docker-compose.yml). From the repository root:
 
 ```bash
 # Create your local configuration if it does not already exist.
@@ -101,7 +101,7 @@ Then open [http://localhost:3001](http://localhost:3001) and log in with your em
 
 The image example above stores data in `./peps-mail-data`. The included Compose file uses the named volume `<project>_peps-mail-data`; development uses `peps-mail-dev_peps-mail-data`. When upgrading from `oxi-data`, stop the app and copy the contents of `<project>_oxi-data` into `<project>_peps-mail-data` before starting it again. Keep the old volume until you have verified the migration.
 
-Our image and local builds include the PEPS VBC theme; the upstream oxi image contains the original branding.
+Our image and local builds include the PEPS VBC theme.
 
 ### Local Development
 
@@ -116,7 +116,7 @@ set -a
 set +a
 
 # Run (serves frontend + API on port 3001)
-STATIC_DIR=frontend/out DATA_DIR=./data ./backend/target/release/oxi-email-server
+STATIC_DIR=frontend/out DATA_DIR=./data ./backend/target/release/peps-mail-server
 ```
 
 ## Configuration
@@ -148,7 +148,7 @@ The following table lists backend defaults:
 | `SESSION_TIMEOUT_HOURS` | `24` | Session expiry in hours |
 | `STATIC_DIR` | `./static` | Frontend static files directory |
 | `ENVIRONMENT` | `development` | Runtime environment |
-| `BASE_PATH` | — | Base path prefix for reverse proxy (e.g. `/oxi`) |
+| `BASE_PATH` | — | Base path prefix for reverse proxy (e.g. `/mail`) |
 | `RUST_LOG` | `info` | Log level filter |
 
 ## Architecture

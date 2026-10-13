@@ -30,7 +30,7 @@
             smtp_host: None,
             smtp_port: 587,
             tls_enabled: true,
-            data_dir: "/tmp/oxi-test".to_string(),
+            data_dir: "/tmp/peps-mail-test".to_string(),
             session_timeout_hours: 24,
             static_dir: static_dir.to_string(),
             environment: "development".to_string(),
@@ -162,7 +162,7 @@
         let dir = setup_static_dir();
         let config = test_config(dir.path().to_str().unwrap());
         let store = test_store();
-        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/oxi-test"), test_event_bus(), test_idle_manager());
+        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
 
         let response = app
             .oneshot(
@@ -191,7 +191,7 @@
         let dir = setup_static_dir();
         let config = test_config(dir.path().to_str().unwrap());
         let store = test_store();
-        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/oxi-test"), test_event_bus(), test_idle_manager());
+        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
 
         let response = app
             .oneshot(
@@ -220,7 +220,7 @@
         let dir = setup_static_dir();
         let config = test_config(dir.path().to_str().unwrap());
         let store = test_store();
-        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/oxi-test"), test_event_bus(), test_idle_manager());
+        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
 
         let response = app
             .oneshot(
@@ -250,7 +250,7 @@
         fs::write(dir.path().join("style.css"), "body { color: red; }").unwrap();
         let config = test_config(dir.path().to_str().unwrap());
         let store = test_store();
-        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/oxi-test"), test_event_bus(), test_idle_manager());
+        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
 
         let response = app
             .oneshot(
@@ -279,7 +279,7 @@
         let dir = setup_static_dir();
         let config = test_config(dir.path().to_str().unwrap());
         let store = test_store();
-        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/oxi-test"), test_event_bus(), test_idle_manager());
+        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
 
         let response = app
             .oneshot(
@@ -308,7 +308,7 @@
         let dir = setup_static_dir();
         let config = test_config(dir.path().to_str().unwrap());
         let store = test_store();
-        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/oxi-test"), test_event_bus(), test_idle_manager());
+        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
 
         let response = app
             .oneshot(
@@ -332,7 +332,7 @@
         let dir = setup_static_dir();
         let config = test_config(dir.path().to_str().unwrap());
         let store = test_store();
-        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/oxi-test"), test_event_bus(), test_idle_manager());
+        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
 
         let response = app
             .oneshot(
@@ -369,7 +369,7 @@
         cfg.imap_host = Some("127.0.0.1".to_string());
         let config = Arc::new(cfg);
         let store = test_store();
-        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/oxi-test"), test_event_bus(), test_idle_manager());
+        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
 
         let response = app
             .oneshot(
@@ -403,7 +403,7 @@
         cfg.imap_host = Some("127.0.0.1".to_string());
         let config = Arc::new(cfg);
         let store = test_store();
-        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/oxi-test"), test_event_bus(), test_idle_manager());
+        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
 
         let response = app
             .oneshot(
@@ -433,7 +433,7 @@
         cfg.tls_enabled = false;
         let config = Arc::new(cfg);
         let store = test_store();
-        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/oxi-test"), test_event_bus(), test_idle_manager());
+        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
 
         let response = app
             .oneshot(
@@ -468,7 +468,7 @@
         let dir = setup_static_dir();
         let config = test_config(dir.path().to_str().unwrap());
         let store = test_store();
-        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/oxi-test"), test_event_bus(), test_idle_manager());
+        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
 
         let response = app
             .oneshot(
@@ -489,7 +489,7 @@
         let config = test_config(dir.path().to_str().unwrap());
         let store = test_store();
         let (browser_id, account_id, token) = setup_test_account(&store, "alice@example.com");
-        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/oxi-test"), test_event_bus(), test_idle_manager());
+        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
 
         let mut req = Request::builder()
             .uri("/api/auth/session");
@@ -518,7 +518,7 @@
         let dir = setup_static_dir();
         let config = test_config(dir.path().to_str().unwrap());
         let store = test_store();
-        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/oxi-test"), test_event_bus(), test_idle_manager());
+        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
 
         let response = app
             .oneshot(
@@ -541,7 +541,7 @@
         let config = test_config(dir.path().to_str().unwrap());
         let store = test_store();
         let (browser_id, account_id, token) = setup_test_account(&store, "alice@example.com");
-        let app = create_router(config, store.clone(), test_imap_client(), test_smtp_client(), test_search_engine("/tmp/oxi-test"), test_event_bus(), test_idle_manager());
+        let app = create_router(config, store.clone(), test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
 
         let mut req = Request::builder()
             .method("POST")
@@ -576,7 +576,7 @@
         let config = test_config(dir.path().to_str().unwrap());
         let store = test_store();
         let (browser_id, account_id, token) = setup_test_account(&store, "alice@example.com");
-        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/oxi-test"), test_event_bus(), test_idle_manager());
+        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
 
         let mut req = Request::builder()
             .method("POST")
@@ -694,7 +694,7 @@
             data_dir.path().to_str().unwrap(),
         );
         let store = test_store();
-        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/oxi-test"), test_event_bus(), test_idle_manager());
+        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
 
         let response = app
             .oneshot(

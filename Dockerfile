@@ -1,5 +1,5 @@
 # =============================================================================
-# oxi.email — Multi-stage Docker build
+# PEPS VBC Mail — Multi-stage Docker build
 # =============================================================================
 # Stage 1: Frontend static export (Next.js via bun)
 # Stage 2: Backend release build (Rust/Axum)
@@ -64,7 +64,7 @@ RUN apt-get update \
 WORKDIR /app
 
 # Copy the release binary and frontend static files
-COPY --from=backend-build /app/backend/target/release/oxi-email-server .
+COPY --from=backend-build /app/backend/target/release/peps-mail-server .
 COPY --from=frontend-build /app/frontend/out ./static
 
 # Configure defaults (overridable at runtime)
@@ -79,4 +79,4 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
     CMD curl -f http://localhost:3001${BASE_PATH}/api/health || exit 1
 
-CMD ["./oxi-email-server"]
+CMD ["./peps-mail-server"]

@@ -82,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         host = %config.host,
         port = %config.port,
         static_dir = %config.static_dir,
-        "oxi-email server starting"
+        "PEPS Mail server starting"
     );
 
     axum::serve(

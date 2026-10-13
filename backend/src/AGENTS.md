@@ -1,7 +1,7 @@
 # BACKEND KNOWLEDGE BASE
 
 ## OVERVIEW
-Rust Axum backend for oxi-email. It manages IMAP/SMTP connections, SQLite caching, and Tantivy search.
+Rust Axum backend for PEPS VBC Mail. It manages IMAP/SMTP connections, SQLite caching, and Tantivy search.
 
 ## STRUCTURE
 ```

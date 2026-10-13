@@ -1646,42 +1646,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oxi-email-server"
-version = "0.1.0"
-dependencies = [
- "async-imap",
- "async-native-tls",
- "async-trait",
- "axum",
- "axum-extra",
- "base64",
- "dashmap",
- "figment",
- "futures",
- "governor",
- "http-body-util",
- "ical",
- "lettre",
- "mail-parser",
- "rand 0.9.2",
- "refinery",
- "regex",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "tantivy",
- "tempfile",
- "tokio",
- "tower",
- "tower-http",
- "tower_governor",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1731,6 +1695,42 @@ dependencies = [
  "proc-macro2-diagnostics",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "peps-mail-server"
+version = "0.1.0"
+dependencies = [
+ "async-imap",
+ "async-native-tls",
+ "async-trait",
+ "axum",
+ "axum-extra",
+ "base64",
+ "dashmap",
+ "figment",
+ "futures",
+ "governor",
+ "http-body-util",
+ "ical",
+ "lettre",
+ "mail-parser",
+ "rand 0.9.2",
+ "refinery",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tantivy",
+ "tempfile",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tower_governor",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
