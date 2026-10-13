@@ -12,6 +12,7 @@ import {
   Sun,
   Keyboard,
   LogOut,
+  Volleyball,
 } from "lucide-react";
 import { Tooltip } from "radix-ui";
 import { apiPost } from "@/lib/api";
@@ -88,6 +89,8 @@ export function NavRail() {
   const router = useRouter();
   const viewMode = useUiStore((s) => s.viewMode);
   const setViewMode = useUiStore((s) => s.setViewMode);
+  const setActiveFolder = useUiStore((s) => s.setActiveFolder);
+  const clearSearch = useUiStore((s) => s.clearSearch);
   const setTheme = useUiStore((s) => s.setTheme);
   const effectiveAnimationMode = useUiStore((s) => s.effectiveAnimationMode);
   const updatePrefs = useUpdateDisplayPreferences();
@@ -119,14 +122,21 @@ export function NavRail() {
     <Tooltip.Provider delayDuration={400}>
       <div className="relative flex h-full w-14 flex-col items-center border-r border-border bg-sidebar py-3">
         {/* Logo */}
-        <div
-          className="mb-4 flex size-10 items-center justify-center"
-          role="img"
-          aria-label={brand.appName}
-          title={brand.appName}
+        <button
+          type="button"
+          className="mb-4 flex size-10 cursor-pointer items-center justify-center rounded-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label="Go to inbox"
+          title={`${brand.appName} — Inbox`}
+          onClick={() => {
+            clearSearch();
+            setActiveFolder("INBOX");
+            setViewMode("mail");
+          }}
         >
-          <span aria-hidden="true" className="flex size-8 items-center justify-center rounded-lg bg-primary text-lg font-bold text-primary-foreground">P</span>
-        </div>
+          <span aria-hidden="true" className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Volleyball className="size-6" />
+          </span>
+        </button>
 
         {/* Top actions */}
         <div className="flex flex-col items-center gap-1">
