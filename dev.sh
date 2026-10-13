@@ -23,7 +23,7 @@ exec docker compose \
   -f "$project_dir/docker-compose.yml" \
   -f - \
   run --rm --build -T --interactive=false \
-  -p "127.0.0.1:${dev_port}:3001" \
+  -p "0.0.0.0:${dev_port}:3001" \
   app <<'COMPOSE'
 services:
   app:
