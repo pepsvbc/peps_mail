@@ -19,6 +19,7 @@ interface SendParams {
 interface SendResponse {
   status: string;
   message_id: string;
+  sent_copy_saved?: boolean;
 }
 
 interface UploadResponse {

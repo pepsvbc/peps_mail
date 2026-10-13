@@ -6,6 +6,7 @@ import { useAuthStore } from "@/stores/useAuthStore";
 import { useUiStore } from "@/stores/useUiStore";
 import type { Identity } from "@/types/identity";
 import { ComposeDialog } from "../ComposeDialog";
+import { toast } from "sonner";
 
 const { saveDraft, sendMessage, identities } = vi.hoisted(() => ({
   saveDraft: { isPending: false, mutate: vi.fn() },
@@ -74,6 +75,7 @@ describe("composer window controls", () => {
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
@@ -275,6 +277,32 @@ describe("composer window controls", () => {
     act(() => { vi.advanceTimersByTime(30000); });
     expect(saveDraft.mutate).toHaveBeenCalledOnce();
     expect(screen.getByRole("textbox", { name: "Message body" })).toHaveValue("<p>Private account A draft.</p>");
+  });
+
+  it.each([true, false])("reports Sent-copy status separately from delivery (saved=%s)", (saved) => {
+    const warning = vi.spyOn(toast, "warning").mockReturnValue("warning");
+    const success = vi.spyOn(toast, "success").mockReturnValue("success");
+    render(<ComposeDialog />);
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    act(() => { vi.advanceTimersByTime(5000); });
+    expect(sendMessage.mutate).toHaveBeenCalledOnce();
+    act(() => {
+      sendMessage.mutate.mock.calls[0][1].onSuccess({
+        status: "sent", message_id: "<sent@example.com>", sent_copy_saved: saved,
+      });
+    });
+    if (saved) {
+      expect(success).toHaveBeenCalledWith("Message sent");
+      expect(warning).not.toHaveBeenCalled();
+    } else {
+      expect(warning).toHaveBeenCalledWith(
+        "Message sent, but a copy could not be saved to Sent. Do not resend.",
+        expect.objectContaining({ duration: 10000 }),
+      );
+      expect(success).not.toHaveBeenCalled();
+    }
+    expect(useComposeStore.getState()).toMatchObject({ isOpen: false, subject: "", body: "" });
+    expect(sendMessage.mutate).toHaveBeenCalledOnce();
   });
 
   it("does not send through another account when it changes during the undo window", () => {

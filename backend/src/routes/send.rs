@@ -10,7 +10,7 @@ use crate::auth::session::SessionState;
 use crate::config::AppConfig;
 use crate::db;
 use crate::error::AppError;
-use crate::imap::client::{ImapClient, ImapCredentials};
+use crate::imap::client::{ImapClient, ImapCredentials, ImapFolder};
 use crate::smtp::client::{AttachmentData, SendableMessage, SmtpClient, SmtpCredentials};
 
 #[derive(Debug, Deserialize)]
@@ -38,12 +38,13 @@ pub struct SendRequest {
 pub struct SendResponse {
     pub status: String,
     pub message_id: String,
+    pub sent_copy_saved: bool,
 }
 
 /// Handler for `POST /api/messages/send`.
 ///
 /// Validates the request, sends the message via SMTP, and appends a copy
-/// to the IMAP "Sent" folder (best-effort).
+/// to the server's Sent folder, reporting copy failures separately from delivery.
 pub async fn send_message_handler(
     Extension(session): Extension<SessionState>,
     Extension(config): Extension<Arc<AppConfig>>,
@@ -64,8 +65,14 @@ pub async fn send_message_handler(
 
     // Validate: subject or body must be non-empty.
     let has_subject = !req.subject.trim().is_empty();
-    let has_text = req.text_body.as_deref().is_some_and(|t| !t.trim().is_empty());
-    let has_html = req.html_body.as_deref().is_some_and(|h| !h.trim().is_empty());
+    let has_text = req
+        .text_body
+        .as_deref()
+        .is_some_and(|t| !t.trim().is_empty());
+    let has_html = req
+        .html_body
+        .as_deref()
+        .is_some_and(|h| !h.trim().is_empty());
     if !has_subject && !has_text && !has_html {
         return Err(AppError::BadRequest(
             "Subject or body is required".to_string(),
@@ -130,26 +137,28 @@ pub async fn send_message_handler(
         .await
         .map_err(|e| AppError::ServiceUnavailable(format!("Failed to send email: {e}")))?;
 
-    // Best-effort: append a copy to the "Sent" folder via IMAP.
-    // Don't fail the send if this fails.
-    if let Some(imap_host) = config.imap_host.as_deref() {
-        let imap_creds = ImapCredentials {
-            host: imap_host.to_string(),
-            port: config.imap_port,
-            tls: config.tls_enabled,
-            email: session.email.clone(),
-            password: session.password.clone(),
-        };
-
-        // Build RFC822 bytes for IMAP APPEND using lettre's Message builder.
-        if let Ok(rfc822_bytes) = build_rfc822_bytes(&message, &message_id)
-            && let Err(e) = imap_client
-                .append_message(&imap_creds, "Sent", &rfc822_bytes, &["\\Seen"])
-                .await
-        {
-            tracing::warn!(error = %e, "Failed to append sent message to IMAP Sent folder");
+    // SMTP has already accepted the message. Never report a send failure or
+    // retry SMTP if saving the Sent copy fails: that could cause duplicate mail.
+    let sent_copy_saved = match save_sent_copy(
+        imap_client.as_ref(),
+        &session,
+        &config,
+        &message,
+        &message_id,
+    )
+    .await
+    {
+        Ok(folder) => {
+            if let Err(error) = invalidate_sent_cache(&config, &session, &folder) {
+                tracing::warn!(%error, "Sent copy saved, but cache invalidation failed");
+            }
+            true
         }
-    }
+        Err(error) => {
+            tracing::warn!(%error, "Message sent, but failed to save IMAP Sent copy");
+            false
+        }
+    };
 
     // Clean up draft and attachment files after successful send.
     if let Some(ref draft_id) = req.draft_id {
@@ -159,8 +168,105 @@ pub async fn send_message_handler(
     Ok(Json(SendResponse {
         status: "sent".to_string(),
         message_id,
+        sent_copy_saved,
     })
     .into_response())
+}
+
+/// Prefer the server's special-use folder; legacy servers may only expose names.
+fn find_sent_folder(folders: &[ImapFolder]) -> Option<&ImapFolder> {
+    let selectable = |folder: &&ImapFolder| {
+        !folder
+            .attributes
+            .iter()
+            .any(|flag| flag.eq_ignore_ascii_case("\\Noselect"))
+    };
+    folders
+        .iter()
+        .filter(selectable)
+        .find(|folder| {
+            folder
+                .attributes
+                .iter()
+                .any(|flag| flag.eq_ignore_ascii_case("\\Sent"))
+        })
+        .or_else(|| {
+            folders
+                .iter()
+                .filter(selectable)
+                .find(|folder| folder.name.eq_ignore_ascii_case("Sent"))
+        })
+        .or_else(|| {
+            folders.iter().filter(selectable).find(|folder| {
+                let name = folder
+                    .delimiter
+                    .as_deref()
+                    .filter(|delimiter| !delimiter.is_empty())
+                    .and_then(|delimiter| folder.name.rsplit(delimiter).next())
+                    .unwrap_or(&folder.name);
+                matches!(
+                    name.to_ascii_lowercase().as_str(),
+                    "sent" | "sent mail" | "sent items" | "sent messages"
+                )
+            })
+        })
+}
+
+async fn save_sent_copy(
+    imap_client: &dyn ImapClient,
+    session: &SessionState,
+    config: &AppConfig,
+    message: &SendableMessage,
+    message_id: &str,
+) -> Result<ImapFolder, String> {
+    let creds = ImapCredentials {
+        host: config
+            .imap_host
+            .clone()
+            .ok_or("IMAP server not configured")?,
+        port: config.imap_port,
+        tls: config.tls_enabled,
+        email: session.email.clone(),
+        password: session.password.clone(),
+    };
+    let bytes = build_rfc822_bytes(message, message_id)?;
+    let folders = imap_client
+        .list_folders(&creds)
+        .await
+        .map_err(|error| error.to_string())?;
+    let folder = if let Some(folder) = find_sent_folder(&folders) {
+        folder.clone()
+    } else {
+        imap_client
+            .create_folder(&creds, "Sent")
+            .await
+            .map_err(|error| error.to_string())?;
+        ImapFolder {
+            name: "Sent".to_string(),
+            delimiter: None,
+            attributes: vec![],
+        }
+    };
+    imap_client
+        .append_message(&creds, &folder.name, &bytes, &["\\Seen"])
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(folder)
+}
+
+fn invalidate_sent_cache(
+    config: &AppConfig,
+    session: &SessionState,
+    folder: &ImapFolder,
+) -> Result<(), String> {
+    let conn = db::pool::open_user_db(&config.data_dir, &session.user_hash)?;
+    db::folders::insert_folder_if_new(
+        &conn,
+        &folder.name,
+        folder.delimiter.as_deref(),
+        &folder.attributes.join(","),
+    )?;
+    db::folders::invalidate_folder_freshness(&conn, &folder.name)
 }
 
 /// Load attachment data from disk for a given draft.
@@ -172,8 +278,8 @@ fn load_draft_attachments(
     let conn = db::pool::open_user_db(data_dir, user_hash)
         .map_err(|e| AppError::InternalError(format!("Failed to open database: {e}")))?;
 
-    let db_attachments = db::drafts::get_draft_attachments(&conn, draft_id)
-        .map_err(AppError::InternalError)?;
+    let db_attachments =
+        db::drafts::get_draft_attachments(&conn, draft_id).map_err(AppError::InternalError)?;
 
     let mut attachments = Vec::new();
     for att in db_attachments {
@@ -216,7 +322,7 @@ async fn cleanup_draft(data_dir: &str, user_hash: &str, draft_id: &str) {
 
 /// Build RFC822 bytes from a SendableMessage for IMAP APPEND.
 fn build_rfc822_bytes(message: &SendableMessage, message_id: &str) -> Result<Vec<u8>, String> {
-    use lettre::message::{header::ContentType, Attachment, Mailbox, MultiPart, SinglePart};
+    use lettre::message::{Attachment, Mailbox, MultiPart, SinglePart, header::ContentType};
 
     let from_mailbox: Mailbox = message
         .from
@@ -229,12 +335,24 @@ fn build_rfc822_bytes(message: &SendableMessage, message_id: &str) -> Result<Vec
         .message_id(Some(message_id.to_string()));
 
     for addr in &message.to {
-        let mailbox: Mailbox = addr.parse().map_err(|e: lettre::address::AddressError| e.to_string())?;
+        let mailbox: Mailbox = addr
+            .parse()
+            .map_err(|e: lettre::address::AddressError| e.to_string())?;
         builder = builder.to(mailbox);
     }
     for addr in &message.cc {
-        let mailbox: Mailbox = addr.parse().map_err(|e: lettre::address::AddressError| e.to_string())?;
+        let mailbox: Mailbox = addr
+            .parse()
+            .map_err(|e: lettre::address::AddressError| e.to_string())?;
         builder = builder.cc(mailbox);
+    }
+    // The builder needs envelope recipients even for Bcc-only messages.
+    // Lettre removes the Bcc header when serializing, as it does for SMTP.
+    for addr in &message.bcc {
+        let mailbox: Mailbox = addr
+            .parse()
+            .map_err(|e: lettre::address::AddressError| e.to_string())?;
+        builder = builder.bcc(mailbox);
     }
     if let Some(ref irt) = message.in_reply_to {
         builder = builder.in_reply_to(irt.clone());
@@ -245,12 +363,11 @@ fn build_rfc822_bytes(message: &SendableMessage, message_id: &str) -> Result<Vec
 
     // Separate inline images from regular file attachments.
     let html_body = message.html_body.as_deref().unwrap_or("");
-    let (inline_atts, file_atts): (Vec<_>, Vec<_>) =
-        message.attachments.iter().partition(|att| {
-            att.content_id
-                .as_ref()
-                .is_some_and(|cid| html_body.contains(&format!("cid:{cid}")))
-        });
+    let (inline_atts, file_atts): (Vec<_>, Vec<_>) = message.attachments.iter().partition(|att| {
+        att.content_id
+            .as_ref()
+            .is_some_and(|cid| html_body.contains(&format!("cid:{cid}")))
+    });
 
     let body_part = if let Some(ref html) = message.html_body {
         if inline_atts.is_empty() {
@@ -272,10 +389,7 @@ fn build_rfc822_bytes(message: &SendableMessage, message_id: &str) -> Result<Vec
                     .body(html.clone()),
             );
             for att in &inline_atts {
-                let ct: ContentType = att
-                    .content_type
-                    .parse()
-                    .unwrap_or(ContentType::TEXT_PLAIN);
+                let ct: ContentType = att.content_type.parse().unwrap_or(ContentType::TEXT_PLAIN);
                 let cid = att.content_id.as_deref().unwrap_or("unknown");
                 let inline_part =
                     Attachment::new_inline(cid.to_string()).body(att.data.clone(), ct);
@@ -300,23 +414,42 @@ fn build_rfc822_bytes(message: &SendableMessage, message_id: &str) -> Result<Vec
 
     // Wrap in mixed multipart if there are file attachments.
     let email = if file_atts.is_empty() {
-        builder
-            .multipart(body_part)
-            .map_err(|e| e.to_string())?
+        builder.multipart(body_part).map_err(|e| e.to_string())?
     } else {
         let mut mixed = MultiPart::mixed().multipart(body_part);
         for att in &file_atts {
-            let ct: ContentType = att
-                .content_type
-                .parse()
-                .unwrap_or(ContentType::TEXT_PLAIN);
+            let ct: ContentType = att.content_type.parse().unwrap_or(ContentType::TEXT_PLAIN);
             let attachment = Attachment::new(att.filename.clone()).body(att.data.clone(), ct);
             mixed = mixed.singlepart(attachment);
         }
-        builder
-            .multipart(mixed)
-            .map_err(|e| e.to_string())?
+        builder.multipart(mixed).map_err(|e| e.to_string())?
     };
 
     Ok(email.formatted())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sent_copy_can_be_built_for_bcc_only_mail() {
+        let message = SendableMessage {
+            from: "alice@example.com".to_string(),
+            to: vec![],
+            cc: vec![],
+            bcc: vec!["bob@example.com".to_string()],
+            subject: "Hello".to_string(),
+            text_body: "Hi Bob".to_string(),
+            html_body: None,
+            in_reply_to: None,
+            references: None,
+            attachments: vec![],
+        };
+        let bytes = build_rfc822_bytes(&message, "<bcc@example.com>").unwrap();
+        let raw = String::from_utf8(bytes).unwrap();
+        assert!(raw.contains("<bcc@example.com>"));
+        assert!(raw.contains("Hi Bob"));
+        assert!(!raw.contains("Bcc:"));
+    }
 }

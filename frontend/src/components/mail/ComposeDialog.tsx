@@ -281,8 +281,12 @@ export function ComposeDialog() {
         fromIdentityId,
       },
       {
-        onSuccess: () => {
-          toast.success(t("Message sent"));
+        onSuccess: (result) => {
+          if (result.sent_copy_saved === false) {
+            toast.warning(t("Message sent, but a copy could not be saved to Sent. Do not resend."), { duration: 10000 });
+          } else {
+            toast.success(t("Message sent"));
+          }
           reset();
         },
         onError: (error) => {

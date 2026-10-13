@@ -2,6 +2,7 @@
     mod attachment_security;
     mod draft_paths;
     mod setup;
+    mod sent_copy;
 
     use super::*;
     use axum::body::Body;

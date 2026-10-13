@@ -83,6 +83,7 @@ export const mailMessages: Record<string, string> = {
   "Draft saved": "Brouillon enregistré",
   "Switch back to this draft's account before sending.": "Revenez au compte de ce brouillon avant de l’envoyer.",
   "Message sent": "Message envoyé",
+  "Message sent, but a copy could not be saved to Sent. Do not resend.": "Message envoyé, mais la copie n’a pas pu être enregistrée dans les messages envoyés. Ne le renvoyez pas.",
   "Sending message...": "Envoi du message…",
   "Undo": "Annuler",
   "Switch back to this draft's account before saving or closing it.": "Revenez au compte de ce brouillon avant de l’enregistrer ou de le fermer.",

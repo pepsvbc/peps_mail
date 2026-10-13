@@ -14,6 +14,8 @@ pub struct MockImapClient {
     folder_status_ext: Mutex<Option<FolderStatusExtended>>,
     unread_count: Mutex<u32>,
     should_fail: Mutex<Option<ImapError>>,
+    append_error: Mutex<Option<ImapError>>,
+    pub created_folders: Mutex<Vec<String>>,
     pub appended: Mutex<Vec<(String, Vec<u8>)>>,
     pub folder_status_calls: Mutex<Vec<(ImapCredentials, String)>>,
     pub unread_count_calls: Mutex<Vec<(ImapCredentials, String)>>,
@@ -30,6 +32,8 @@ impl MockImapClient {
             folder_status_ext: Mutex::new(None),
             unread_count: Mutex::new(0),
             should_fail: Mutex::new(None),
+            append_error: Mutex::new(None),
+            created_folders: Mutex::new(Vec::new()),
             appended: Mutex::new(Vec::new()),
             folder_status_calls: Mutex::new(Vec::new()),
             unread_count_calls: Mutex::new(Vec::new()),
@@ -74,6 +78,12 @@ impl MockImapClient {
         self
     }
 
+    /// Fail only the Sent-copy append, after folder discovery succeeds.
+    pub fn with_append_error(self, error: ImapError) -> Self {
+        *self.append_error.lock().unwrap() = Some(error);
+        self
+    }
+
     /// Make every subsequent call return this error.
     pub fn with_error(self, error: ImapError) -> Self {
         *self.should_fail.lock().unwrap() = Some(error);
@@ -113,10 +123,7 @@ impl ImapClient for MockImapClient {
         Ok(*self.unread_count.lock().unwrap())
     }
 
-    async fn list_folders(
-        &self,
-        _creds: &ImapCredentials,
-    ) -> Result<Vec<ImapFolder>, ImapError> {
+    async fn list_folders(&self, _creds: &ImapCredentials) -> Result<Vec<ImapFolder>, ImapError> {
         if let Some(ref err) = *self.should_fail.lock().unwrap() {
             return Err(clone_error(err));
         }
@@ -257,6 +264,9 @@ impl ImapClient for MockImapClient {
         if let Some(ref err) = *self.should_fail.lock().unwrap() {
             return Err(clone_error(err));
         }
+        if let Some(ref err) = *self.append_error.lock().unwrap() {
+            return Err(clone_error(err));
+        }
         self.appended
             .lock()
             .unwrap()
@@ -267,11 +277,15 @@ impl ImapClient for MockImapClient {
     async fn create_folder(
         &self,
         _creds: &ImapCredentials,
-        _folder_name: &str,
+        folder_name: &str,
     ) -> Result<(), ImapError> {
         if let Some(ref err) = *self.should_fail.lock().unwrap() {
             return Err(clone_error(err));
         }
+        self.created_folders
+            .lock()
+            .unwrap()
+            .push(folder_name.to_string());
         Ok(())
     }
 
@@ -367,14 +381,12 @@ impl ImapClient for MockImapClient {
         }
         // In mock, return all headers as "changed" with modseq 0.
         let headers = self.headers.lock().unwrap();
-        let items: Vec<(u32, Vec<String>)> = headers.iter().map(|h| (h.uid, h.flags.clone())).collect();
+        let items: Vec<(u32, Vec<String>)> =
+            headers.iter().map(|h| (h.uid, h.flags.clone())).collect();
         Ok((items, 0))
     }
 
-    async fn get_quota(
-        &self,
-        _creds: &ImapCredentials,
-    ) -> Result<Option<MailboxQuota>, ImapError> {
+    async fn get_quota(&self, _creds: &ImapCredentials) -> Result<Option<MailboxQuota>, ImapError> {
         if let Some(ref err) = *self.should_fail.lock().unwrap() {
             return Err(clone_error(err));
         }
@@ -643,7 +655,12 @@ mod tests {
     async fn mock_append_message_succeeds() {
         let mock = MockImapClient::new();
         let result = mock
-            .append_message(&test_creds(), "Sent", b"From: test\r\n\r\nBody", &["\\Seen"])
+            .append_message(
+                &test_creds(),
+                "Sent",
+                b"From: test\r\n\r\nBody",
+                &["\\Seen"],
+            )
             .await;
         assert!(result.is_ok());
     }
@@ -724,10 +741,7 @@ mod tests {
 
     fn real_creds() -> Option<ImapCredentials> {
         let host = std::env::var("TEST_IMAP_HOST").ok()?;
-        let port: u16 = std::env::var("TEST_IMAP_PORT")
-            .ok()?
-            .parse()
-            .ok()?;
+        let port: u16 = std::env::var("TEST_IMAP_PORT").ok()?.parse().ok()?;
         let email = std::env::var("TEST_IMAP_EMAIL").ok()?;
         let password = std::env::var("TEST_IMAP_PASSWORD").ok()?;
         let tls = std::env::var("TEST_IMAP_TLS")
@@ -762,10 +776,7 @@ mod tests {
     async fn real_imap_fetch_headers() {
         let creds = real_creds().expect("TEST_IMAP_* env vars required");
         let client = RealImapClient;
-        let headers = client
-            .fetch_headers(&creds, "INBOX", "1:5")
-            .await
-            .unwrap();
+        let headers = client.fetch_headers(&creds, "INBOX", "1:5").await.unwrap();
         // The mailbox might be empty, so we just check it doesn't error.
         for h in &headers {
             assert!(h.uid > 0);
@@ -779,10 +790,7 @@ mod tests {
         let client = RealImapClient;
 
         // First fetch headers to find a UID.
-        let headers = client
-            .fetch_headers(&creds, "INBOX", "1:1")
-            .await
-            .unwrap();
+        let headers = client.fetch_headers(&creds, "INBOX", "1:1").await.unwrap();
         if let Some(h) = headers.first() {
             let body = client.fetch_body(&creds, "INBOX", h.uid).await.unwrap();
             assert_eq!(body.uid, h.uid);
