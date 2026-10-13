@@ -372,7 +372,7 @@ export function FolderTree() {
       </div>
 
       <div className="p-3">
-        <Button className="w-full justify-start gap-2" onClick={() => { useUiStore.getState().setFolderDrawerOpen(false); useComposeStore.getState().openCompose(); }}>
+        <Button className="w-full justify-center gap-2" onClick={() => { useUiStore.getState().setFolderDrawerOpen(false); useComposeStore.getState().openCompose(); }}>
           <PenLine className="size-4" />{t("New Message")}
         </Button>
       </div>

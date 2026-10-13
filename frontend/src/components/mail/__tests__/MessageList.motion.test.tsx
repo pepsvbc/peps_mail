@@ -306,7 +306,7 @@ describe("MessageList and MessageListItem motion transitions", () => {
     const rows = screen.getAllByTestId("message-list-row-transition");
     const secondRow = rows[1];
 
-    expect(secondRow?.style.top).toBe("124px");
+    expect(secondRow?.style.top).toBe("96px");
     expect(secondRow?.style.transform).toBe("");
   });
 });

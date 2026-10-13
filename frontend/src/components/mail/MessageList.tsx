@@ -211,7 +211,7 @@ export function MessageList() {
   const isSyncing = isDraftsFolder(activeFolder) ? false : (data?.pages[0]?.syncing ?? false);
 
   const parentRef = useRef<HTMLDivElement>(null);
-  const rowHeight = density === "compact" ? 44 : 124;
+  const rowHeight = density === "compact" ? 44 : 96;
   const prevSelectedUidRef = useRef<number | null>(null);
 
   // eslint-disable-next-line react-hooks/incompatible-library -- useVirtualizer is designed for this usage

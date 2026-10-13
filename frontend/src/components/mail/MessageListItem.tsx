@@ -311,7 +311,7 @@ export const MessageListItem = memo(function MessageListItem({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       className={cn(
-        "flex h-[116px] cursor-pointer flex-col justify-center gap-2 rounded-lg border border-border px-3 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors",
+        "flex h-[88px] cursor-pointer flex-col justify-center gap-1 rounded-lg border border-border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors",
         !suppressHover && "hover:bg-muted",
         isUnread ? "bg-background" : "bg-transparent",
         isSelected && "border-primary/30 bg-muted hover:bg-muted",
@@ -402,7 +402,7 @@ export const MessageListItem = memo(function MessageListItem({
           <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
         )}
       </div>
-      <p className="line-clamp-2 min-h-8 pl-6 text-xs leading-4 text-muted-foreground">{message.snippet || "\u00a0"}</p>
+      <p className="truncate pl-6 text-xs leading-4 text-muted-foreground">{message.snippet || "\u00a0"}</p>
     </div>
   );
 
