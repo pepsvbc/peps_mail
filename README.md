@@ -75,6 +75,8 @@ docker compose up -d --build
 
 Then open [http://localhost:3001](http://localhost:3001) and log in with your email credentials.
 
+Compose stores data in `<project>_peps-mail-data`; development uses `peps-mail-dev_peps-mail-data`. When upgrading from `oxi-data`, stop the app and copy the contents of `<project>_oxi-data` into `<project>_peps-mail-data` before starting it again. Keep the old volume until you have verified the migration.
+
 The upstream oxi image contains the original branding; building this checkout includes the PEPS VBC theme.
 
 ### Local Development
