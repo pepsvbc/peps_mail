@@ -1,17 +1,17 @@
 "use client";
 
-import { useCallback } from "react";
-import { Code2, FileText, Loader2, Monitor, Moon, Search, Sun } from "lucide-react";
-import { toast } from "sonner";
 import {
   useDisplayPreferences,
   useUpdateDisplayPreferences,
 } from "@/hooks/useDisplayPreferences";
-import { runThemeSpreadTransition } from "@/lib/motion/theme-spread";
-import { useUiStore } from "@/stores/useUiStore";
-import type { ThemeMode } from "@/stores/useUiStore";
 import type { AnimationMode } from "@/lib/motion/config";
+import { runThemeSpreadTransition } from "@/lib/motion/theme-spread";
 import { cn } from "@/lib/utils";
+import type { ThemeMode } from "@/stores/useUiStore";
+import { useUiStore } from "@/stores/useUiStore";
+import { Code2, FileText, Loader2, Monitor, Moon, Search, Sun } from "lucide-react";
+import { useCallback } from "react";
+import { toast } from "sonner";
 
 function SegmentedControl<T extends string>({
   label,
@@ -185,7 +185,7 @@ export function DisplaySettings() {
         <SegmentedControl
           label="Animations"
           description="Choose how much motion to use in the interface"
-          value={prefs.animation_mode ?? "medium"}
+          value={prefs.animation_mode ?? "subtle"}
           options={[
             { value: "rich", label: "Rich" },
             { value: "medium", label: "Medium" },
