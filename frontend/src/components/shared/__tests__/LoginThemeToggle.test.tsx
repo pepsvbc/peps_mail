@@ -38,15 +38,6 @@ afterEach(() => {
 });
 
 describe("login theme chooser", () => {
-  it("migrates the previous theme before signing in", () => {
-    localStorage.setItem("oxi-theme", "dark");
-    render(<LoginThemeToggle />);
-    expect(screen.getByRole("button", { name: "Dark", pressed: true })).toBeTruthy();
-    expect(document.documentElement.classList.contains("dark")).toBe(true);
-    expect(localStorage.getItem("peps-mail-theme")).toBe("dark");
-    expect(localStorage.getItem("oxi-theme")).toBeNull();
-  });
-
   it("updates theme labels when the language changes without losing the selected theme", () => {
     localStorage.setItem("peps-mail-theme", "dark");
     render(<LoginThemeToggle />);

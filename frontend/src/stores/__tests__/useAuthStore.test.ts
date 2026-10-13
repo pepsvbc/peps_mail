@@ -59,14 +59,6 @@ describe("useAuthStore active account persistence", () => {
     expect(useAuthStore.getState().activeAccountId).toBe("acc-2");
   });
 
-  it("migrates the previously selected account", async () => {
-    localStorage.setItem("oxi-active-account-id", "acc-2");
-    const { useAuthStore } = await loadFreshStore();
-    expect(useAuthStore.getState().activeAccountId).toBe("acc-2");
-    expect(localStorage.getItem(ACTIVE_ACCOUNT_STORAGE_KEY)).toBe("acc-2");
-    expect(localStorage.getItem("oxi-active-account-id")).toBeNull();
-  });
-
   it("falls back to first account when stored account no longer exists", async () => {
     localStorage.setItem(ACTIVE_ACCOUNT_STORAGE_KEY, "missing-account");
 

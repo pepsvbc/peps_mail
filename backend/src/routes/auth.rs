@@ -60,34 +60,6 @@ fn clearing_account_cookie(account_id: &str, secure: bool) -> String {
     )
 }
 
-// Old sessions are invalid after a server restart. Remove their cookies when
-// the browser restores its account list instead of keeping stale names around.
-fn clearing_legacy_cookies(headers: &axum::http::HeaderMap, secure: bool) -> Vec<String> {
-    let secure_flag = if secure { " Secure;" } else { "" };
-    let mut seen = std::collections::HashSet::new();
-    headers
-        .get_all("cookie")
-        .iter()
-        .filter_map(|value| value.to_str().ok())
-        .flat_map(|value| value.split(';'))
-        .filter_map(|segment| segment.trim().split_once('='))
-        .map(|(name, _)| name)
-        .filter(|name| {
-            *name == "oxi_browser"
-                || name
-                    .strip_prefix("oxi_session_")
-                    .is_some_and(|id| {
-                        !id.is_empty()
-                            && id.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
-                    })
-        })
-        .filter(|name| seen.insert(*name))
-        .map(|name| {
-            format!("{name}=;{secure_flag} HttpOnly; SameSite=Strict; Path=/; Max-Age=0")
-        })
-        .collect()
-}
-
 pub(crate) fn extract_browser_id(headers: &axum::http::HeaderMap) -> Option<String> {
     headers
         .get_all("cookie")
@@ -409,7 +381,7 @@ pub async fn list_accounts(
     let browser_id = extract_browser_id(&headers);
     let mut seen_accounts = std::collections::HashSet::new();
     let mut valid_accounts = Vec::new();
-    let mut clear_cookies = clearing_legacy_cookies(&headers, secure);
+    let mut clear_cookies = Vec::new();
 
     // Missing or forged cookies must never revoke another client's sessions.
     // Validate the browser, account ID and token together before returning data.
@@ -835,38 +807,6 @@ mod tests {
             assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
             assert_eq!(json["error"]["message"], expected_message);
             assert!(store.is_empty());
-        }
-    }
-
-    #[tokio::test]
-    async fn account_restore_expires_legacy_cookies_without_authenticating_them() {
-        let data_dir = tempfile::tempdir().unwrap();
-        let store = test_store();
-        let browser_id = store.create_browser();
-        let (token, account_id) = add_test_account(&store, &browser_id, "first@example.com");
-        for secure in [false, true] {
-            let mut config = test_config(&data_dir);
-            config.environment = if secure { "production" } else { "development" }.to_string();
-            let cookie = format!(
-                "oxi_browser={browser_id}; oxi_session_{account_id}={token}; unrelated=keep"
-            );
-            let (status, headers, json) = request(
-                test_router(store.clone(), config),
-                "GET", "/accounts", &cookie, serde_json::json!(null),
-            ).await;
-            assert_eq!(status, StatusCode::OK);
-            assert_eq!(json["accounts"], serde_json::json!([]));
-            for name in ["oxi_browser".to_string(), format!("oxi_session_{account_id}")] {
-                let cleared = headers.get_all("set-cookie").iter()
-                    .map(|value| value.to_str().unwrap())
-                    .find(|value| value.starts_with(&format!("{name}="))).unwrap();
-                assert!(cleared.contains("Max-Age=0"));
-                assert!(cleared.contains("HttpOnly; SameSite=Strict; Path=/"));
-                assert_eq!(cleared.contains("Secure;"), secure);
-            }
-            assert!(!headers.get_all("set-cookie").iter()
-                .any(|value| value.to_str().unwrap().starts_with("unrelated=")));
-            assert!(store.get_account_session(&browser_id, &account_id, &token).is_some());
         }
     }
 
