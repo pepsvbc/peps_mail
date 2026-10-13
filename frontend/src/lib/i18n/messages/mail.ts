@@ -112,6 +112,8 @@ export const mailMessages: Record<string, string> = {
   "Save draft and close": "Enregistrer le brouillon et fermer",
   "Switch back to this draft's account to continue composing.": "Revenez au compte de ce brouillon pour continuer à rédiger.",
   "From": "De",
+  "Sender address": "Adresse d’envoi",
+  "Could not switch sender account. Your message has been kept.": "Impossible de changer de compte expéditeur. Votre message a été conservé.",
   "To": "À",
   "Cc Bcc": "Cc Cci",
   "Cc": "Cc",

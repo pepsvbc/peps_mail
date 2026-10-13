@@ -180,6 +180,8 @@ vi.mock("@/hooks/useCompose", () => ({
   useDeleteDraft: () => ({ mutate: vi.fn() }),
 }));
 
+vi.mock("@/hooks/useComposeAccount", () => ({ useComposeAccount: () => ({ isPending: false, mutate: vi.fn() }) }));
+
 vi.mock("@/hooks/useIdentities", () => ({
   useIdentities: () => ({ data: [] }),
 }));
@@ -218,8 +220,8 @@ vi.mock("@/hooks/useClickOutside", () => ({
 
 vi.mock("@/stores/useAuthStore", () => ({
   useAuthStore: Object.assign(
-    (selector: (state: { activeAccount: () => { email: string } | null }) => unknown) =>
-      selector({ activeAccount: () => ({ email: "me@example.com" }) }),
+    (selector: (state: { activeAccount: () => { email: string } | null; accounts: { id: string; email: string }[] }) => unknown) =>
+      selector({ activeAccount: () => ({ email: "me@example.com" }), accounts: [{ id: "a", email: "me@example.com" }] }),
     {
       getState: () => ({ activeAccount: () => ({ email: "me@example.com" }) }),
     },

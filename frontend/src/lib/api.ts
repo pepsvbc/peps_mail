@@ -88,13 +88,14 @@ export async function fetchAccounts(): Promise<AccountsResponse> {
 export async function apiPost<T>(
   path: string,
   body: Record<string, unknown>,
+  options: { accountId?: string } = {},
 ): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "X-Requested-With": "XMLHttpRequest",
-      ...getActiveAccountHeader(),
+      ...getActiveAccountHeader(options.accountId),
     },
     credentials: "same-origin",
     body: JSON.stringify(body),
@@ -151,12 +152,13 @@ export async function apiPatch<T>(
 export async function apiPostFormData<T>(
   path: string,
   formData: FormData,
+  options: { accountId?: string } = {},
 ): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers: {
       "X-Requested-With": "XMLHttpRequest",
-      ...getActiveAccountHeader(),
+      ...getActiveAccountHeader(options.accountId),
     },
     credentials: "same-origin",
     body: formData,
@@ -191,12 +193,12 @@ export async function apiPut<T>(
   return res.json();
 }
 
-export async function apiDelete<T>(path: string): Promise<T> {
+export async function apiDelete<T>(path: string, options: { accountId?: string } = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "DELETE",
     headers: {
       "X-Requested-With": "XMLHttpRequest",
-      ...getActiveAccountHeader(),
+      ...getActiveAccountHeader(options.accountId),
     },
     credentials: "same-origin",
   });
@@ -206,4 +208,13 @@ export async function apiDelete<T>(path: string): Promise<T> {
   }
 
   return res.json();
+}
+
+/** Download private attachment content for an explicitly selected account. */
+export async function apiGetBlob(path: string, accountId: string): Promise<Blob> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: getActiveAccountHeader(accountId), credentials: "same-origin",
+  });
+  if (!response.ok) throw await parseErrorResponse(response);
+  return response.blob();
 }

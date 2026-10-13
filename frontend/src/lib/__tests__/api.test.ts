@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
-import { apiGet } from "../api";
+import { apiGet, apiPost, apiPostFormData, apiDelete, apiGetBlob } from "../api";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useLanguageStore } from "@/lib/i18n";
 
@@ -23,6 +23,17 @@ afterEach(() => {
 });
 
 describe("account-scoped requests", () => {
+  it("keeps draft writes and downloads scoped to the requested account", async () => {
+    await apiPost("/drafts", { id: "copy" }, { accountId: "destination" });
+    await apiPostFormData("/drafts/copy/attachments", new FormData(), { accountId: "destination" });
+    await apiDelete("/drafts/original", { accountId: "source" });
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: true, blob: async () => new Blob(["file"]) } as Response);
+    await apiGetBlob("/drafts/original/attachments/file/content", "source");
+    expect(vi.mocked(fetch).mock.calls.map(([, init]) => (init?.headers as Record<string, string>)["X-Active-Account"]))
+      .toEqual(["destination", "destination", "source", "source"]);
+    expect(useAuthStore.getState().activeAccountId).toBe("active-account");
+  });
+
   it("defaults to the currently active account", async () => {
     await apiGet("/folders");
 

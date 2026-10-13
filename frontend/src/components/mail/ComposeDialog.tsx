@@ -38,6 +38,7 @@ import {
   useDeleteAttachment,
   useDeleteDraft,
 } from "@/hooks/useCompose";
+import { useComposeAccount } from "@/hooks/useComposeAccount";
 import { useIdentities } from "@/hooks/useIdentities";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/useUiStore";
@@ -96,6 +97,8 @@ export function ComposeDialog() {
     reset,
   } = useComposeStore();
 
+  const composeAccount = useComposeAccount();
+  const switchingAccount = composeAccount.isPending;
   const sendMutation = useSendMessage();
   const saveDraftMutation = useSaveDraft();
   const uploadMutation = useUploadAttachment();
@@ -115,10 +118,11 @@ export function ComposeDialog() {
   const contentRef = useRef<HTMLDivElement>(null);
   const restoreButtonRef = useRef<HTMLButtonElement>(null);
   const activeAccountId = useAuthStore((s) => s.activeAccountId);
+  const accounts = useAuthStore((s) => s.accounts);
   const accountMismatch = accountId != null && accountId !== activeAccountId;
   const isCurrentAccount = useCallback(
-    () => accountId == null || accountId === useAuthStore.getState().activeAccountId,
-    [accountId],
+    () => !switchingAccount && (accountId == null || accountId === useAuthStore.getState().activeAccountId),
+    [accountId, switchingAccount],
   );
   const effectiveAnimationMode = useUiStore((s) => s.effectiveAnimationMode);
   const shouldAnimate = effectiveAnimationMode !== "off";
@@ -312,6 +316,7 @@ export function ComposeDialog() {
   ]);
 
   const handleSend = useCallback(() => {
+    if (uploadMutation.isPending) return;
     if (!isCurrentAccount()) return;
     if (!to.trim() && !cc.trim() && !bcc.trim()) return;
     closeCompose();
@@ -333,7 +338,7 @@ export function ComposeDialog() {
         },
       },
     });
-  }, [to, cc, bcc, closeCompose, doSend, isCurrentAccount]);
+  }, [to, cc, bcc, closeCompose, doSend, isCurrentAccount, uploadMutation.isPending]);
 
   const handleDiscard = useCallback(() => {
     if (hasContent()) {
@@ -365,7 +370,7 @@ export function ComposeDialog() {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (isMinimized || accountMismatch) return;
+      if (isMinimized || accountMismatch || switchingAccount) return;
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
         e.preventDefault();
         handleSend();
@@ -375,7 +380,7 @@ export function ComposeDialog() {
         saveDraft(true);
       }
     },
-    [handleSend, saveDraft, isMinimized, accountMismatch]
+    [handleSend, saveDraft, isMinimized, accountMismatch, switchingAccount]
   );
 
   const handleAttachFiles = useCallback(() => {
@@ -573,7 +578,7 @@ export function ComposeDialog() {
         open={isOpen}
         modal={false}
         onOpenChange={(open) => {
-          if (!open) {
+          if (!open && !switchingAccount) {
             handleSaveAndClose();
           }
         }}
@@ -588,7 +593,7 @@ export function ComposeDialog() {
                   aria-describedby={undefined}
                   onInteractOutside={(event) => event.preventDefault()}
                   onEscapeKeyDown={(event) => {
-                    if (!contentRef.current?.contains(document.activeElement)) {
+                    if (switchingAccount || !contentRef.current?.contains(document.activeElement)) {
                       event.preventDefault();
                     }
                   }}
@@ -616,6 +621,11 @@ export function ComposeDialog() {
                     onDragOver={handleDragOver}
                     onDrop={handleDrop}
                   >
+            {switchingAccount && (
+              <div role="status" className="absolute inset-0 z-20 flex items-center justify-center gap-2 rounded-xl bg-background/90">
+                <Loader2 className="size-4 animate-spin" />{t("Switching account...")}
+              </div>
+            )}
             {/* Drop overlay */}
             {isDragging && !isMinimized && !accountMismatch && (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-xl bg-background/90 backdrop-blur-sm">
@@ -630,7 +640,7 @@ export function ComposeDialog() {
             )}
 
             {/* Header */}
-            <div className={cn("flex shrink-0 items-center justify-between gap-2 rounded-t-xl bg-muted px-4 py-2.5", !isMinimized && "border-b border-border")}>
+            <div inert={switchingAccount} className={cn("flex shrink-0 items-center justify-between gap-2 rounded-t-xl bg-muted px-4 py-2.5", !isMinimized && "border-b border-border")}>
               <Dialog.Title className="min-w-0 flex-1 text-sm font-semibold">
                 {isMinimized ? (
                   <button
@@ -697,17 +707,33 @@ export function ComposeDialog() {
             )}
 
             <div
+              inert={switchingAccount}
               hidden={isMinimized || accountMismatch}
               className={cn(!isMinimized && !accountMismatch && "flex min-h-0 flex-1 flex-col overflow-y-auto")}
             >
             {/* Fields */}
             <div className="flex flex-col border-b border-border">
+              <div className="flex items-center border-b border-border/50 px-4">
+                <label htmlFor="compose-account" className="w-12 shrink-0 text-xs text-muted-foreground">{t("From")}</label>
+                <select
+                  id="compose-account"
+                  value={accountId ?? activeAccountId ?? ""}
+                  disabled={switchingAccount || uploadMutation.isPending || saveDraftMutation.isPending || deleteMutation.isPending}
+                  onChange={(event) => composeAccount.mutate(event.target.value, {
+                    onError: () => toast.error(t("Could not switch sender account. Your message has been kept.")),
+                  })}
+                  className="min-w-0 flex-1 bg-background py-2 text-sm text-foreground outline-none disabled:opacity-50"
+                >
+                  {accounts.map((account) => <option key={account.id} value={account.id}>{account.email}</option>)}
+                </select>
+              </div>
               {identities && identities.length > 1 && (
-                <div className="flex items-center border-b border-border/50 px-4">
-                  <label className="w-12 shrink-0 text-xs text-muted-foreground">
-                    {t("From")}
+                <div className="flex items-center gap-2 border-b border-border/50 px-4">
+                  <label htmlFor="compose-from" className="w-28 shrink-0 text-xs text-muted-foreground">
+                    {t("Sender address")}
                   </label>
                   <select
+                    id="compose-from"
                     value={fromIdentityId ?? ""}
                     onChange={(e) => {
                       const newId = e.target.value ? Number(e.target.value) : null;
@@ -720,9 +746,9 @@ export function ComposeDialog() {
                         setField("body", replaceSignatureInBody(body, newSig));
                       }
                     }}
-                    className="flex-1 bg-transparent py-2 text-sm outline-none"
+                    className="min-w-0 flex-1 bg-background py-2 text-sm text-foreground outline-none disabled:opacity-100"
                   >
-                    {identities.map((identity) => (
+                    {identities?.map((identity) => (
                       <option key={identity.id} value={identity.id}>
                         {identity.display_name
                           ? `${identity.display_name} <${identity.email}>`
@@ -863,12 +889,12 @@ export function ComposeDialog() {
             )}
 
             {/* Footer */}
-            <div className="flex items-center justify-between border-t border-border px-4 py-3">
-              <div className="flex items-center gap-2">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={handleSend}
                   disabled={
-                    sendMutation.isPending ||
+                    sendMutation.isPending || uploadMutation.isPending ||
                     (!to.trim() && !cc.trim() && !bcc.trim())
                   }
                   className={cn(
@@ -917,7 +943,8 @@ export function ComposeDialog() {
                 <button
                   onClick={handleAttachFiles}
                   disabled={uploadMutation.isPending}
-                  className="rounded-lg p-2 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-foreground hover:bg-accent disabled:opacity-50"
+                  aria-label={t("Attach files")}
                   title={t("Attach files")}
                 >
                   {uploadMutation.isPending ? (
@@ -925,6 +952,7 @@ export function ComposeDialog() {
                   ) : (
                     <Paperclip className="size-4" />
                   )}
+                  {t("Attach files")}
                 </button>
                 <button
                   onClick={() => saveDraft(true)}
@@ -976,6 +1004,7 @@ export function ComposeDialog() {
                 </button>
                 <input
                   ref={fileInputRef}
+                  aria-label={t("Attach files")}
                   type="file"
                   multiple
                   className="hidden"

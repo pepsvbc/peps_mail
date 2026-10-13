@@ -8,19 +8,23 @@ import type { Identity } from "@/types/identity";
 import { ComposeDialog } from "../ComposeDialog";
 import { toast } from "sonner";
 
-const { saveDraft, sendMessage, identities } = vi.hoisted(() => ({
+const { saveDraft, sendMessage, uploadAttachment, switchAccount, identities } = vi.hoisted(() => ({
   saveDraft: { isPending: false, mutate: vi.fn() },
   sendMessage: { isPending: false, mutate: vi.fn() },
+  switchAccount: { isPending: false, mutate: vi.fn() },
+  uploadAttachment: { isPending: false, mutate: vi.fn() },
   identities: { data: [] as Identity[] },
 }));
 
 vi.mock("@/hooks/useCompose", () => ({
   useSaveDraft: () => saveDraft,
   useSendMessage: () => sendMessage,
-  useUploadAttachment: () => ({ isPending: false, mutate: vi.fn() }),
+  useUploadAttachment: () => uploadAttachment,
   useDeleteAttachment: () => ({ mutate: vi.fn() }),
   useDeleteDraft: () => ({ mutate: vi.fn() }),
 }));
+
+vi.mock("@/hooks/useComposeAccount", () => ({ useComposeAccount: () => switchAccount }));
 
 vi.mock("@/hooks/useIdentities", () => ({
   useIdentities: () => identities,
@@ -61,6 +65,7 @@ describe("composer window controls", () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     identities.data = [];
+    uploadAttachment.isPending = false;
     useUiStore.setState({ effectiveAnimationMode: "off" });
     useAuthStore.setState({
       activeAccountId: "account-a",
@@ -78,6 +83,55 @@ describe("composer window controls", () => {
     vi.restoreAllMocks();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("always shows the account address in From, including without saved identities", () => {
+    render(<ComposeDialog />);
+    expect(screen.getByRole("combobox", { name: "From" })).toHaveDisplayValue("a@example.com");
+  });
+
+  it("sends with the selected sender identity", () => {
+    identities.data = [
+      { id: 1, email: "a@example.com", display_name: "", signature_html: "", is_default: true, created_at: "", updated_at: "" },
+      { id: 2, email: "club@example.com", display_name: "Club", signature_html: "", is_default: false, created_at: "", updated_at: "" },
+    ];
+    render(<ComposeDialog />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Sender address" }), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    act(() => { vi.advanceTimersByTime(5000); });
+    expect(sendMessage.mutate).toHaveBeenCalledWith(expect.objectContaining({ fromIdentityId: 2 }), expect.any(Object));
+  });
+
+  it("offers all logged-in accounts in From", () => {
+    render(<ComposeDialog />);
+    fireEvent.change(screen.getByRole("combobox", { name: "From" }), { target: { value: "account-b" } });
+    expect(switchAccount.mutate).toHaveBeenCalledWith("account-b", expect.any(Object));
+    expect(screen.getByRole("option", { name: "b@example.com" })).toBeInTheDocument();
+  });
+
+  it("opens the file picker and adds the uploaded attachment", () => {
+    render(<ComposeDialog />);
+    const input = screen.getByLabelText("Attach files", { selector: "input" });
+    const picker = vi.spyOn(input, "click");
+    fireEvent.click(screen.getByRole("button", { name: "Attach files" }));
+    expect(picker).toHaveBeenCalledOnce();
+    const file = new File(["Club schedule"], "new-schedule.txt", { type: "text/plain" });
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(uploadAttachment.mutate).toHaveBeenCalledWith({ draftId: "club-news-draft", files: [file] }, expect.any(Object));
+    act(() => uploadAttachment.mutate.mock.calls[0][1].onSuccess({ attachments: [
+      { id: "new-file", filename: "new-schedule.txt", content_type: "text/plain", size: 13 },
+    ] }));
+    expect(screen.getByText("new-schedule.txt")).toBeInTheDocument();
+  });
+
+  it("waits for attachment uploads before allowing send or its keyboard shortcut", () => {
+    uploadAttachment.isPending = true;
+    render(<ComposeDialog />);
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Enter", ctrlKey: true });
+    act(() => { vi.advanceTimersByTime(5000); });
+    expect(sendMessage.mutate).not.toHaveBeenCalled();
+    expect(useComposeStore.getState().isOpen).toBe(true);
   });
 
   it("closes an empty new message without creating a draft", () => {
