@@ -65,21 +65,6 @@ export function AccountSwitcher() {
   }
 
   const activeAccount = accounts.find((a) => a.id === activeAccountId);
-  const otherAccounts = accounts.filter((account) => account.id !== activeAccountId);
-  const otherCounts = otherAccounts.map((account) => unreadCounts[account.id]);
-  const otherUnreadCount = otherCounts.reduce(
-    (total, unread) => total + (unread?.isError ? 0 : unread?.count ?? 0),
-    0,
-  );
-  const otherCountsUnknown = otherCounts.some((unread) => unread?.count == null || unread.isError);
-  const otherCountsLoading = otherCounts.some((unread) => !unread || unread.isLoading);
-  const otherInboxSummary = `Other ${otherAccounts.length === 1 ? "inbox" : "inboxes"}: ${
-    otherCountsUnknown
-      ? otherUnreadCount > 0
-        ? `${otherUnreadCount}+ unread`
-        : otherCountsLoading ? "checking…" : "unavailable"
-      : `${otherUnreadCount} unread`
-  }`;
 
   const handleSwitchAccount = async (accountId: string) => {
     if (accountId === activeAccountId) {
@@ -157,14 +142,6 @@ export function AccountSwitcher() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="truncate">{activeAccount?.email}</div>
-            {otherAccounts.length > 0 && (
-              <div
-                className={cn("truncate text-xs", otherUnreadCount > 0 ? "font-medium text-primary" : "text-muted-foreground")}
-                title={otherInboxSummary}
-              >
-                {otherInboxSummary}
-              </div>
-            )}
           </div>
           <ChevronRight
             className={cn(

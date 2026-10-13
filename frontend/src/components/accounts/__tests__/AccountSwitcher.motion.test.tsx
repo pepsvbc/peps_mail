@@ -96,10 +96,11 @@ describe("AccountSwitcher motion transitions", () => {
 });
 
 describe("account Inbox counts", () => {
-  it("shows the other Inbox count without opening the menu or switching accounts", () => {
+  it("keeps the account trigger free of the other Inbox summary", () => {
     render(<AccountSwitcher />);
 
-    expect(screen.getByText("Other inbox: 7 unread")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "A admin@example.com" })).toBeTruthy();
+    expect(screen.queryByText(/Other inbox/)).toBeNull();
     expect(mockAuthState.setActiveAccount).not.toHaveBeenCalled();
   });
 
@@ -115,7 +116,6 @@ describe("account Inbox counts", () => {
   it("shows a known empty Inbox as zero", () => {
     mockUnreadCounts.a2.count = 0;
     render(<AccountSwitcher />);
-    expect(screen.getByText("Other inbox: 0 unread")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /admin@example.com/i }));
     expect(screen.getByLabelText("0 unread messages in Inbox").textContent).toBe("0");
   });
@@ -123,7 +123,6 @@ describe("account Inbox counts", () => {
   it.each([false, true])("does not present an unknown Inbox count as zero (error=%s)", (isError) => {
     mockUnreadCounts.a2 = { count: undefined, isLoading: !isError, isError };
     render(<AccountSwitcher />);
-    expect(screen.getByText(isError ? "Other inbox: unavailable" : "Other inbox: checking…")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /admin@example.com/i }));
     expect(screen.queryByLabelText("0 unread messages in Inbox")).toBeNull();
     expect(screen.getByLabelText(isError ? "Unread Inbox count unavailable" : "Checking unread Inbox count")).toBeTruthy();

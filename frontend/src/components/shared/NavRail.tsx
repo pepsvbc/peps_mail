@@ -21,6 +21,8 @@ import { runThemeSpreadTransition } from "@/lib/motion/theme-spread";
 import { cn } from "@/lib/utils";
 import { useComposeStore } from "@/stores/useComposeStore";
 import { useUiStore } from "@/stores/useUiStore";
+import { useAuthStore } from "@/stores/useAuthStore";
+import { useAccountUnreadCounts } from "@/hooks/useAccountUnreadCounts";
 import { useUpdateDisplayPreferences } from "@/hooks/useDisplayPreferences";
 import { ConnectionStatus } from "@/components/shared/ConnectionStatus";
 import { useWsStatus } from "@/lib/ws-context";
@@ -30,12 +32,14 @@ type NavButtonClickEvent = MouseEvent<Element>;
 function NavButton({
   icon,
   label,
+  badge,
   active,
   disabled,
   onClick,
 }: {
   icon: React.ReactNode;
   label: string;
+  badge?: string;
   active?: boolean;
   disabled?: boolean;
   onClick?: (event: NavButtonClickEvent) => void;
@@ -50,7 +54,7 @@ function NavButton({
           onClick={onClick}
           aria-label={tooltipLabel}
           className={cn(
-            "flex size-10 items-center justify-center rounded-lg transition-colors",
+            "relative flex size-10 items-center justify-center rounded-lg transition-colors",
             disabled
               ? "cursor-default text-sidebar-foreground/30"
               : "text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground",
@@ -58,6 +62,14 @@ function NavButton({
           )}
         >
           {icon}
+          {badge && (
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute -right-0.5 -top-0.5 flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-semibold leading-none text-primary-foreground ring-2 ring-sidebar tabular-nums"
+            >
+              {badge}
+            </span>
+          )}
         </button>
       </Tooltip.Trigger>
       <Tooltip.Portal>
@@ -95,6 +107,23 @@ export function NavRail() {
   const effectiveAnimationMode = useUiStore((s) => s.effectiveAnimationMode);
   const updatePrefs = useUpdateDisplayPreferences();
   const resolvedTheme = useResolvedTheme();
+  const accounts = useAuthStore((s) => s.accounts);
+  const activeAccountId = useAuthStore((s) => s.activeAccountId);
+  const unreadCounts = useAccountUnreadCounts();
+  const otherCounts = accounts
+    .filter((account) => account.id !== activeAccountId)
+    .map((account) => unreadCounts[account.id]);
+  const otherUnreadCount = otherCounts.reduce(
+    (total, unread) => total + (unread?.isError ? 0 : unread?.count ?? 0),
+    0,
+  );
+  const hasUnknownCounts = otherCounts.some((unread) => unread?.count == null || unread.isError);
+  const unreadBadge = otherUnreadCount > 0
+    ? otherUnreadCount > 99 ? "99+" : `${otherUnreadCount}${hasUnknownCounts ? "+" : ""}`
+    : undefined;
+  const mailLabel = otherUnreadCount > 0
+    ? `Mail — ${hasUnknownCounts ? "at least " : ""}${otherUnreadCount} unread ${otherUnreadCount === 1 ? "message" : "messages"} in other inboxes`
+    : "Mail";
 
   const toggleTheme = useCallback((event: NavButtonClickEvent) => {
     const next = resolvedTheme === "dark" ? "light" : "dark";
@@ -147,7 +176,8 @@ export function NavRail() {
           />
           <NavButton
             icon={<Mail className="size-5" />}
-            label="Mail"
+            label={mailLabel}
+            badge={unreadBadge}
             active={viewMode === "mail"}
             onClick={() => setViewMode("mail")}
           />
