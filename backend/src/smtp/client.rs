@@ -17,6 +17,8 @@ pub use crate::smtp::types::{AttachmentData, SendableMessage, SmtpCredentials};
 ///
 /// The `Send + Sync` bounds allow implementations to be shared across
 /// Tokio tasks and stored in `Arc`.
+// async_trait adds #[must_use] to methods returning already must-use futures.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait SmtpClient: Send + Sync {
     /// Send an email message. Returns the generated Message-ID on success.
