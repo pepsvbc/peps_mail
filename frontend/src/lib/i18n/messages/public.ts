@@ -81,6 +81,7 @@ export const publicMessages: Record<string, string> = {
   "Density": "Densité",
   "Controls the spacing of the message list": "Définit l’espacement de la liste des messages",
   "Compact": "Compacte",
+  "Standard": "Standard",
   "Comfortable": "Confortable",
   "Theme": "Thème",
   "Choose light, dark, or match your system": "Choisissez le mode clair, sombre ou celui du système",

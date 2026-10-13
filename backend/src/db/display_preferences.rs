@@ -56,7 +56,7 @@ pub fn get_preferences(conn: &Connection) -> Result<DisplayPreferences, String> 
     match result {
         Ok(prefs) => Ok(prefs),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(DisplayPreferences {
-            density: "comfortable".to_string(),
+            density: "standard".to_string(),
             theme: "system".to_string(),
             language: "system".to_string(),
             compose_format: "html".to_string(),
@@ -76,7 +76,7 @@ pub fn update_preferences(
 ) -> Result<DisplayPreferences, String> {
     // Ensure the row exists.
     conn.execute(
-        "INSERT OR IGNORE INTO display_preferences (id, language) VALUES (1, 'system')",
+        "INSERT OR IGNORE INTO display_preferences (id, language, density) VALUES (1, 'system', 'standard')",
         [],
     )
     .map_err(|e| format!("Failed to ensure preferences row: {e}"))?;
@@ -86,7 +86,7 @@ pub fn update_preferences(
     let mut idx = 1;
 
     if let Some(ref density) = data.density {
-        if density != "compact" && density != "comfortable" {
+        if density != "compact" && density != "standard" && density != "comfortable" {
             return Err(format!("Invalid density: {density}"));
         }
         sets.push(format!("density = ?{idx}"));
@@ -163,7 +163,7 @@ mod tests {
         let conn = open_test_db();
         let prefs = get_preferences(&conn).unwrap();
 
-        assert_eq!(prefs.density, "comfortable");
+        assert_eq!(prefs.density, "standard");
         assert_eq!(prefs.theme, "system");
         assert_eq!(prefs.language, "system");
         assert_eq!(prefs.compose_format, "html");
@@ -173,22 +173,24 @@ mod tests {
     fn test_update_density() {
         let conn = open_test_db();
 
-        let prefs = update_preferences(
-            &conn,
-            &UpdateDisplayPreferences {
-                density: Some("compact".to_string()),
-                theme: None,
-                language: None,
-                compose_format: None,
-                deep_index: None,
-                animation_mode: None,
-            },
-        )
-        .unwrap();
+        for density in ["compact", "standard", "comfortable"] {
+            let prefs = update_preferences(
+                &conn,
+                &UpdateDisplayPreferences {
+                    density: Some(density.to_string()),
+                    theme: None,
+                    language: None,
+                    compose_format: None,
+                    deep_index: None,
+                    animation_mode: None,
+                },
+            )
+            .unwrap();
 
-        assert_eq!(prefs.density, "compact");
-        assert_eq!(prefs.theme, "system");
-        assert_eq!(prefs.language, "system");
+            assert_eq!(prefs.density, density);
+            assert_eq!(prefs.theme, "system");
+            assert_eq!(prefs.language, "system");
+        }
     }
 
     #[test]
@@ -208,7 +210,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(prefs.density, "comfortable");
+        assert_eq!(prefs.density, "standard");
         assert_eq!(prefs.theme, "dark");
     }
 
@@ -292,7 +294,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(prefs.compose_format, "text");
-        assert_eq!(prefs.density, "comfortable");
+        assert_eq!(prefs.density, "standard");
     }
 
     #[test]
@@ -332,7 +334,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(prefs.density, "comfortable");
+        assert_eq!(prefs.density, "standard");
         assert_eq!(prefs.theme, "system");
     }
 

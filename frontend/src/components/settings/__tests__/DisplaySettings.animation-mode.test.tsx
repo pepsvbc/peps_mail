@@ -39,6 +39,14 @@ describe("DisplaySettings animation mode", () => {
     localStorage.removeItem("peps-mail-language");
   });
 
+  it("saves Standard density between Compact and Comfortable", () => {
+    render(<DisplaySettings />);
+    const densityOptions = screen.getAllByRole("button").filter((button) => ["Compact", "Standard", "Comfortable"].includes(button.textContent ?? ""));
+    expect(densityOptions.map((button) => button.textContent)).toEqual(["Compact", "Standard", "Comfortable"]);
+    fireEvent.click(screen.getByRole("button", { name: "Standard" }));
+    expect(mockMutate).toHaveBeenCalledWith({ density: "standard" }, expect.any(Object));
+  });
+
   it("switches language immediately and saves the account preference", () => {
     render(<DisplaySettings />);
     fireEvent.click(screen.getByRole("button", { name: "Français" }));
@@ -81,7 +89,7 @@ describe("DisplaySettings animation mode", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset to defaults" }));
 
     expect(mockMutate).toHaveBeenCalledWith(
-      expect.objectContaining({ animation_mode: null }),
+      expect.objectContaining({ animation_mode: null, density: "standard" }),
       expect.objectContaining({ onError: expect.any(Function) }),
     );
   });

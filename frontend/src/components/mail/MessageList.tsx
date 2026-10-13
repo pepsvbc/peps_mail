@@ -1,5 +1,7 @@
 "use client";
 
+import { MESSAGE_ROW_HEIGHT } from "@/lib/mail-density";
+
 import { translate as t, useTranslation, getLocale } from "@/lib/i18n";
 
 import { useRef, useCallback, useEffect } from "react";
@@ -211,7 +213,7 @@ export function MessageList() {
   const isSyncing = isDraftsFolder(activeFolder) ? false : (data?.pages[0]?.syncing ?? false);
 
   const parentRef = useRef<HTMLDivElement>(null);
-  const rowHeight = density === "compact" ? 44 : 96;
+  const rowHeight = MESSAGE_ROW_HEIGHT[density];
   const prevSelectedUidRef = useRef<number | null>(null);
 
   // eslint-disable-next-line react-hooks/incompatible-library -- useVirtualizer is designed for this usage

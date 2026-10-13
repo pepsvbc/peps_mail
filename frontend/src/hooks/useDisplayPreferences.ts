@@ -1,11 +1,13 @@
 "use client";
 
+import type { MailDensity } from "@/lib/mail-density";
+
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPut } from "@/lib/api";
 import type { AnimationMode } from "@/lib/motion/config";
 
 export interface DisplayPreferences {
-  density: "compact" | "comfortable";
+  density: MailDensity;
   theme: "light" | "dark" | "system";
   language: string;
   compose_format: "html" | "text";
@@ -15,7 +17,7 @@ export interface DisplayPreferences {
 }
 
 interface UpdateDisplayPreferences {
-  density?: "compact" | "comfortable";
+  density?: MailDensity;
   theme?: "light" | "dark" | "system";
   language?: string;
   compose_format?: "html" | "text";

@@ -1,5 +1,7 @@
 "use client";
 
+import { DEFAULT_MAIL_DENSITY, type MailDensity } from "@/lib/mail-density";
+
 import { useTranslation, useLanguageStore, type LanguagePreference } from "@/lib/i18n";
 
 import {
@@ -68,7 +70,7 @@ export function DisplaySettings() {
   const effectiveAnimationMode = useUiStore((s) => s.effectiveAnimationMode);
 
   const handleDensityChange = useCallback(
-    (density: "compact" | "comfortable") => {
+    (density: MailDensity) => {
       setDensity(density);
       updatePrefs.mutate(
         { density },
@@ -117,12 +119,12 @@ export function DisplaySettings() {
 
   const handleReset = useCallback(() => {
     setLanguage("system");
-    setDensity("comfortable");
+    setDensity(DEFAULT_MAIL_DENSITY);
     setTheme("system");
     setComposeFormat("html");
     updatePrefs.mutate(
       {
-        density: "comfortable",
+        density: DEFAULT_MAIL_DENSITY,
         theme: "system",
         language: "system",
         compose_format: "html",
@@ -156,6 +158,7 @@ export function DisplaySettings() {
           value={prefs.density}
           options={[
             { value: "compact", label: t("Compact") },
+            { value: "standard", label: t("Standard") },
             { value: "comfortable", label: t("Comfortable") },
           ]}
           onChange={handleDensityChange}

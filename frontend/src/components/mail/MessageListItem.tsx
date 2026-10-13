@@ -1,5 +1,7 @@
 "use client";
 
+import type { MailDensity } from "@/lib/mail-density";
+
 import { translate as t, useTranslation, getLocale } from "@/lib/i18n";
 
 import { memo, useState, useCallback, useMemo } from "react";
@@ -32,7 +34,7 @@ function TagDots({ tags }: { tags: MessageTag[] | undefined }) {
 interface MessageListItemProps {
   message: MessageHeader;
   isSelected: boolean;
-  density: "compact" | "comfortable";
+  density: MailDensity;
   onClick: (e: React.MouseEvent) => void;
   bulkSelectMode: boolean;
   isBulkSelected: boolean;
@@ -292,8 +294,8 @@ export const MessageListItem = memo(function MessageListItem({
     );
   }
 
-  // Comfortable layout
-  const comfortableRow = (
+  // Stacked layouts: Standard keeps sender and subject; Comfortable adds a preview.
+  const stackedRow = (
     <div
       role="row"
       aria-selected={isSelected}
@@ -311,7 +313,8 @@ export const MessageListItem = memo(function MessageListItem({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       className={cn(
-        "flex h-[88px] cursor-pointer flex-col justify-center gap-1 rounded-lg border border-border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors",
+        density === "standard" ? "h-16" : "h-[88px]",
+        "flex cursor-pointer flex-col justify-center gap-1 rounded-lg border border-border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors",
         !suppressHover && "hover:bg-muted",
         isUnread ? "bg-background" : "bg-transparent",
         isSelected && "border-primary/30 bg-muted hover:bg-muted",
@@ -402,12 +405,14 @@ export const MessageListItem = memo(function MessageListItem({
           <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
         )}
       </div>
-      <p className="truncate pl-6 text-xs leading-4 text-muted-foreground">{message.snippet || "\u00a0"}</p>
+      {density === "comfortable" && (
+        <p className="truncate pl-6 text-xs leading-4 text-muted-foreground">{message.snippet || "\u00a0"}</p>
+      )}
     </div>
   );
 
   if (!shouldAnimateSelection) {
-    return comfortableRow;
+    return stackedRow;
   }
 
   return (
@@ -418,7 +423,7 @@ export const MessageListItem = memo(function MessageListItem({
       animate={selectionVariants.animate}
       exit={selectionVariants.exit}
     >
-      {comfortableRow}
+      {stackedRow}
     </motion.div>
   );
 });

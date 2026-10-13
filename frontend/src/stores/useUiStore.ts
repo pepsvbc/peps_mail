@@ -1,5 +1,7 @@
 "use client";
 
+import { DEFAULT_MAIL_DENSITY, type MailDensity } from "@/lib/mail-density";
+
 import { STORAGE_KEYS, readStoredPreference, writeStoredPreference } from "@/lib/browser-storage";
 
 import { create, type UseBoundStore, type StoreApi } from "zustand";
@@ -63,7 +65,7 @@ export interface UiState {
   sidebarWidth: number;
   messageListWidth: number;
   readingPaneVisible: boolean;
-  density: "compact" | "comfortable";
+  density: MailDensity;
   theme: ThemeMode;
   searchQuery: string;
   searchActive: boolean;
@@ -86,7 +88,7 @@ export interface UiState {
   setSidebarWidth: (width: number) => void;
   setMessageListWidth: (width: number) => void;
   setReadingPaneVisible: (visible: boolean) => void;
-  setDensity: (density: "compact" | "comfortable") => void;
+  setDensity: (density: MailDensity) => void;
   setTheme: (theme: ThemeMode) => void;
   setSearchQuery: (query: string) => void;
   setSearchActive: (active: boolean) => void;
@@ -118,7 +120,7 @@ export const useUiStore: UseBoundStore<StoreApi<UiState>> = create<UiState>((set
   sidebarWidth: initial.sidebarWidth,
   messageListWidth: initial.messageListWidth,
   readingPaneVisible: true,
-  density: "comfortable",
+  density: DEFAULT_MAIL_DENSITY,
   theme: "system",
   searchQuery: "",
   searchActive: false,

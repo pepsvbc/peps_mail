@@ -51,7 +51,7 @@ const { mockUiState, mockUseMessages, mockOpenDraft } = vi.hoisted(() => ({
     activeFolder: "INBOX",
     unreadOnly: false,
     activeTagId: null as string | null,
-    density: "comfortable" as "compact" | "comfortable",
+    density: "comfortable" as "compact" | "standard" | "comfortable",
     selectedMessageUid: 1 as number | null,
     selectedMessageUids: [] as number[],
     bulkSelectMode: false,
@@ -171,6 +171,7 @@ function setMessages(uids: number[], readUids: number[] = [], hasNextPage = fals
 describe("MessageList and MessageListItem motion transitions", () => {
   beforeEach(() => {
     mockUiState.unreadOnly = false;
+    mockUiState.density = "comfortable";
     mockUiState.activeFolder = "INBOX";
     mockOpenDraft.mockClear();
     mockUiState.selectMessage.mockClear();
@@ -185,6 +186,16 @@ describe("MessageList and MessageListItem motion transitions", () => {
     fireEvent.click(screen.getByText("Subject 7"));
     expect(mockOpenDraft).toHaveBeenCalledWith({ folder: "Drafts", uid: 7 });
     expect(mockUiState.selectMessage).not.toHaveBeenCalled();
+  });
+
+  it("shows sender and subject without the preview in Standard density", () => {
+    mockUiState.density = "standard";
+    mockUiState.effectiveAnimationMode = "off";
+    setMessages([1]);
+    render(<MessageList />);
+    expect(screen.getByText("Sender 1")).toBeTruthy();
+    expect(screen.getByText("Subject 1")).toBeTruthy();
+    expect(screen.queryByText("Snippet")).toBeNull();
   });
 
   it("filters read messages from the unread list", () => {
@@ -297,7 +308,8 @@ describe("MessageList and MessageListItem motion transitions", () => {
     }
   });
 
-  it("keeps virtualization offset in top so motion transforms cannot stack rows", () => {
+  it.each([["compact", 44], ["standard", 72], ["comfortable", 96]] as const)("keeps %s virtualization rows correctly spaced", (density, height) => {
+    mockUiState.density = density;
     mockUiState.effectiveAnimationMode = "medium";
     setMessages([1, 2]);
 
@@ -306,7 +318,7 @@ describe("MessageList and MessageListItem motion transitions", () => {
     const rows = screen.getAllByTestId("message-list-row-transition");
     const secondRow = rows[1];
 
-    expect(secondRow?.style.top).toBe("96px");
+    expect(secondRow?.style.top).toBe(`${height}px`);
     expect(secondRow?.style.transform).toBe("");
   });
 });
