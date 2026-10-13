@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation } from "@/lib/i18n";
+
 import { useState, useCallback, useMemo, type ReactNode } from "react";
 import { Popover, Dialog } from "radix-ui";
 import { AnimatePresence } from "framer-motion";
@@ -20,6 +22,7 @@ function AddressPopover({
   name?: string | null;
   children: ReactNode;
 }) {
+  useTranslation();
   const createContact = useCreateContact();
   const [contactAdded, setContactAdded] = useState(false);
 
@@ -52,7 +55,7 @@ function AddressPopover({
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent"
           >
             <Send className="size-3.5 text-muted-foreground" />
-            Compose email to
+            {t("Compose email to")}
           </button>
           <button
             type="button"
@@ -64,7 +67,7 @@ function AddressPopover({
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent"
           >
             <Copy className="size-3.5 text-muted-foreground" />
-            Copy address
+            {t("Copy address")}
           </button>
           <button
             type="button"
@@ -80,12 +83,12 @@ function AddressPopover({
             {contactAdded ? (
               <>
                 <Check className="size-3.5 text-green-500" />
-                Contact added
+                {t("Contact added")}
               </>
             ) : (
               <>
                 <UserPlus className="size-3.5 text-muted-foreground" />
-                Add to contacts
+                {t("Add to contacts")}
               </>
             )}
           </button>
@@ -102,6 +105,7 @@ export function AddressChip({
   address: string;
   name?: string | null;
 }) {
+  useTranslation();
   const displayName = name || address;
 
   return (
@@ -120,6 +124,7 @@ function HighlightedText({
   text: string;
   query: string;
 }) {
+  useTranslation();
   if (!query) return <>{text}</>;
 
   const lowerText = text.toLowerCase();
@@ -152,6 +157,7 @@ function HighlightedRecipient({
   name?: string | null;
   query: string;
 }) {
+  useTranslation();
   return (
     <AddressPopover address={address} name={name}>
       <button
@@ -184,6 +190,7 @@ function RecipientModal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  useTranslation();
   const effectiveAnimationMode = useUiStore((s) => s.effectiveAnimationMode);
   const overlayMotionProps = useMemo(() => createFadeSlideVariants(effectiveAnimationMode, "y"), [effectiveAnimationMode]);
   const contentMotionProps = useMemo(() => createScaleFadeVariants(effectiveAnimationMode), [effectiveAnimationMode]);
@@ -241,10 +248,9 @@ function RecipientModal({
                 >
                   <div className="flex flex-col space-y-1.5 text-center sm:text-left">
                     <Dialog.Title className="text-lg font-semibold leading-none tracking-tight">
-                      {addresses.length} Recipients
-                    </Dialog.Title>
+                      {t(addresses.length === 1 ? "{count} recipient" : "{count} recipients", { count: addresses.length })} </Dialog.Title>
                     <Dialog.Description className="text-sm text-muted-foreground">
-                      All recipients for this email.
+                      {t("All recipients for this email.")}
                     </Dialog.Description>
                   </div>
 
@@ -252,7 +258,7 @@ function RecipientModal({
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <input
                       type="text"
-                      placeholder="Find recipient..."
+                      placeholder={t("Find recipient...")}
                       value={filter}
                       onChange={(e) => setFilter(e.target.value)}
                       className="w-full rounded-md border border-input bg-background pl-9 pr-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -271,7 +277,7 @@ function RecipientModal({
                   <div className="max-h-[50vh] overflow-y-auto pr-2 flex flex-col gap-2">
                     {filteredAddresses.length === 0 ? (
                       <p className="text-sm text-muted-foreground text-center py-4">
-                        No recipients match your search.
+                        {t("No recipients match your search.")}
                       </p>
                     ) : (
                       filteredAddresses.map((a, i) => (
@@ -293,7 +299,7 @@ function RecipientModal({
 
                   {filter && (
                     <p className="text-xs text-muted-foreground text-center">
-                      Showing {filteredAddresses.length} of {addresses.length} recipients
+                      {t("Showing {shown} of {total} recipients", { shown: filteredAddresses.length, total: addresses.length })}
                     </p>
                   )}
 
@@ -303,7 +309,7 @@ function RecipientModal({
                       className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
                     >
                       <X className="h-4 w-4" />
-                      <span className="sr-only">Close</span>
+                      <span className="sr-only">{t("Close")}</span>
                     </button>
                   </Dialog.Close>
                 </AnimatedDiv>
@@ -317,6 +323,7 @@ function RecipientModal({
 }
 
 export function AddressList({ addresses }: { addresses: EmailAddress[] }) {
+  useTranslation();
   const [modalOpen, setModalOpen] = useState(false);
   const [modalKey, setModalKey] = useState(0);
 
@@ -356,7 +363,7 @@ export function AddressList({ addresses }: { addresses: EmailAddress[] }) {
           onClick={handleOpenModal}
           className="inline rounded px-1.5 py-[1px] text-[11px] font-medium bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer border border-border/40 select-none align-middle ml-1 relative -top-[1px]"
         >
-          + {remainingCount} others
+          {t(remainingCount === 1 ? "+ {count} other" : "+ {count} others", { count: remainingCount })}
         </button>
       </span>
 

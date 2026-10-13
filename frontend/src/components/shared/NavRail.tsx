@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useCallback, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -44,7 +46,8 @@ function NavButton({
   disabled?: boolean;
   onClick?: (event: NavButtonClickEvent) => void;
 }) {
-  const tooltipLabel = disabled ? `${label} (coming soon)` : label;
+  const { t } = useTranslation();
+  const tooltipLabel = disabled ? t("{label} (coming soon)", { label }) : label;
 
   return (
     <Tooltip.Root>
@@ -97,6 +100,7 @@ function useResolvedTheme() {
 const THEME_STORAGE_KEY = "oxi-theme";
 
 export function NavRail() {
+  const { t } = useTranslation();
   const { status: wsStatus, failCount: wsFailCount } = useWsStatus();
   const router = useRouter();
   const viewMode = useUiStore((s) => s.viewMode);
@@ -122,8 +126,10 @@ export function NavRail() {
     ? otherUnreadCount > 99 ? "99+" : `${otherUnreadCount}${hasUnknownCounts ? "+" : ""}`
     : undefined;
   const mailLabel = otherUnreadCount > 0
-    ? `Mail — ${hasUnknownCounts ? "at least " : ""}${otherUnreadCount} unread ${otherUnreadCount === 1 ? "message" : "messages"} in other inboxes`
-    : "Mail";
+    ? t(hasUnknownCounts
+      ? otherUnreadCount === 1 ? "Mail — at least {count} unread message in other inboxes" : "Mail — at least {count} unread messages in other inboxes"
+      : otherUnreadCount === 1 ? "Mail — {count} unread message in other inboxes" : "Mail — {count} unread messages in other inboxes", { count: otherUnreadCount })
+    : t("Mail");
 
   const toggleTheme = useCallback((event: NavButtonClickEvent) => {
     const next = resolvedTheme === "dark" ? "light" : "dark";
@@ -154,8 +160,8 @@ export function NavRail() {
         <button
           type="button"
           className="mb-4 flex size-10 cursor-pointer items-center justify-center rounded-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label="Go to inbox"
-          title={`${brand.appName} — Inbox`}
+          aria-label={t("Go to inbox")}
+          title={`${brand.appName} — ${t("Inbox")}`}
           onClick={() => {
             clearSearch();
             setActiveFolder("INBOX");
@@ -171,7 +177,7 @@ export function NavRail() {
         <div className="flex flex-col items-center gap-1">
           <NavButton
             icon={<PenSquare className="size-5" />}
-            label="Compose"
+            label={t("Compose")}
             onClick={() => useComposeStore.getState().openCompose()}
           />
           <NavButton
@@ -183,19 +189,19 @@ export function NavRail() {
           />
           <NavButton
             icon={<Users className="size-5" />}
-            label="Contacts"
+            label={t("Contacts")}
             active={viewMode === "contacts"}
             onClick={() => setViewMode(viewMode === "contacts" ? "mail" : "contacts")}
           />
           <NavButton
             icon={<Calendar className="size-5" />}
-            label="Calendar"
+            label={t("Calendar")}
             active={viewMode === "calendar"}
             onClick={() => setViewMode(viewMode === "calendar" ? "mail" : "calendar")}
           />
           <NavButton
             icon={<Settings className="size-5" />}
-            label="Settings"
+            label={t("Settings")}
             active={viewMode === "settings"}
             onClick={() => setViewMode(viewMode === "settings" ? "mail" : "settings")}
           />
@@ -216,17 +222,17 @@ export function NavRail() {
                 <Moon className="size-5" />
               )
             }
-            label={resolvedTheme === "dark" ? "Light mode" : "Dark mode"}
+            label={t(resolvedTheme === "dark" ? "Light mode" : "Dark mode")}
             onClick={toggleTheme}
           />
           <NavButton
             icon={<Keyboard className="size-5" />}
-            label="Keyboard shortcuts"
+            label={t("Keyboard shortcuts")}
             onClick={() => useUiStore.getState().setShortcutsOpen(true)}
           />
           <NavButton
             icon={<LogOut className="size-5" />}
-            label="Logout"
+            label={t("Logout")}
             onClick={handleLogout}
           />
         </div>

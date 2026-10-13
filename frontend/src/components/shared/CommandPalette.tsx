@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useMemo } from "react";
 import { Command } from "cmdk";
 import { Dialog } from "radix-ui";
@@ -36,6 +38,7 @@ function useResolvedTheme() {
 const THEME_STORAGE_KEY = "oxi-theme";
 
 export function CommandPalette() {
+  const { t } = useTranslation();
   const open = useUiStore((s) => s.commandPaletteOpen);
   const setOpen = useUiStore((s) => s.setCommandPaletteOpen);
   const setTheme = useUiStore((s) => s.setTheme);
@@ -88,25 +91,25 @@ export function CommandPalette() {
                   exit="exit"
                   className="fixed left-1/2 top-[20%] z-50 w-full max-w-lg -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-background shadow-2xl"
                 >
-                  <Command className="flex flex-col" label="Command palette">
+                  <Command className="flex flex-col" label={t("Command palette")}>
             <div className="flex items-center border-b border-border px-3">
               <Search className="mr-2 size-4 shrink-0 text-muted-foreground" />
               <Command.Input
-                placeholder="Type a command..."
+                placeholder={t("Type a command...")}
                 className="flex-1 bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground/50"
               />
             </div>
             <Command.List className="max-h-72 overflow-y-auto p-2">
               <Command.Empty className="px-3 py-6 text-center text-sm text-muted-foreground">
-                No results found.
+                {t("No results found.")}
               </Command.Empty>
 
-              <Command.Group heading="Actions" className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground">
+              <Command.Group heading={t("Actions")} className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground">
                 <CommandItem
                   icon={<PenSquare className="size-4" />}
                   onSelect={() => runAndClose(() => useComposeStore.getState().openCompose())}
                 >
-                  Compose new email
+                  {t("Compose new email")}
                 </CommandItem>
                 <CommandItem
                   icon={<Search className="size-4" />}
@@ -118,13 +121,13 @@ export function CommandPalette() {
                     })
                   }
                 >
-                  Search emails
+                  {t("Search emails")}
                 </CommandItem>
                 <CommandItem
                   icon={resolvedTheme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
                   onSelect={() => runAndClose(toggleTheme)}
                 >
-                  Toggle dark mode
+                  {t("Toggle dark mode")}
                 </CommandItem>
                 <CommandItem
                   icon={<Keyboard className="size-4" />}
@@ -132,11 +135,11 @@ export function CommandPalette() {
                     runAndClose(() => useUiStore.getState().setShortcutsOpen(true))
                   }
                 >
-                  Keyboard shortcuts
+                  {t("Keyboard shortcuts")}
                 </CommandItem>
               </Command.Group>
 
-              <Command.Group heading="Navigate" className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground">
+              <Command.Group heading={t("Navigate")} className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground">
                 <CommandItem
                   icon={<Inbox className="size-4" />}
                   onSelect={() =>
@@ -146,7 +149,7 @@ export function CommandPalette() {
                     })
                   }
                 >
-                  Go to Inbox
+                  {t("Go to Inbox")}
                 </CommandItem>
                 <CommandItem
                   icon={<Send className="size-4" />}
@@ -157,7 +160,7 @@ export function CommandPalette() {
                     })
                   }
                 >
-                  Go to Sent
+                  {t("Go to Sent")}
                 </CommandItem>
                 <CommandItem
                   icon={<FileText className="size-4" />}
@@ -168,7 +171,7 @@ export function CommandPalette() {
                     })
                   }
                 >
-                  Go to Drafts
+                  {t("Go to Drafts")}
                 </CommandItem>
                 <CommandItem
                   icon={<Trash2 className="size-4" />}
@@ -179,7 +182,7 @@ export function CommandPalette() {
                     })
                   }
                 >
-                  Go to Trash
+                  {t("Go to Trash")}
                 </CommandItem>
                 <CommandItem
                   icon={<Settings className="size-4" />}
@@ -187,7 +190,7 @@ export function CommandPalette() {
                     runAndClose(() => useUiStore.getState().setViewMode("settings"))
                   }
                 >
-                  Open Settings
+                  {t("Open Settings")}
                 </CommandItem>
                 <CommandItem
                   icon={<Users className="size-4" />}
@@ -195,7 +198,7 @@ export function CommandPalette() {
                     runAndClose(() => useUiStore.getState().setViewMode("contacts"))
                   }
                 >
-                  Open Contacts
+                  {t("Open Contacts")}
                 </CommandItem>
               </Command.Group>
             </Command.List>

@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation } from "@/lib/i18n";
+
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { HelpCircle, Search, X } from "lucide-react";
 import { useUiStore } from "@/stores/useUiStore";
@@ -23,6 +25,7 @@ const SEARCH_TIPS = [
 ];
 
 export function SearchBar() {
+  useTranslation();
   const searchQuery = useUiStore((s) => s.searchQuery);
   const searchActive = useUiStore((s) => s.searchActive);
   const setSearchQuery = useUiStore((s) => s.setSearchQuery);
@@ -212,7 +215,7 @@ export function SearchBar() {
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             onBlur={handleBlur}
-            placeholder="Search mail... (Ctrl+K)"
+            placeholder={t("Search mail... (Ctrl+K)")}
             data-search-input
             className="h-8 w-full rounded-md border border-border bg-background py-1 pl-8 pr-14 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           />
@@ -221,7 +224,7 @@ export function SearchBar() {
               <button
                 type="button"
                 onClick={handleClear}
-                aria-label="Clear search"
+                aria-label={t("Clear search")}
                 className="flex size-4 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
               >
                 <X className="size-3.5" />
@@ -260,7 +263,7 @@ export function SearchBar() {
               }}
               aria-expanded={showTips}
               aria-controls={tipsId}
-              aria-label="Search tips"
+              aria-label={t("Search tips")}
               className="flex size-4 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
             >
               <HelpCircle className="size-3.5" />
@@ -273,11 +276,11 @@ export function SearchBar() {
               ref={tipsRef}
               id={tipsId}
               role="dialog"
-              aria-label="Search operators"
+              aria-label={t("Search operators")}
               className="absolute left-0 top-full z-50 mt-1 w-full rounded-md border border-border bg-popover p-2 shadow-md"
             >
               <p className="mb-1.5 text-xs font-medium text-foreground">
-                Search operators
+                {t("Search operators")}
               </p>
               <div className="space-y-1">
                 {SEARCH_TIPS.map((tip) => (
@@ -291,7 +294,7 @@ export function SearchBar() {
                       {tip.operator}
                     </code>
                     <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                      {tip.desc}
+                      {t(tip.desc)}
                     </span>
                   </button>
                 ))}
@@ -301,7 +304,7 @@ export function SearchBar() {
         </div>
         {searchActive && searchResultCount != null && (
           <span className="shrink-0 text-xs text-muted-foreground">
-            {searchResultCount} result{searchResultCount !== 1 ? "s" : ""}
+            {t(searchResultCount === 1 ? "{count} result" : "{count} results", { count: searchResultCount })}
           </span>
         )}
       </div>
@@ -318,7 +321,7 @@ export function SearchBar() {
               <button
                 type="button"
                 onClick={() => handleRemoveFilter(filter.raw)}
-                aria-label={`Remove ${filter.operator} filter`}
+                aria-label={t("Remove {operator} filter", { operator: filter.operator })}
                 className="flex size-3.5 items-center justify-center rounded-full transition-colors hover:bg-primary/20"
               >
                 <X className="size-2.5" />

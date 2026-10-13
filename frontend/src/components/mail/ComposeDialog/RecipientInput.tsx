@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation } from "@/lib/i18n";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAutocomplete } from "@/hooks/useAutocomplete";
 
@@ -11,6 +13,7 @@ interface RecipientInputProps {
 }
 
 function HighlightedText({ html }: { html: string }) {
+  useTranslation();
   const parts = useMemo(() => {
     if (!html) return [];
     const result: Array<{ text: string; highlighted: boolean }> = [];
@@ -58,6 +61,7 @@ export function RecipientInput({
   placeholder,
   inputRef,
 }: RecipientInputProps) {
+  useTranslation();
   const [selectedIndex, setSelectedIndex] = useState(0);
   // Track the query for which the dropdown was dismissed, so typing a new
   // query naturally re-opens it without setState-in-effect.
@@ -139,7 +143,7 @@ export function RecipientInput({
         <div className="absolute left-0 top-full z-50 mt-1 max-h-64 w-72 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
           {isLoading && (
             <div className="px-3 py-2 text-xs text-muted-foreground">
-              Searching...
+              {t("Searching...")}
             </div>
           )}
           {results.map((result, i) => (
@@ -171,7 +175,7 @@ export function RecipientInput({
               )}
               {result.item.source === "known" && (
                 <span className="mt-0.5 text-xs text-muted-foreground/60">
-                  From email history
+                  {t("From email history")}
                 </span>
               )}
             </button>

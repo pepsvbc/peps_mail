@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { useUiStore } from "@/stores/useUiStore";
@@ -56,6 +58,7 @@ function ResizeHandle({
 }: {
   onDrag: (deltaX: number) => void;
 }) {
+  const { t } = useTranslation();
   const dragging = useRef(false);
   const lastX = useRef(0);
 
@@ -91,7 +94,7 @@ function ResizeHandle({
   return (
     <button
       type="button"
-      aria-label="Resize panel"
+      aria-label={t("Resize panel")}
       onMouseDown={onMouseDown}
       className="group relative z-10 w-0 cursor-col-resize outline-none"
     >
@@ -106,6 +109,7 @@ export function ThreePanelLayout({
   messageList,
   readingPane,
 }: ThreePanelLayoutProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const sidebarWidth = useUiStore((s) => s.sidebarWidth);
   const messageListWidth = useUiStore((s) => s.messageListWidth);
@@ -252,9 +256,9 @@ export function ThreePanelLayout({
               ) : (
                 <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-6 text-center">
                   <p className="text-2xl font-bold tracking-tight text-primary">
-                    Mail · {brand.name}
+                    {t("Mail")} · {brand.name}
                   </p>
-                  <p className="text-sm text-muted-foreground">Select a message to read it.</p>
+                  <p className="text-sm text-muted-foreground">{t("Select a message to read it.")}</p>
                 </div>
               )}
             </section>

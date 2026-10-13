@@ -1,6 +1,7 @@
 /**
  * Calendar utility functions for date manipulation and formatting.
  */
+import { getLocale } from "@/lib/i18n";
 
 /** Preset event colors. */
 export const EVENT_COLORS = [
@@ -89,13 +90,13 @@ export function getWeekDays(date: Date, weekStartsOn: number): Date[] {
 }
 
 /** Get abbreviated day names starting from the given week start. */
-export function getDayNames(weekStartsOn: number): string[] {
-  const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const result: string[] = [];
-  for (let i = 0; i < 7; i++) {
-    result.push(names[(i + weekStartsOn) % 7]);
-  }
-  return result;
+export function getDayNames(weekStartsOn: number, locale = getLocale()): string[] {
+  // 5 January 2025 is a Sunday; constructing local dates avoids timezone shifts.
+  return Array.from({ length: 7 }, (_, index) =>
+    new Date(2025, 0, 5 + ((index + weekStartsOn) % 7)).toLocaleDateString(locale, {
+      weekday: "short",
+    }),
+  );
 }
 
 /** Check if two dates are the same calendar day. */
@@ -134,30 +135,26 @@ export function formatDateTimeLocal(date: Date): string {
 export function formatTime(
   dateStr: string,
   format: string = "12h",
+  locale = getLocale(),
 ): string {
   const date = new Date(dateStr);
   if (isNaN(date.getTime())) return dateStr;
 
-  const hours = date.getHours();
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-
-  if (format === "24h") {
-    return `${String(hours).padStart(2, "0")}:${minutes}`;
-  }
-
-  const period = hours >= 12 ? "PM" : "AM";
-  const h12 = hours % 12 || 12;
-  return `${h12}:${minutes} ${period}`;
+  return date.toLocaleTimeString(locale, {
+    hour: format === "24h" ? "2-digit" : "numeric",
+    minute: "2-digit",
+    hourCycle: format === "24h" ? "h23" : "h12",
+  });
 }
 
 /** Format month and year for header display. */
-export function formatMonthYear(date: Date): string {
-  return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+export function formatMonthYear(date: Date, locale = getLocale()): string {
+  return date.toLocaleDateString(locale, { month: "long", year: "numeric" });
 }
 
 /** Format a date for day view header. */
-export function formatDayHeader(date: Date): string {
-  return date.toLocaleDateString("en-US", {
+export function formatDayHeader(date: Date, locale = getLocale()): string {
+  return date.toLocaleDateString(locale, {
     weekday: "long",
     month: "long",
     day: "numeric",

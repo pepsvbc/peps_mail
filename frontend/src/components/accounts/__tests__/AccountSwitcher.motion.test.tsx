@@ -63,9 +63,11 @@ vi.mock("../AddAccountModal", () => ({
 }));
 
 import { AccountSwitcher } from "../AccountSwitcher";
+import { useLanguageStore } from "@/lib/i18n";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useLanguageStore.setState({ language: "en", preference: "system", initialized: false, hasStoredPreference: false });
   mockAuthState.activeAccountId = "a1";
   mockUnreadCounts.a1 = { count: 3, isLoading: false, isError: false };
   mockUnreadCounts.a2 = { count: 7, isLoading: false, isError: false };
@@ -73,6 +75,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  useLanguageStore.setState({ language: "en", preference: "system", initialized: false, hasStoredPreference: false });
+  localStorage.removeItem("oxi-language");
   vi.useRealTimers();
 });
 
@@ -96,6 +100,15 @@ describe("AccountSwitcher motion transitions", () => {
 });
 
 describe("account Inbox counts", () => {
+  it("updates account actions and unread count labels in French without changing accounts", () => {
+    render(<AccountSwitcher />);
+    fireEvent.click(screen.getByRole("button", { name: /admin@example.com/i }));
+    act(() => useLanguageStore.getState().setLanguage("fr"));
+    expect(screen.getByText("Ajouter un compte")).toBeTruthy();
+    expect(screen.getByLabelText("7 messages non lus dans la boîte de réception")).toBeTruthy();
+    expect(mockAuthState.setActiveAccount).not.toHaveBeenCalled();
+  });
+
   it("keeps the account trigger free of the other Inbox summary", () => {
     render(<AccountSwitcher />);
 

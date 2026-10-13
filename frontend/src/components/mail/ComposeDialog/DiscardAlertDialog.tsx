@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation } from "@/lib/i18n";
+
 import { useMemo } from "react";
 import { AlertDialog } from "radix-ui";
 import { AnimatePresence } from "framer-motion";
@@ -18,6 +20,7 @@ export function DiscardAlertDialog({
   onOpenChange,
   onConfirm,
 }: DiscardAlertDialogProps) {
+  useTranslation();
   const effectiveAnimationMode = useUiStore((s) => s.effectiveAnimationMode);
   const overlayMotionProps = useMemo(() => createFadeSlideVariants(effectiveAnimationMode, "y"), [effectiveAnimationMode]);
   const contentMotionProps = useMemo(() => createScaleFadeVariants(effectiveAnimationMode), [effectiveAnimationMode]);
@@ -48,16 +51,15 @@ export function DiscardAlertDialog({
                   className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-background p-6 shadow-2xl"
                 >
                   <AlertDialog.Title className="text-base font-semibold">
-                    Are you sure?
+                    {t("Are you sure?")}
                   </AlertDialog.Title>
                   <AlertDialog.Description className="mt-2 text-sm text-muted-foreground">
-                    The message has not been sent and has unsaved changes. Do you want
-                    to discard your changes?
+                    {t("The message has not been sent and has unsaved changes. Do you want to discard your changes?")}
                   </AlertDialog.Description>
                   <div className="mt-6 flex justify-end gap-3">
                     <AlertDialog.Cancel asChild>
                       <button className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
-                        Cancel
+                        {t("Cancel")}
                       </button>
                     </AlertDialog.Cancel>
                     <AlertDialog.Action asChild>
@@ -65,7 +67,7 @@ export function DiscardAlertDialog({
                         onClick={onConfirm}
                         className="rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90"
                       >
-                        Discard
+                        {t("Discard")}
                       </button>
                     </AlertDialog.Action>
                   </div>

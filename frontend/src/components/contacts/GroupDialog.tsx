@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useState, useMemo } from "react";
 import { AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -24,6 +26,7 @@ function GroupForm({
   initialName,
   title,
 }: Omit<GroupDialogProps, "open">) {
+  const { t } = useTranslation();
   const [name, setName] = useState(initialName ?? "");
   const effectiveAnimationMode = useUiStore((s) => s.effectiveAnimationMode);
   const overlayMotionProps = useMemo(() => createFadeSlideVariants(effectiveAnimationMode, "y"), [effectiveAnimationMode]);
@@ -63,14 +66,14 @@ function GroupForm({
               htmlFor="group-name"
               className="block text-sm font-medium text-foreground"
             >
-              Group name
+              {t("Group name")}
             </label>
             <input
               id="group-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Work, Family, Friends"
+              placeholder={t("e.g. Work, Family, Friends")}
               autoFocus
               className="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none dark:bg-input/30"
             />
@@ -82,14 +85,14 @@ function GroupForm({
               size="sm"
               onClick={onClose}
             >
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               type="submit"
               size="sm"
               disabled={!name.trim() || isPending}
             >
-              {isPending ? "Saving..." : "Save"}
+              {isPending ? t("Saving...") : t("Save")}
             </Button>
           </div>
         </form>

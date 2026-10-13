@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation } from "@/lib/i18n";
+
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "radix-ui";
 import { AnimatePresence, motion } from "framer-motion";
@@ -58,6 +60,7 @@ const RichTextEditor = dynamic(
 );
 
 export function ComposeDialog() {
+  useTranslation();
   const {
     isOpen,
     isMinimized,
@@ -207,7 +210,7 @@ export function ComposeDialog() {
             lastSavedHashRef.current = hash;
             setDraftSaved(true);
             setTimeout(() => setDraftSaved(false), 3000);
-            toast.success("Draft saved");
+            toast.success(t("Draft saved"));
           },
         }
       );
@@ -247,7 +250,7 @@ export function ComposeDialog() {
 
   const doSend = useCallback(() => {
     if (!isCurrentAccount()) {
-      toast.error("Switch back to this draft's account before sending.");
+      toast.error(t("Switch back to this draft's account before sending."));
       useComposeStore.setState({ isOpen: true, isMinimized: false });
       return;
     }
@@ -279,11 +282,11 @@ export function ComposeDialog() {
       },
       {
         onSuccess: () => {
-          toast.success("Message sent");
+          toast.success(t("Message sent"));
           reset();
         },
         onError: (error) => {
-          toast.error(`Failed to send: ${error.message}`);
+          toast.error(t("Failed to send: {error}", { error: error.message }));
         },
       }
     );
@@ -314,11 +317,11 @@ export function ComposeDialog() {
       doSend();
     }, 5000);
 
-    toast("Sending message...", {
+    toast(t("Sending message..."), {
       id: "undo-send",
       duration: 5500,
       action: {
-        label: "Undo",
+        label: t("Undo"),
         onClick: () => {
           clearTimeout(timer);
           useComposeStore.setState({ isOpen: true });
@@ -346,7 +349,7 @@ export function ComposeDialog() {
   // Save draft and close the dialog without discarding.
   const handleSaveAndClose = useCallback(() => {
     if (!isCurrentAccount()) {
-      toast.error("Switch back to this draft's account before saving or closing it.");
+      toast.error(t("Switch back to this draft's account before saving or closing it."));
       return;
     }
     if (hasContent()) {
@@ -401,7 +404,7 @@ export function ComposeDialog() {
             );
           },
           onError: (error) => {
-            toast.error(`Upload failed: ${error.message}`);
+            toast.error(t("Upload failed: {error}", { error: error.message }));
           },
         }
       );
@@ -447,7 +450,7 @@ export function ComposeDialog() {
               }
             },
             onError: (error) => {
-              toast.error(`Image upload failed: ${error.message}`);
+              toast.error(t("Image upload failed: {error}", { error: error.message }));
               resolve(null);
             },
           }
@@ -467,7 +470,7 @@ export function ComposeDialog() {
             removeAttachment(attachmentId);
           },
           onError: (error) => {
-            toast.error(`Delete failed: ${error.message}`);
+            toast.error(t("Delete failed: {error}", { error: error.message }));
           },
         }
       );
@@ -529,10 +532,10 @@ export function ComposeDialog() {
                 size: a.size,
               }))
             );
-            toast.success(`${data.attachments.length} file(s) attached`);
+            toast.success(t(data.attachments.length === 1 ? "{count} file attached" : "{count} files attached", { count: data.attachments.length }));
           },
           onError: (error) => {
-            toast.error(`Upload failed: ${error.message}`);
+            toast.error(t("Upload failed: {error}", { error: error.message }));
           },
         }
       );
@@ -613,10 +616,10 @@ export function ComposeDialog() {
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-xl bg-background/90 backdrop-blur-sm">
                 <Upload className="size-10 text-primary" />
                 <p className="mt-3 text-sm font-medium text-foreground">
-                  Drop files to attach
+                  {t("Drop files to attach")}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Files will be uploaded as attachments
+                  {t("Files will be uploaded as attachments")}
                 </p>
               </div>
             )}
@@ -628,13 +631,13 @@ export function ComposeDialog() {
                   <button
                     ref={restoreButtonRef}
                     onClick={restoreCompose}
-                    aria-label="Restore composer"
-                    title="Restore composer"
+                    aria-label={t("Restore composer")}
+                    title={t("Restore composer")}
                     className="block w-full truncate rounded text-left hover:text-primary"
                   >
-                    {subject.trim() || "New Message"}
+                    {subject.trim() || t("New Message")}
                   </button>
-                ) : "New Message"}
+                ) : t("New Message")}
               </Dialog.Title>
               <div className="flex shrink-0 items-center gap-1">
                 <button
@@ -643,8 +646,8 @@ export function ComposeDialog() {
                     setExpanded(false);
                   }}
                   className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                  aria-label={position === "right" ? "Move composer to left" : "Move composer to right"}
-                  title={position === "right" ? "Move composer to left" : "Move composer to right"}
+                  aria-label={position === "right" ? t("Move composer to left") : t("Move composer to right")}
+                  title={position === "right" ? t("Move composer to left") : t("Move composer to right")}
                 >
                   {position === "right" ? <PanelLeft className="size-4" /> : <PanelRight className="size-4" />}
                 </button>
@@ -653,16 +656,16 @@ export function ComposeDialog() {
                     <button
                       onClick={minimizeCompose}
                       className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                      aria-label="Minimize composer"
-                      title="Minimize composer"
+                      aria-label={t("Minimize composer")}
+                      title={t("Minimize composer")}
                     >
                       <Minus className="size-4" />
                     </button>
                     <button
                       onClick={() => setExpanded((e) => !e)}
                       className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                      aria-label={expanded ? "Restore composer size" : "Maximize composer"}
-                      title={expanded ? "Restore composer size" : "Maximize composer"}
+                      aria-label={expanded ? t("Restore composer size") : t("Maximize composer")}
+                      title={expanded ? t("Restore composer size") : t("Maximize composer")}
                     >
                       {expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
                     </button>
@@ -671,8 +674,8 @@ export function ComposeDialog() {
                 <Dialog.Close asChild>
                   <button
                     className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                    aria-label="Close composer"
-                    title="Save draft and close"
+                    aria-label={t("Close composer")}
+                    title={t("Save draft and close")}
                   >
                     <X className="size-4" />
                   </button>
@@ -682,9 +685,9 @@ export function ComposeDialog() {
 
             {accountMismatch && !isMinimized && (
               <div className="space-y-3 p-4 text-sm text-muted-foreground">
-                <p>Switch back to this draft&apos;s account to continue composing.</p>
+                <p>{t("Switch back to this draft's account to continue composing.")}</p>
                 <button onClick={handleDiscard} className="rounded-md border border-border px-3 py-2 hover:bg-accent">
-                  Discard
+                  {t("Discard")}
                 </button>
               </div>
             )}
@@ -698,7 +701,7 @@ export function ComposeDialog() {
               {identities && identities.length > 1 && (
                 <div className="flex items-center border-b border-border/50 px-4">
                   <label className="w-12 shrink-0 text-xs text-muted-foreground">
-                    From
+                    {t("From")}
                   </label>
                   <select
                     value={fromIdentityId ?? ""}
@@ -727,13 +730,13 @@ export function ComposeDialog() {
               )}
               <div className="flex items-center border-b border-border/50 px-4">
                 <label className="w-12 shrink-0 text-xs text-muted-foreground">
-                  To
+                  {t("To")}
                 </label>
                 <RecipientInput
                   inputRef={toInputRef}
                   value={to}
                   onChange={(v) => setField("to", v)}
-                  placeholder="Recipients"
+                  placeholder={t("Recipients")}
                 />
                 <button
                   className="ml-2 text-xs text-muted-foreground hover:text-foreground"
@@ -749,7 +752,7 @@ export function ComposeDialog() {
                   {showCc || showBcc ? (
                     <ChevronUp className="size-3.5" />
                   ) : (
-                    <span>Cc Bcc</span>
+                    <span>{t("Cc Bcc")}</span>
                   )}
                 </button>
               </div>
@@ -757,7 +760,7 @@ export function ComposeDialog() {
               {showCc && (
                 <div className="flex items-center border-b border-border/50 px-4">
                   <label className="w-12 shrink-0 text-xs text-muted-foreground">
-                    Cc
+                    {t("Cc")}
                   </label>
                   <RecipientInput
                     value={cc}
@@ -769,7 +772,7 @@ export function ComposeDialog() {
               {showBcc && (
                 <div className="flex items-center border-b border-border/50 px-4">
                   <label className="w-12 shrink-0 text-xs text-muted-foreground">
-                    Bcc
+                    {t("Bcc")}
                   </label>
                   <RecipientInput
                     value={bcc}
@@ -780,7 +783,7 @@ export function ComposeDialog() {
 
               <div className="flex items-center px-4">
                 <label className="w-12 shrink-0 text-xs text-muted-foreground">
-                  Subject
+                  {t("Subject")}
                 </label>
                 <input
                   type="text"
@@ -796,7 +799,7 @@ export function ComposeDialog() {
               <div className="flex items-center gap-2 border-b border-yellow-300/50 bg-yellow-50 px-4 py-2 dark:border-yellow-700/50 dark:bg-yellow-950/30">
                 <AlertTriangle className="size-4 shrink-0 text-yellow-600 dark:text-yellow-500" />
                 <span className="text-xs text-yellow-700 dark:text-yellow-400">
-                  You are sending to more than 10 recipients.
+                  {t("You are sending to more than 10 recipients.")}
                 </span>
               </div>
             )}
@@ -812,7 +815,7 @@ export function ComposeDialog() {
                     <button
                       onClick={() => setPreviewAttId(att.id)}
                       className="flex items-center gap-1.5 hover:text-foreground"
-                      title="Preview"
+                      title={t("Preview")}
                     >
                       <Paperclip className="size-3 shrink-0 text-muted-foreground" />
                       <span
@@ -828,7 +831,7 @@ export function ComposeDialog() {
                     <button
                       onClick={() => handleRemoveAttachment(att.id)}
                       className="ml-0.5 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                      title="Remove attachment"
+                      title={t("Remove attachment")}
                     >
                       <X className="size-3" />
                     </button>
@@ -843,14 +846,14 @@ export function ComposeDialog() {
                 content={body}
                 onChange={(html) => setField("body", html)}
                 onImageUpload={handleImageUpload}
-                placeholder="Write your message..."
+                placeholder={t("Write your message...")}
                 className="flex-1 overflow-auto"
               />
             ) : (
               <textarea
                 value={body}
                 onChange={(e) => setField("body", e.target.value)}
-                placeholder="Write your message..."
+                placeholder={t("Write your message...")}
                 className="flex-1 resize-none overflow-auto bg-transparent px-4 py-3 text-sm outline-none placeholder:text-muted-foreground/50"
               />
             )}
@@ -885,12 +888,12 @@ export function ComposeDialog() {
                         {sendMutation.isPending ? (
                           <>
                             <Loader2 className="size-4 animate-spin" />
-                            Sending...
+                            {t("Sending...")}
                           </>
                         ) : (
                           <>
                             <Send className="size-4" />
-                            Send
+                            {t("Send")}
                           </>
                         )}
                       </motion.span>
@@ -898,12 +901,12 @@ export function ComposeDialog() {
                   ) : sendMutation.isPending ? (
                     <>
                       <Loader2 className="size-4 animate-spin" />
-                      Sending...
+                      {t("Sending...")}
                     </>
                   ) : (
                     <>
                       <Send className="size-4" />
-                      Send
+                      {t("Send")}
                     </>
                   )}
                 </button>
@@ -911,7 +914,7 @@ export function ComposeDialog() {
                   onClick={handleAttachFiles}
                   disabled={uploadMutation.isPending}
                   className="rounded-lg p-2 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
-                  title="Attach files"
+                  title={t("Attach files")}
                 >
                   {uploadMutation.isPending ? (
                     <Loader2 className="size-4 animate-spin" />
@@ -923,7 +926,7 @@ export function ComposeDialog() {
                   onClick={() => saveDraft(true)}
                   disabled={saveDraftMutation.isPending}
                   className="rounded-lg p-2 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
-                  title="Save draft (Ctrl+S)"
+                  title={t("Save draft (Ctrl+S)")}
                 >
                   {saveDraftMutation.isPending ? (
                     <Loader2 className="size-4 animate-spin" />
@@ -937,7 +940,7 @@ export function ComposeDialog() {
                     "rounded-lg p-2 hover:bg-accent hover:text-foreground",
                     isHtml ? "text-muted-foreground" : "text-primary"
                   )}
-                  title={isHtml ? "Switch to plain text" : "Switch to rich text"}
+                  title={isHtml ? t("Switch to plain text") : t("Switch to rich text")}
                 >
                   {isHtml ? (
                     <FileText className="size-4" />
@@ -963,7 +966,7 @@ export function ComposeDialog() {
                     "rounded-lg p-2 hover:bg-accent hover:text-foreground",
                     signatureEnabled ? "text-primary" : "text-muted-foreground"
                   )}
-                  title={signatureEnabled ? "Remove signature" : "Add signature"}
+                  title={signatureEnabled ? t("Remove signature") : t("Add signature")}
                 >
                   <PenLine className="size-4" />
                 </button>
@@ -978,14 +981,14 @@ export function ComposeDialog() {
               <div className="flex items-center gap-2">
                 {draftSaved && (
                   <span className="text-xs text-muted-foreground">
-                    Draft saved
+                    {t("Draft saved")}
                   </span>
                 )}
                 <button
                   onClick={handleDiscard}
                   className="rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
                 >
-                  Discard
+                  {t("Discard")}
                 </button>
               </div>
             </div>

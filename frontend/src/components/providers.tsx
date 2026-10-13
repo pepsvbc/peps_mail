@@ -7,6 +7,7 @@ import { Toaster } from "sonner";
 import { MotionProvider } from "@/lib/motion/MotionProvider";
 import { clearThemeTransitionArtifacts } from "@/lib/motion/theme-spread";
 import { makeQueryClient } from "@/lib/query-client";
+import { LanguageInitializer } from "@/components/LanguageInitializer";
 
 const THEME_STORAGE_KEY = "oxi-theme";
 
@@ -31,6 +32,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => makeQueryClient());
   return (
     <QueryClientProvider client={queryClient}>
+      <LanguageInitializer />
       <ThemeInitializer />
       <LazyMotion features={domAnimation}>
         <MotionProvider>{children}</MotionProvider>

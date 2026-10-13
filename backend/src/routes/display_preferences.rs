@@ -12,6 +12,7 @@ use crate::error::AppError;
 fn map_update_error(message: String) -> AppError {
     let is_invalid_preference = message.starts_with("Invalid density:")
         || message.starts_with("Invalid theme:")
+        || message.starts_with("Invalid language:")
         || message.starts_with("Invalid compose_format:")
         || message.starts_with("Invalid animation_mode:");
 
@@ -30,8 +31,7 @@ pub async fn get_display_preferences(
     let conn = db::pool::open_user_db(&config.data_dir, &session.user_hash)
         .map_err(|e| AppError::InternalError(format!("Failed to open database: {e}")))?;
 
-    let prefs = db::display_preferences::get_preferences(&conn)
-        .map_err(AppError::InternalError)?;
+    let prefs = db::display_preferences::get_preferences(&conn).map_err(AppError::InternalError)?;
 
     Ok(Json(prefs).into_response())
 }
@@ -45,8 +45,8 @@ pub async fn update_display_preferences(
     let conn = db::pool::open_user_db(&config.data_dir, &session.user_hash)
         .map_err(|e| AppError::InternalError(format!("Failed to open database: {e}")))?;
 
-    let prefs = db::display_preferences::update_preferences(&conn, &data)
-        .map_err(map_update_error)?;
+    let prefs =
+        db::display_preferences::update_preferences(&conn, &data).map_err(map_update_error)?;
 
     Ok(Json(prefs).into_response())
 }
@@ -56,8 +56,8 @@ mod tests {
     use super::*;
     use std::time::Instant;
 
-    use axum::http::StatusCode;
     use axum::Extension;
+    use axum::http::StatusCode;
     use axum::response::IntoResponse;
     use serde_json::json;
     use tempfile::TempDir;
@@ -196,9 +196,42 @@ mod tests {
         let parsed: UpdateDisplayPreferences =
             serde_json::from_value(payload).expect("payload should deserialize");
 
-        assert_eq!(
-            parsed.animation_mode,
-            Some(Some("medium".to_string()))
-        );
+        assert_eq!(parsed.animation_mode, Some(Some("medium".to_string())));
+    }
+
+    #[tokio::test]
+    async fn test_language_preference_round_trip_and_invalid_language_returns_http_400() {
+        use http_body_util::BodyExt;
+
+        let tmp = TempDir::new().unwrap();
+        let config = test_config(tmp.path().to_str().unwrap());
+        let session = test_session();
+        let update: UpdateDisplayPreferences =
+            serde_json::from_value(json!({ "language": "fr" })).unwrap();
+        let response = update_display_preferences(
+            Extension(session.clone()),
+            Extension(config.clone()),
+            Json(update),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response =
+            get_display_preferences(Extension(session.clone()), Extension(config.clone()))
+                .await
+                .unwrap();
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let saved: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(saved["language"], "fr");
+
+        let invalid: UpdateDisplayPreferences =
+            serde_json::from_value(json!({ "language": "de" })).unwrap();
+        let response =
+            update_display_preferences(Extension(session), Extension(config), Json(invalid))
+                .await
+                .unwrap_err()
+                .into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation } from "@/lib/i18n";
+
 import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { useDeleteFolder } from "@/hooks/useFolders";
@@ -38,6 +40,7 @@ export function FolderContextMenu({
   onDragLeave,
   onDrop,
 }: FolderContextMenuProps) {
+  useTranslation();
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(
     null,
   );
@@ -123,7 +126,7 @@ export function FolderContextMenu({
             className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent"
           >
             <Pencil className="size-3.5" />
-            Rename
+            {t("Rename")}
           </button>
           <button
             type="button"
@@ -138,10 +141,10 @@ export function FolderContextMenu({
           >
             <Trash2 className="size-3.5" />
             {deleteFolder.isPending
-              ? "Deleting..."
+              ? t("Deleting...")
               : confirmDelete
-                ? "Confirm delete?"
-                : "Delete"}
+                ? t("Confirm delete?")
+                : t("Delete")}
           </button>
         </div>
       )}

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useLanguageStore } from "@/lib/i18n";
 
 import { DisplaySettings } from "../DisplaySettings";
 
@@ -16,6 +17,7 @@ vi.mock("@/hooks/useDisplayPreferences", () => ({
 
 describe("DisplaySettings animation mode", () => {
   beforeEach(() => {
+    useLanguageStore.setState({ language: "en", preference: "system" });
     mockMutate.mockReset();
     mockUseUpdateDisplayPreferences.mockReturnValue({ mutate: mockMutate });
     mockUseDisplayPreferences.mockReturnValue({
@@ -30,6 +32,21 @@ describe("DisplaySettings animation mode", () => {
         updated_at: "2026-03-14T00:00:00Z",
       },
     });
+  });
+
+  afterEach(() => {
+    useLanguageStore.setState({ language: "en", preference: "system" });
+    localStorage.removeItem("oxi-language");
+  });
+
+  it("switches language immediately and saves the account preference", () => {
+    render(<DisplaySettings />);
+    fireEvent.click(screen.getByRole("button", { name: "Français" }));
+    expect(screen.getByRole("heading", { name: "Affichage" })).toBeTruthy();
+    expect(mockMutate).toHaveBeenCalledWith({ language: "fr" }, expect.objectContaining({ onError: expect.any(Function) }));
+    expect(localStorage.getItem("oxi-language")).toBe("fr");
+    fireEvent.click(screen.getByRole("button", { name: "English" }));
+    expect(screen.getByRole("heading", { name: "Display" })).toBeTruthy();
   });
 
   it("shows the existing animation mode selected", () => {

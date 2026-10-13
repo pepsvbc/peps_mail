@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation, getLocale } from "@/lib/i18n";
+
 import { useCallback, useEffect, useRef } from "react";
 import { AnimatePresence } from "framer-motion";
 import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
@@ -27,7 +29,7 @@ function formatDate(dateStr: string): string {
     date.getDate() === now.getDate();
 
   if (isToday) {
-    return date.toLocaleTimeString(undefined, {
+    return date.toLocaleTimeString(getLocale(), {
       hour: "numeric",
       minute: "2-digit",
     });
@@ -35,25 +37,25 @@ function formatDate(dateStr: string): string {
 
   const msPerDay = 86_400_000;
   const daysDiff = Math.floor((now.getTime() - date.getTime()) / msPerDay);
-  const time = date.toLocaleTimeString(undefined, {
+  const time = date.toLocaleTimeString(getLocale(), {
     hour: "numeric",
     minute: "2-digit",
   });
 
   if (daysDiff < 7 && daysDiff >= 0) {
-    const day = date.toLocaleDateString(undefined, { weekday: "short" });
+    const day = date.toLocaleDateString(getLocale(), { weekday: "short" });
     return `${day} ${time}`;
   }
 
   if (date.getFullYear() === now.getFullYear()) {
-    const day = date.toLocaleDateString(undefined, {
+    const day = date.toLocaleDateString(getLocale(), {
       month: "short",
       day: "numeric",
     });
     return `${day} ${time}`;
   }
 
-  const day = date.toLocaleDateString(undefined, {
+  const day = date.toLocaleDateString(getLocale(), {
     month: "2-digit",
     day: "2-digit",
     year: "2-digit",
@@ -70,6 +72,7 @@ function SearchResultRow({
   isSelected: boolean;
   onClick: () => void;
 }) {
+  useTranslation();
   const sender = result.from_name || result.from_address;
   const formattedDate = formatDate(result.date);
   const isUnread = !result.flags.includes("\\Seen");
@@ -117,7 +120,7 @@ function SearchResultRow({
           "min-w-0 flex-1 truncate text-sm",
           isUnread ? "font-medium" : "font-normal",
           isFlagged ? "text-primary" : "text-foreground",
-        )}>{result.subject || "(no subject)"}</span>
+        )}>{result.subject || t("(no subject)")}</span>
         {result.has_attachments && (
           <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
         )}
@@ -134,6 +137,7 @@ function SearchResultRow({
 }
 
 export function SearchResults() {
+  useTranslation();
   const searchQuery = useUiStore((s) => s.searchQuery);
   const setSearchQuery = useUiStore((s) => s.setSearchQuery);
   const setSearchActive = useUiStore((s) => s.setSearchActive);
@@ -259,7 +263,7 @@ export function SearchResults() {
       {isError && (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center">
           <p className="text-sm text-muted-foreground">
-            Failed to load search results
+            {t("Failed to load search results")}
           </p>
         </div>
       )}
@@ -267,7 +271,7 @@ export function SearchResults() {
       {/* Empty state */}
       {!isLoading && !isError && hasValidCommittedSearch && results.length === 0 && (
         <div className="flex flex-1 items-center justify-center px-4 pt-4 text-center">
-          <p className="text-sm text-muted-foreground">No results found</p>
+          <p className="text-sm text-muted-foreground">{t("No results found")}</p>
         </div>
       )}
 
@@ -280,21 +284,21 @@ export function SearchResults() {
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">
                   {results.length < totalCount
-                    ? `Showing ${results.length} of ${totalCount} results`
-                    : `${totalCount} result${totalCount !== 1 ? "s" : ""}`}
+                    ? t("Showing {shown} of {total} results", { shown: results.length, total: totalCount })
+                    : t(totalCount === 1 ? "{count} result" : "{count} results", { count: totalCount })}
                 </span>
                 <button
                   type="button"
                   onClick={() => setSearchSortOrder(searchSortOrder === "date_desc" ? "date_asc" : "date_desc")}
                   className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  title={searchSortOrder === "date_desc" ? "Newest first" : "Oldest first"}
+                  title={searchSortOrder === "date_desc" ? t("Newest first") : t("Oldest first")}
                 >
                   {searchSortOrder === "date_desc" ? (
                     <ArrowDown className="size-3" />
                   ) : (
                     <ArrowUp className="size-3" />
                   )}
-                  Date
+                  {t("Date")}
                 </button>
               </div>
               {parsed.filters.length > 0 && (
@@ -308,7 +312,7 @@ export function SearchResults() {
                       <button
                         type="button"
                         onClick={() => handleRemoveFilter(filter.raw)}
-                        aria-label={`Remove ${filter.operator} filter`}
+                        aria-label={t("Remove {operator} filter", { operator: filter.operator })}
                         className="flex size-3.5 items-center justify-center rounded-full transition-colors hover:bg-primary/20"
                       >
                         <X className="size-2.5" />

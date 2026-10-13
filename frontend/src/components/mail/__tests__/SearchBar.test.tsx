@@ -17,9 +17,11 @@ vi.mock("@/stores/useUiStore", () => ({
 }));
 
 import { SearchBar } from "../SearchBar";
+import { useLanguageStore } from "@/lib/i18n";
 
 describe("SearchBar", () => {
   beforeEach(() => {
+    useLanguageStore.setState({ language: "en" });
     vi.useFakeTimers();
     mockUiState.searchQuery = "";
     mockUiState.searchActive = false;
@@ -30,6 +32,7 @@ describe("SearchBar", () => {
   });
 
   afterEach(() => {
+    act(() => useLanguageStore.setState({ language: "en" }));
     vi.useRealTimers();
   });
 
@@ -165,4 +168,27 @@ describe("SearchBar", () => {
 
     expect(mockUiState.setSearchQuery).not.toHaveBeenCalled();
   });
+
+  it("switches labels and plural counts live while preserving search operators", () => {
+    mockUiState.searchQuery = "from:alice@example.com";
+    mockUiState.searchActive = true;
+    mockUiState.searchResultCount = 1;
+    const { rerender } = render(<SearchBar />);
+
+    expect(screen.getByText("1 result")).toBeTruthy();
+    act(() => useLanguageStore.setState({ language: "fr" }));
+    const input = screen.getByPlaceholderText("Rechercher un message… (Ctrl+K)") as HTMLInputElement;
+    expect(input.value).toBe("from:alice@example.com");
+    expect(screen.getByText("1 résultat")).toBeTruthy();
+    expect(screen.getByLabelText("Retirer le filtre from")).toBeTruthy();
+
+    mockUiState.searchResultCount = 2;
+    rerender(<SearchBar />);
+    expect(screen.getByText("2 résultats")).toBeTruthy();
+
+    fireEvent.keyDown(screen.getByLabelText("Aide à la recherche"), { key: "Enter" });
+    expect(screen.getByText("Filtrer par expéditeur")).toBeTruthy();
+    expect(screen.getByText("from:")).toBeTruthy();
+  });
+
 });

@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useMemo } from "react";
 import { Dialog } from "radix-ui";
 import { AnimatePresence } from "framer-motion";
@@ -20,6 +22,7 @@ const shortcuts = [
 ];
 
 export function KeyboardShortcuts() {
+  const { t } = useTranslation();
   const open = useUiStore((s) => s.shortcutsOpen);
   const setOpen = useUiStore((s) => s.setShortcutsOpen);
   const effectiveAnimationMode = useUiStore((s) => s.effectiveAnimationMode);
@@ -52,10 +55,10 @@ export function KeyboardShortcuts() {
                   className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-background p-6 shadow-2xl"
                 >
                   <Dialog.Title className="mb-4 text-lg font-semibold">
-                    Keyboard Shortcuts
+                    {t("Keyboard Shortcuts")}
                   </Dialog.Title>
                   <Dialog.Description className="sr-only">
-                    Available keyboard shortcuts for navigating and acting on mail.
+                    {t("Available keyboard shortcuts for navigating and acting on mail.")}
                   </Dialog.Description>
                   <div className="space-y-2">
                     {shortcuts.map((s) => (
@@ -63,7 +66,7 @@ export function KeyboardShortcuts() {
                         key={s.description}
                         className="flex items-center justify-between py-1.5"
                       >
-                        <span className="text-sm text-foreground">{s.description}</span>
+                        <span className="text-sm text-foreground">{t(s.description)}</span>
                         <div className="flex items-center gap-1">
                           {s.keys.map((key, i) => (
                             <span key={i}>
@@ -71,7 +74,7 @@ export function KeyboardShortcuts() {
                                 <span className="px-1 text-xs text-muted-foreground">/</span>
                               ) : (
                                 <kbd className="inline-flex min-w-[24px] items-center justify-center rounded-md border border-border bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
-                                  {key}
+                                  {t(key)}
                                 </kbd>
                               )}
                             </span>
@@ -82,7 +85,7 @@ export function KeyboardShortcuts() {
                   </div>
                   <Dialog.Close asChild>
                     <button className="mt-4 w-full rounded-lg bg-accent py-2 text-sm text-accent-foreground hover:bg-accent/80">
-                      Close
+                      {t("Close")}
                     </button>
                   </Dialog.Close>
                 </AnimatedDiv>

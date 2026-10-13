@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation, getLocale } from "@/lib/i18n";
+
 import { memo, useState, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Star, Paperclip } from "lucide-react";
@@ -11,6 +13,7 @@ import type { MessageTag } from "@/types/tag";
 import type { MessageHeader } from "@/types/message";
 
 function TagDots({ tags }: { tags: MessageTag[] | undefined }) {
+  useTranslation();
   if (!tags?.length) return null;
   return (
     <span className="flex shrink-0 items-center gap-0.5">
@@ -51,7 +54,7 @@ function formatDate(dateStr: string): string {
     date.getDate() === now.getDate();
 
   if (isToday) {
-    return date.toLocaleTimeString(undefined, {
+    return date.toLocaleTimeString(getLocale(), {
       hour: "numeric",
       minute: "2-digit",
     });
@@ -63,19 +66,19 @@ function formatDate(dateStr: string): string {
     (now.getTime() - date.getTime()) / msPerDay,
   );
 
-  const time = date.toLocaleTimeString(undefined, {
+  const time = date.toLocaleTimeString(getLocale(), {
     hour: "numeric",
     minute: "2-digit",
   });
 
   if (daysDiff < 7 && daysDiff >= 0) {
-    const day = date.toLocaleDateString(undefined, { weekday: "short" });
+    const day = date.toLocaleDateString(getLocale(), { weekday: "short" });
     return `${day} ${time}`;
   }
 
   // Same year
   if (date.getFullYear() === now.getFullYear()) {
-    const day = date.toLocaleDateString(undefined, {
+    const day = date.toLocaleDateString(getLocale(), {
       month: "short",
       day: "numeric",
     });
@@ -83,7 +86,7 @@ function formatDate(dateStr: string): string {
   }
 
   // Older
-  const day = date.toLocaleDateString(undefined, {
+  const day = date.toLocaleDateString(getLocale(), {
     month: "2-digit",
     day: "2-digit",
     year: "2-digit",
@@ -110,6 +113,7 @@ export const MessageListItem = memo(function MessageListItem({
   suppressHover,
   effectiveAnimationMode,
 }: MessageListItemProps) {
+  useTranslation();
   const isUnread = !message.flags.includes("\\Seen");
   const isFlagged = message.flags.includes("\\Flagged");
   const sender = message.from_name || message.from_address;
@@ -195,7 +199,7 @@ export const MessageListItem = memo(function MessageListItem({
         {bulkSelectMode ? (
           <button
             type="button"
-            aria-label={isBulkSelected ? "Deselect" : "Select"}
+            aria-label={isBulkSelected ? t("Deselect") : t("Select")}
             onClick={(e) => { e.stopPropagation(); onBulkToggle(message.uid); }}
             className={cn(
               "flex size-4 shrink-0 items-center justify-center rounded border transition-colors",
@@ -213,7 +217,7 @@ export const MessageListItem = memo(function MessageListItem({
         ) : (
           <button
             type="button"
-            aria-label={isUnread ? "Mark as read" : "Mark as unread"}
+            aria-label={isUnread ? t("Mark as read") : t("Mark as unread")}
             onClick={toggleRead}
             className="flex size-4 shrink-0 items-center justify-center rounded-full hover:bg-muted-foreground/20"
           >
@@ -229,7 +233,7 @@ export const MessageListItem = memo(function MessageListItem({
         {/* Star */}
         <button
           type="button"
-          aria-label={isFlagged ? "Unstar" : "Star"}
+          aria-label={isFlagged ? t("Unstar") : t("Star")}
           onClick={toggleStar}
           className="flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted-foreground/20"
         >
@@ -247,14 +251,14 @@ export const MessageListItem = memo(function MessageListItem({
         <span className="shrink-0 text-muted-foreground">&mdash;</span>
 
         {/* Subject */}
-        <span className={cn("min-w-0 flex-1 truncate", isFlagged && "text-primary")}>{message.subject || "(no subject)"}</span>
+        <span className={cn("min-w-0 flex-1 truncate", isFlagged && "text-primary")}>{message.subject || t("(no subject)")}</span>
 
         {/* Tag color dots */}
         <TagDots tags={message.tags} />
 
         {/* Reaction emoji */}
         {message.reaction && (
-          <span className="shrink-0 text-base leading-none" title="Reaction">
+          <span className="shrink-0 text-base leading-none" title={t("Reaction")}>
             {message.reaction}
           </span>
         )}
@@ -327,7 +331,7 @@ export const MessageListItem = memo(function MessageListItem({
         {/* Star */}
         <button
           type="button"
-          aria-label={isFlagged ? "Unstar" : "Star"}
+          aria-label={isFlagged ? t("Unstar") : t("Star")}
           onClick={toggleStar}
           className="flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted-foreground/20"
         >
@@ -345,7 +349,7 @@ export const MessageListItem = memo(function MessageListItem({
         {bulkSelectMode ? (
           <button
             type="button"
-            aria-label={isBulkSelected ? "Deselect" : "Select"}
+            aria-label={isBulkSelected ? t("Deselect") : t("Select")}
             onClick={(e) => { e.stopPropagation(); onBulkToggle(message.uid); }}
             className={cn(
               "flex size-4 shrink-0 items-center justify-center rounded border transition-colors",
@@ -363,7 +367,7 @@ export const MessageListItem = memo(function MessageListItem({
         ) : (
           <button
             type="button"
-            aria-label={isUnread ? "Mark as read" : "Mark as unread"}
+            aria-label={isUnread ? t("Mark as read") : t("Mark as unread")}
             onClick={toggleRead}
             className="flex size-4 shrink-0 items-center justify-center rounded-full hover:bg-muted-foreground/20"
           >
@@ -378,7 +382,7 @@ export const MessageListItem = memo(function MessageListItem({
 
         <span className="min-w-0 flex-1 truncate text-sm">
           <span className={cn(isUnread ? "font-medium" : "font-normal", isFlagged ? "text-primary" : "text-foreground")}>
-            {message.subject || "(no subject)"}
+            {message.subject || t("(no subject)")}
           </span>
           {message.snippet && (
             <span className="font-normal text-muted-foreground">
@@ -393,7 +397,7 @@ export const MessageListItem = memo(function MessageListItem({
 
         {/* Reaction emoji */}
         {message.reaction && (
-          <span className="shrink-0 text-base leading-none" title="Reaction">
+          <span className="shrink-0 text-base leading-none" title={t("Reaction")}>
             {message.reaction}
           </span>
         )}

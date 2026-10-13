@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LoginThemeToggle } from "../LoginThemeToggle";
 import { useUiStore } from "@/stores/useUiStore";
+import { useLanguageStore } from "@/lib/i18n";
 
 let media: MediaQueryList;
 let changeListeners: Set<(event: MediaQueryListEvent) => void>;
@@ -15,6 +16,7 @@ function changeSystemTheme(dark: boolean) {
 
 beforeEach(() => {
   localStorage.clear();
+  useLanguageStore.setState({ language: "en", preference: "system", initialized: false, hasStoredPreference: false });
   document.documentElement.classList.remove("dark");
   useUiStore.setState({ theme: "system" });
   changeListeners = new Set();
@@ -31,10 +33,22 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   localStorage.clear();
+  useLanguageStore.setState({ language: "en", preference: "system", initialized: false, hasStoredPreference: false });
   document.documentElement.classList.remove("dark");
 });
 
 describe("login theme chooser", () => {
+  it("updates theme labels when the language changes without losing the selected theme", () => {
+    localStorage.setItem("oxi-theme", "dark");
+    render(<LoginThemeToggle />);
+    act(() => useLanguageStore.getState().setLanguage("fr"));
+    expect(screen.getByRole("group", { name: "Thème de couleur" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Sombre", pressed: true })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Clair" })).toBeTruthy();
+    act(() => useLanguageStore.getState().setLanguage("en"));
+    expect(screen.getByRole("button", { name: "Dark", pressed: true })).toBeTruthy();
+  });
+
   it("restores a saved dark preference before signing in", () => {
     localStorage.setItem("oxi-theme", "dark");
 

@@ -261,3 +261,52 @@ async fn setup_endpoints_reject_missing_or_insecure_configuration() {
         }
     }
 }
+
+#[tokio::test]
+async fn setup_profile_localizes_french_and_defaults_other_languages_to_english() {
+    let static_dir = setup_static_dir();
+    let data_dir = TempDir::new().unwrap();
+    let config = (*test_config_with_smtp(
+        static_dir.path().to_str().unwrap(),
+        data_dir.path().to_str().unwrap(),
+    ))
+    .clone();
+    let app = setup_router(config);
+
+    for (language, expected_name, expected_description) in [
+        (
+            "fr",
+            "Messagerie PEPS VBC",
+            "Ajoutez votre compte e-mail PEPS VBC à Mail.",
+        ),
+        (
+            "en",
+            "PEPS VBC Mail",
+            "Add your PEPS VBC email account to Mail.",
+        ),
+        (
+            "de",
+            "PEPS VBC Mail",
+            "Add your PEPS VBC email account to Mail.",
+        ),
+    ] {
+        let response = public_get(
+            app.clone(),
+            &format!("/api/setup/apple.mobileconfig?lang={language}"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let xml = std::str::from_utf8(&body).unwrap();
+        assert!(xml.contains(&format!(
+            "<key>PayloadDisplayName</key><string>{expected_name}</string>"
+        )));
+        assert!(xml.contains(&format!(
+            "<key>PayloadDescription</key><string>{expected_description}</string>"
+        )));
+        assert!(
+            xml.contains("<key>IncomingMailServerHostName</key><string>imap.example.com</string>")
+        );
+        assert!(!xml.contains("<key>IncomingPassword</key>"));
+    }
+}

@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation } from "@/lib/i18n";
+
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Dialog } from "radix-ui";
 import { AnimatePresence } from "framer-motion";
@@ -17,6 +19,7 @@ interface CreateFolderDialogProps {
 }
 
 export function CreateFolderDialog({ open, onClose }: CreateFolderDialogProps) {
+  useTranslation();
   const [name, setName] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const createFolder = useCreateFolder();
@@ -80,7 +83,7 @@ export function CreateFolderDialog({ open, onClose }: CreateFolderDialogProps) {
                 className="fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-popover p-6 shadow-lg"
               >
                 <Dialog.Title className="mb-4 text-base font-semibold text-foreground">
-                  Create new folder
+                  {t("Create new folder")}
                 </Dialog.Title>
 
                 <form onSubmit={handleSubmit}>
@@ -89,7 +92,7 @@ export function CreateFolderDialog({ open, onClose }: CreateFolderDialogProps) {
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="Folder name"
+                    placeholder={t("Folder name")}
                     className={cn(
                       "w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground",
                       "placeholder:text-muted-foreground",
@@ -101,7 +104,7 @@ export function CreateFolderDialog({ open, onClose }: CreateFolderDialogProps) {
 
                   {createFolder.isError && (
                     <p className="mt-2 text-sm text-destructive">
-                      {createFolder.error?.message ?? "Failed to create folder"}
+                      {createFolder.error?.message ?? t("Failed to create folder")}
                     </p>
                   )}
 
@@ -113,7 +116,7 @@ export function CreateFolderDialog({ open, onClose }: CreateFolderDialogProps) {
                         size="sm"
                         disabled={createFolder.isPending}
                       >
-                        Cancel
+                        {t("Cancel")}
                       </Button>
                     </Dialog.Close>
                     <Button
@@ -124,7 +127,7 @@ export function CreateFolderDialog({ open, onClose }: CreateFolderDialogProps) {
                       {createFolder.isPending && (
                         <Loader2 className="size-3.5 animate-spin" />
                       )}
-                      Create
+                      {t("Create")}
                     </Button>
                   </div>
                 </form>

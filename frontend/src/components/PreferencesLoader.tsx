@@ -6,6 +6,7 @@ import { resolveMotionConfig } from "@/lib/motion/config";
 import { clearThemeTransitionArtifacts } from "@/lib/motion/theme-spread";
 import { useUiStore } from "@/stores/useUiStore";
 import type { ThemeMode } from "@/stores/useUiStore";
+import { useLanguageStore } from "@/lib/i18n";
 
 function applyTheme(theme: ThemeMode) {
   const root = document.documentElement;
@@ -28,6 +29,11 @@ export function PreferencesLoader() {
   const setComposeFormat = useUiStore((s) => s.setComposeFormat);
   const setAnimationModeState = useUiStore((s) => s.setAnimationModeState);
   const theme = useUiStore((s) => s.theme);
+  const applyAccountLanguage = useLanguageStore((s) => s.applyAccountLanguage);
+
+  useEffect(() => {
+    if (data) applyAccountLanguage(data.language);
+  }, [data, applyAccountLanguage]);
 
   useEffect(() => {
     clearThemeTransitionArtifacts();

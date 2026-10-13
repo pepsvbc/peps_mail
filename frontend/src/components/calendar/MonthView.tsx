@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useMemo } from "react";
 import { useCalendarStore } from "@/stores/useCalendarStore";
 import { useCalendarEvents } from "@/hooks/useCalendar";
@@ -21,6 +23,7 @@ interface MonthViewProps {
 }
 
 export function MonthView({ weekStartsOn, timeFormat }: MonthViewProps) {
+  const { t, locale } = useTranslation();
   const selectedDate = useCalendarStore((s) => s.selectedDate);
   const setDate = useCalendarStore((s) => s.setDate);
   const setViewMode = useCalendarStore((s) => s.setViewMode);
@@ -41,7 +44,7 @@ export function MonthView({ weekStartsOn, timeFormat }: MonthViewProps) {
     () => getMonthGrid(year, month, weekStartsOn),
     [year, month, weekStartsOn],
   );
-  const dayNames = useMemo(() => getDayNames(weekStartsOn), [weekStartsOn]);
+  const dayNames = useMemo(() => getDayNames(weekStartsOn, locale), [weekStartsOn, locale]);
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
@@ -159,7 +162,7 @@ export function MonthView({ weekStartsOn, timeFormat }: MonthViewProps) {
                 })}
                 {dayEvents.length > 3 && (
                   <div className="text-[10px] text-muted-foreground">
-                    +{dayEvents.length - 3} more
+                    {t("+{count} more", { count: dayEvents.length - 3 })}
                   </div>
                 )}
               </div>

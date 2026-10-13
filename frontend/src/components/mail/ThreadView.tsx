@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation, getLocale } from "@/lib/i18n";
+
 import { useState, useRef, useEffect } from "react";
 import { ChevronDown, ChevronRight, ChevronUp, Paperclip } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -53,16 +55,16 @@ function formatThreadDate(dateStr: string): string {
   const date = new Date(dateStr);
   if (isNaN(date.getTime())) return dateStr;
 
-  return date.toLocaleString("en-US", {
+  return date.toLocaleString(getLocale(), {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
-    hour12: true,
   });
 }
 
 export function ThreadView({ thread, currentUid }: ThreadViewProps) {
+  useTranslation();
   const selectMessage = useUiStore((s) => s.selectMessage);
   const scrollRef = useRef<HTMLDivElement>(null);
   const currentRef = useRef<HTMLButtonElement>(null);
@@ -108,7 +110,7 @@ export function ThreadView({ thread, currentUid }: ThreadViewProps) {
       {/* Conversation header */}
       <div className="flex items-center gap-2 border-b border-border px-4 py-2">
         <span className="text-xs font-medium text-muted-foreground">
-          Conversation
+          {t("Conversation")}
         </span>
         <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">
           {thread.length}
@@ -117,7 +119,7 @@ export function ThreadView({ thread, currentUid }: ThreadViewProps) {
           type="button"
           onClick={() => setThreadExpanded((v) => !v)}
           className="ml-auto rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label={threadExpanded ? "Collapse conversation" : "Expand conversation"}
+          aria-label={threadExpanded ? t("Collapse conversation") : t("Expand conversation")}
         >
           {threadExpanded ? (
             <ChevronDown className="size-4" />
@@ -214,13 +216,13 @@ export function ThreadView({ thread, currentUid }: ThreadViewProps) {
                     {msg.has_attachments && (
                       <div className="flex items-center gap-1 pt-0.5 text-xs text-muted-foreground">
                         <Paperclip className="size-3" />
-                        <span>Attachment</span>
+                        <span>{t("Attachment")}</span>
                       </div>
                     )}
 
                     {isCurrent && (
                       <div className="pt-0.5 text-[11px] font-medium text-primary">
-                        Currently viewing
+                        {t("Currently viewing")}
                       </div>
                     )}
                   </div>

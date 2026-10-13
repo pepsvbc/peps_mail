@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { ChevronLeft, ChevronRight, Plus, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCalendarStore } from "@/stores/useCalendarStore";
@@ -7,6 +9,7 @@ import { formatMonthYear, formatDayHeader } from "./calendarUtils";
 import { cn } from "@/lib/utils";
 
 export function CalendarHeader() {
+  const { t, locale } = useTranslation();
   const selectedDate = useCalendarStore((s) => s.selectedDate);
   const viewMode = useCalendarStore((s) => s.viewMode);
   const setDate = useCalendarStore((s) => s.setDate);
@@ -41,8 +44,8 @@ export function CalendarHeader() {
 
   const headerText =
     viewMode === "day"
-      ? formatDayHeader(selectedDate)
-      : formatMonthYear(selectedDate);
+      ? formatDayHeader(selectedDate, locale)
+      : formatMonthYear(selectedDate, locale);
 
   const viewModes: Array<{ label: string; value: "month" | "week" | "day" }> = [
     { label: "Month", value: "month" },
@@ -55,17 +58,17 @@ export function CalendarHeader() {
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
           <Calendar className="size-5 text-primary" />
-          <h1 className="text-base font-semibold text-foreground">Calendar</h1>
+          <h1 className="text-base font-semibold text-foreground">{t("Calendar")}</h1>
         </div>
 
         <div className="flex items-center gap-1">
           <Button variant="outline" size="sm" onClick={goToday}>
-            Today
+            {t("Today")}
           </Button>
-          <Button variant="ghost" size="icon-sm" onClick={goPrev}>
+          <Button variant="ghost" size="icon-sm" onClick={goPrev} aria-label={t("Previous period")}>
             <ChevronLeft className="size-4" />
           </Button>
-          <Button variant="ghost" size="icon-sm" onClick={goNext}>
+          <Button variant="ghost" size="icon-sm" onClick={goNext} aria-label={t("Next period")}>
             <ChevronRight className="size-4" />
           </Button>
         </div>
@@ -88,14 +91,14 @@ export function CalendarHeader() {
                   : "bg-background text-muted-foreground hover:bg-accent",
               )}
             >
-              {m.label}
+              {t(m.label)}
             </button>
           ))}
         </div>
 
         <Button size="sm" onClick={() => openEventForm()} className="gap-1.5">
           <Plus className="size-4" />
-          Event
+          {t("Event")}
         </Button>
       </div>
     </div>

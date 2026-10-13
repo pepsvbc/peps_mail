@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence } from "framer-motion";
@@ -27,6 +29,7 @@ interface EventDetailProps {
 }
 
 export function EventDetail({ timeFormat }: EventDetailProps) {
+  const { t, locale } = useTranslation();
   const selectedEvent = useCalendarStore((s) => s.selectedEvent);
   const selectEvent = useCalendarStore((s) => s.selectEvent);
   const openEventForm = useCalendarStore((s) => s.openEventForm);
@@ -79,12 +82,12 @@ export function EventDetail({ timeFormat }: EventDetailProps) {
     if (event.all_day) {
       const start = new Date(event.start_time);
       const end = new Date(event.end_time);
-      const startStr = start.toLocaleDateString("en-US", {
+      const startStr = start.toLocaleDateString(locale, {
         weekday: "short",
         month: "short",
         day: "numeric",
       });
-      const endStr = end.toLocaleDateString("en-US", {
+      const endStr = end.toLocaleDateString(locale, {
         weekday: "short",
         month: "short",
         day: "numeric",
@@ -93,7 +96,7 @@ export function EventDetail({ timeFormat }: EventDetailProps) {
     }
 
     const start = new Date(event.start_time);
-    const dateStr = start.toLocaleDateString("en-US", {
+    const dateStr = start.toLocaleDateString(locale, {
       weekday: "short",
       month: "short",
       day: "numeric",
@@ -135,6 +138,7 @@ export function EventDetail({ timeFormat }: EventDetailProps) {
               variant="ghost"
               size="icon-sm"
               onClick={() => selectEvent(null)}
+              aria-label={t("Close")}
               className="shrink-0 text-muted-foreground"
             >
               <X className="size-4" />
@@ -149,7 +153,7 @@ export function EventDetail({ timeFormat }: EventDetailProps) {
               <span>{formatDateRange()}</span>
               {event.all_day && (
                 <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                  All day
+                  {t("All day")}
                 </span>
               )}
             </div>
@@ -172,7 +176,7 @@ export function EventDetail({ timeFormat }: EventDetailProps) {
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 text-primary hover:underline"
                 >
-                  Join Meeting
+                  {t("Join Meeting")}
                   <ExternalLink className="size-3" />
                 </a>
               </div>
@@ -195,7 +199,7 @@ export function EventDetail({ timeFormat }: EventDetailProps) {
             {/* Organizer */}
             {event.organizer && (
               <div className="text-xs text-muted-foreground">
-                Organizer: {event.organizer}
+                {t("Organizer: {organizer}", { organizer: event.organizer })}
               </div>
             )}
 
@@ -209,7 +213,7 @@ export function EventDetail({ timeFormat }: EventDetailProps) {
             {/* Source info */}
             {event.source !== "manual" && (
               <div className="text-xs text-muted-foreground">
-                Source: {event.source}
+                {t("Source: {source}", { source: event.source === "ics" ? "ICS" : event.source === "caldav" ? "CalDAV" : event.source })}
               </div>
             )}
           </div>
@@ -223,7 +227,7 @@ export function EventDetail({ timeFormat }: EventDetailProps) {
               className="gap-1.5"
             >
               <Pencil className="size-3.5" />
-              Edit
+              {t("Edit")}
             </Button>
             <Button
               variant="destructive"
@@ -233,7 +237,7 @@ export function EventDetail({ timeFormat }: EventDetailProps) {
               className="gap-1.5"
             >
               <Trash2 className="size-3.5" />
-              {deleteEvent.isPending ? "Deleting..." : "Delete"}
+              {deleteEvent.isPending ? t("Deleting...") : t("Delete")}
             </Button>
           </div>
         </div>

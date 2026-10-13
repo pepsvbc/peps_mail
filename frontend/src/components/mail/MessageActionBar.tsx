@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation } from "@/lib/i18n";
+
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 import { useFolders } from "@/hooks/useFolders";
@@ -68,6 +70,7 @@ function formatAddressList(addresses: EmailAddress[]): string {
 }
 
 export function MessageActionBar() {
+  useTranslation();
   const activeFolder = useUiStore((s) => s.activeFolder);
   const selectedMessageUid = useUiStore((s) => s.selectedMessageUid);
   const updateFlags = useUpdateFlags();
@@ -194,7 +197,7 @@ export function MessageActionBar() {
     if (!data) return;
     const toFolder = findJunkFolder(folderData?.folders ?? []);
     if (!toFolder) {
-      toast.error("No Spam or Junk folder found. Select a destination using Move to folder.");
+      toast.error(t("No Spam or Junk folder found. Select a destination using Move to folder."));
       return;
     }
     if (toFolder === activeFolder || moveMessage.isPending) return;
@@ -233,19 +236,19 @@ export function MessageActionBar() {
       {/* Reply */}
       <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" disabled={disabled} onClick={handleReply}>
         <Reply className="size-4" />
-        <span className="hidden xl:inline">Reply</span>
+        <span className="hidden xl:inline">{t("Reply")}</span>
       </Button>
 
       {/* Reply All — disabled for 1-to-1 conversations */}
       <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" disabled={disabled || isDirectConversation} onClick={handleReplyAll}>
         <ReplyAll className="size-4" />
-        <span className="hidden xl:inline">Reply all</span>
+        <span className="hidden xl:inline">{t("Reply all")}</span>
       </Button>
 
       {/* Forward */}
       <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" disabled={disabled} onClick={handleForward}>
         <Forward className="size-4" />
-        <span className="hidden xl:inline">Forward</span>
+        <span className="hidden xl:inline">{t("Forward")}</span>
       </Button>
 
       <div className="mx-0.5 h-5 w-px shrink-0 bg-border" />
@@ -274,7 +277,7 @@ export function MessageActionBar() {
         ) : (
           <Trash2 className="size-4" />
         )}
-        <span className="hidden xl:inline">{activeFolder === "Trash" ? "Delete" : "Delete"}</span>
+        <span className="hidden xl:inline">{activeFolder === "Trash" ? t("Delete") : t("Delete")}</span>
       </Button>
 
       {/* Archive */}
@@ -301,7 +304,7 @@ export function MessageActionBar() {
         ) : (
           <Archive className="size-4" />
         )}
-        <span className="hidden xl:inline">Archive</span>
+        <span className="hidden xl:inline">{t("Archive")}</span>
       </Button>
 
       {/* Move to */}
@@ -320,11 +323,11 @@ export function MessageActionBar() {
             {actionFeedback === "move" ? (
               <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" disabled>
                 <Loader2 className="size-4 animate-spin" />
-                <span className="hidden xl:inline">Move to...</span>
+                <span className="hidden xl:inline">{t("Move to...")}</span>
               </Button>
             ) : disabled ? (
               <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" disabled>
-                <span className="hidden xl:inline">Move to...</span>
+                <span className="hidden xl:inline">{t("Move to...")}</span>
               </Button>
             ) : (
               <MoveToFolderMenu
@@ -342,7 +345,7 @@ export function MessageActionBar() {
         </AnimatePresence>
       ) : disabled ? (
         <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" disabled>
-          <span className="hidden xl:inline">Move to...</span>
+          <span className="hidden xl:inline">{t("Move to...")}</span>
         </Button>
       ) : (
         <MoveToFolderMenu
@@ -356,7 +359,7 @@ export function MessageActionBar() {
       {/* Junk */}
       <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" disabled={disabled || moveMessage.isPending || activeFolder === findJunkFolder(folderData?.folders ?? [])} onClick={handleJunk}>
         <AlertCircle className="size-4" />
-        <span className="hidden xl:inline">Junk</span>
+        <span className="hidden xl:inline">{t("Junk")}</span>
       </Button>
 
       {/* Star/Unstar */}
@@ -385,7 +388,7 @@ export function MessageActionBar() {
         ) : (
           <Star className="size-4" />
         )}
-        <span className="hidden xl:inline">{isFlagged ? "Unstar" : "Star"}</span>
+        <span className="hidden xl:inline">{isFlagged ? t("Unstar") : t("Star")}</span>
       </Button>
 
       {/* Mark read/unread */}
@@ -414,7 +417,7 @@ export function MessageActionBar() {
         ) : (
           <Mail className="size-4" />
         )}
-        <span className="hidden xl:inline">{isSeen ? "Unread" : "Read"}</span>
+        <span className="hidden xl:inline">{isSeen ? t("Unread") : t("Read")}</span>
       </Button>
 
       {/* Tags */}

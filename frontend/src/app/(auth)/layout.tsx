@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { fetchAccounts } from "@/lib/api";
@@ -11,6 +13,7 @@ export default function AuthLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const { t } = useTranslation();
   const router = useRouter();
   const setAccounts = useAuthStore((s) => s.setAccounts);
   const existingAccounts = useAuthStore((s) => s.accounts);
@@ -44,7 +47,7 @@ export default function AuthLayout({
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <div className="size-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
-          <p className="text-sm text-muted-foreground">Loading...</p>
+          <p className="text-sm text-muted-foreground">{t("Loading...")}</p>
         </div>
       </div>
     );

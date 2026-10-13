@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence } from "framer-motion";
@@ -29,6 +31,7 @@ export function ContactDialog({
   onSubmit,
   isPending,
 }: ContactDialogProps) {
+  const { t } = useTranslation();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [company, setCompany] = useState("");
@@ -100,12 +103,13 @@ export function ContactDialog({
           >
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-foreground">
-            New Contact
+            {t("New Contact")}
           </h2>
           <Button
             variant="ghost"
             size="icon-sm"
             onClick={onClose}
+            aria-label={t("Close")}
             className="text-muted-foreground"
           >
             <X className="size-4" />
@@ -114,18 +118,18 @@ export function ContactDialog({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="contact-name">Name</Label>
+            <Label htmlFor="contact-name">{t("Name")}</Label>
             <Input
               id="contact-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="John Doe"
+              placeholder={t("John Doe")}
             />
           </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="contact-email">
-              Email <span className="text-destructive">*</span>
+              {t("Email")} <span className="text-destructive">*</span>
             </Label>
             <Input
               id="contact-email"
@@ -138,22 +142,22 @@ export function ContactDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="contact-company">Company</Label>
+            <Label htmlFor="contact-company">{t("Company")}</Label>
             <Input
               id="contact-company"
               value={company}
               onChange={(e) => setCompany(e.target.value)}
-              placeholder="Acme Inc."
+              placeholder={t("Acme Inc.")}
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="contact-notes">Notes</Label>
+            <Label htmlFor="contact-notes">{t("Notes")}</Label>
             <textarea
               id="contact-notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Add any notes..."
+              placeholder={t("Add any notes...")}
               rows={3}
               className="w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none resize-none dark:bg-input/30"
             />
@@ -166,10 +170,10 @@ export function ContactDialog({
               onClick={onClose}
               disabled={isPending}
             >
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button type="submit" disabled={isPending || !email.trim()}>
-              {isPending ? "Creating..." : "Create Contact"}
+              {isPending ? t("Creating...") : t("Create Contact")}
             </Button>
           </div>
         </form>

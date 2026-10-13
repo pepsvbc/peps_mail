@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useCallback } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -10,6 +12,7 @@ import {
 import { useNotifications } from "@/hooks/useNotifications";
 import { useFolders } from "@/hooks/useFolders";
 import { cn } from "@/lib/utils";
+import { formatFolderName } from "@/lib/mail-folders";
 
 // Internal Toggle component for switch-like controls
 function Toggle({
@@ -33,6 +36,7 @@ function Toggle({
       </div>
       <button
         role="switch"
+        aria-label={label}
         aria-checked={checked}
         onClick={() => onChange(!checked)}
         disabled={disabled}
@@ -54,6 +58,7 @@ function Toggle({
 }
 
 export function NotificationSettings() {
+  const { t } = useTranslation();
   const { data: prefs, isLoading } = useNotificationPreferences();
   const updatePrefs = useUpdateNotificationPreferences();
   const { data: foldersData } = useFolders();
@@ -63,10 +68,10 @@ export function NotificationSettings() {
     (field: "enabled" | "sound", value: boolean) => {
       updatePrefs.mutate(
         { [field]: value },
-        { onError: (e) => toast.error(`Failed to update: ${e.message}`) },
+        { onError: (e) => toast.error(t("Failed to update: {error}", { error: e.message })) },
       );
     },
-    [updatePrefs],
+    [updatePrefs, t],
   );
 
   const handleFolderToggle = useCallback(
@@ -77,17 +82,17 @@ export function NotificationSettings() {
         : prefs.folders.filter((f) => f !== folderName);
       updatePrefs.mutate(
         { folders: next },
-        { onError: (e) => toast.error(`Failed to update: ${e.message}`) },
+        { onError: (e) => toast.error(t("Failed to update: {error}", { error: e.message })) },
       );
     },
-    [prefs, updatePrefs],
+    [prefs, updatePrefs, t],
   );
 
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="size-4 animate-spin" />
-        Loading notification settings...
+        {t("Loading notification settings...")}
       </div>
     );
   }
@@ -99,28 +104,28 @@ export function NotificationSettings() {
   return (
     <div className="max-w-2xl space-y-6">
       <div>
-        <h2 className="text-base font-semibold">Notifications</h2>
+        <h2 className="text-base font-semibold">{t("Notifications")}</h2>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Configure desktop notification preferences.
+          {t("Configure desktop notification preferences.")}
         </p>
       </div>
 
       {browserPermission === "denied" && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-400">
-          Browser notifications are blocked. Enable them in your browser settings to receive desktop alerts.
+          {t("Browser notifications are blocked. Enable them in your browser settings to receive desktop alerts.")}
         </div>
       )}
 
       <div className="space-y-3">
         <Toggle
-          label="Desktop notifications"
-          description="Show browser notifications when new emails arrive"
+          label={t("Desktop notifications")}
+          description={t("Show browser notifications when new emails arrive")}
           checked={prefs.enabled}
           onChange={(v) => handleToggle("enabled", v)}
         />
         <Toggle
-          label="Notification sound"
-          description="Play a sound when a notification is shown"
+          label={t("Notification sound")}
+          description={t("Play a sound when a notification is shown")}
           checked={prefs.sound}
           onChange={(v) => handleToggle("sound", v)}
           disabled={!prefs.enabled}
@@ -128,9 +133,9 @@ export function NotificationSettings() {
       </div>
 
       <div>
-        <h3 className="mb-2 text-sm font-medium">Notify for folders</h3>
+        <h3 className="mb-2 text-sm font-medium">{t("Notify for folders")}</h3>
         <p className="mb-3 text-xs text-muted-foreground">
-          Choose which folders trigger notifications.
+          {t("Choose which folders trigger notifications.")}
         </p>
         <div className="space-y-1">
           {folders.map((folder) => {
@@ -147,7 +152,7 @@ export function NotificationSettings() {
                   disabled={!prefs.enabled}
                   className="size-4 rounded border-border"
                 />
-                {folder.name}
+                {formatFolderName(folder.name)}
               </label>
             );
           })}

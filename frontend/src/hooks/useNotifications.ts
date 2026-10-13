@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t } from "@/lib/i18n";
+
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/useAuthStore";
@@ -58,18 +60,18 @@ export function useNotifications() {
       const subject = event.data?.latest_subject;
 
       // Title: user's own email (the mailbox) or fallback.
-      const title = activeAccount?.email ?? "New email";
+      const title = activeAccount?.email ?? t("New email");
 
       // Body lines: sender + subject when available.
       const bodyLines: string[] = [];
       if (count > 1) {
-        bodyLines.push(`${count} new emails`);
-        if (sender) bodyLines.push(`Email from: ${sender}`);
-        if (subject) bodyLines.push(`Subject: ${subject}`);
+        bodyLines.push(t("{count} new emails", { count }));
+        if (sender) bodyLines.push(t("Email from: {sender}", { sender }));
+        if (subject) bodyLines.push(t("Subject: {subject}", { subject }));
       } else {
-        if (sender) bodyLines.push(`Email from: ${sender}`);
-        if (subject) bodyLines.push(`Subject: ${subject}`);
-        if (bodyLines.length === 0) bodyLines.push("New message received");
+        if (sender) bodyLines.push(t("Email from: {sender}", { sender }));
+        if (subject) bodyLines.push(t("Subject: {subject}", { subject }));
+        if (bodyLines.length === 0) bodyLines.push(t("New message received"));
       }
       const body = bodyLines.join("\n");
 
@@ -90,16 +92,16 @@ export function useNotifications() {
         }
       } else {
         // Tab is visible and focused — show in-app toast.
-        const toastTitle = sender ? `Email from: ${sender}` : "New email";
+        const toastTitle = sender ? t("Email from: {sender}", { sender }) : t("New email");
         const toastDesc = subject
-          ? `Subject: ${subject}`
+          ? t("Subject: {subject}", { subject })
           : count > 1
-            ? `${count} new emails`
+            ? t("{count} new emails", { count })
             : undefined;
         toast(toastTitle, {
           description: toastDesc,
           action: {
-            label: "View",
+            label: t("View"),
             onClick: () => setActiveFolder(folder),
           },
         });

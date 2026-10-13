@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
+use axum::extract::Query;
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::config::AppConfig;
 use crate::error::AppError;
@@ -90,10 +91,16 @@ fn xml_escape(value: &str) -> String {
         .replace('\'', "&apos;")
 }
 
+#[derive(Default, Deserialize)]
+pub struct ProfileOptions {
+    lang: Option<String>,
+}
+
 /// A mail-only profile. Apple prompts for the omitted email address, usernames,
 /// and password during installation; no credentials pass through this endpoint.
 pub async fn download_apple_profile(
     Extension(config): Extension<Arc<AppConfig>>,
+    Query(options): Query<ProfileOptions>,
 ) -> Result<Response, AppError> {
     let settings = settings(&config)?;
     let imap_host = xml_escape(&settings.imap.host);
@@ -104,6 +111,15 @@ pub async fn download_apple_profile(
     let profile_uuid = uuid::Uuid::new_v4();
     let account_uuid = uuid::Uuid::new_v4();
 
+    let (display_name, description) = if options.lang.as_deref() == Some("fr") {
+        (
+            "Messagerie PEPS VBC",
+            "Ajoutez votre compte e-mail PEPS VBC à Mail.",
+        )
+    } else {
+        ("PEPS VBC Mail", "Add your PEPS VBC email account to Mail.")
+    };
+
     let profile = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -113,8 +129,8 @@ pub async fn download_apple_profile(
     <key>PayloadVersion</key><integer>1</integer>
     <key>PayloadIdentifier</key><string>ch.pepsvbc.mail.{profile_uuid}</string>
     <key>PayloadUUID</key><string>{profile_uuid}</string>
-    <key>PayloadDisplayName</key><string>PEPS VBC Mail</string>
-    <key>PayloadDescription</key><string>Add your PEPS VBC email account to Mail.</string>
+    <key>PayloadDisplayName</key><string>{display_name}</string>
+    <key>PayloadDescription</key><string>{description}</string>
     <key>PayloadOrganization</key><string>PEPS VBC</string>
     <key>PayloadContent</key>
     <array>
@@ -123,8 +139,8 @@ pub async fn download_apple_profile(
             <key>PayloadVersion</key><integer>1</integer>
             <key>PayloadIdentifier</key><string>ch.pepsvbc.mail.account.{account_uuid}</string>
             <key>PayloadUUID</key><string>{account_uuid}</string>
-            <key>PayloadDisplayName</key><string>PEPS VBC Mail</string>
-            <key>EmailAccountDescription</key><string>PEPS VBC Mail</string>
+            <key>PayloadDisplayName</key><string>{display_name}</string>
+            <key>EmailAccountDescription</key><string>{display_name}</string>
             <key>EmailAccountType</key><string>EmailTypeIMAP</string>
             <key>IncomingMailServerHostName</key><string>{imap_host}</string>
             <key>IncomingMailServerPortNumber</key><integer>{imap_port}</integer>

@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useState, type FormEvent, useEffect, useRef, useMemo } from "react";
 import { Dialog } from "radix-ui";
 import { AnimatePresence } from "framer-motion";
@@ -21,6 +23,7 @@ interface AddAccountModalProps {
 }
 
 function AddAccountForm({ onClose }: Pick<AddAccountModalProps, "onClose">) {
+  const { t } = useTranslation();
   const setAccounts = useAuthStore((s) => s.setAccounts);
   const setActiveAccount = useAuthStore((s) => s.setActiveAccount);
   const queryClient = useQueryClient();
@@ -53,7 +56,7 @@ function AddAccountForm({ onClose }: Pick<AddAccountModalProps, "onClose">) {
       onClose();
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "An unexpected error occurred",
+        err instanceof Error ? err.message : t("An unexpected error occurred"),
       );
     } finally {
       setLoading(false);
@@ -70,12 +73,12 @@ function AddAccountForm({ onClose }: Pick<AddAccountModalProps, "onClose">) {
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
-          <Label htmlFor="add-email">Email</Label>
+          <Label htmlFor="add-email">{t("Email")}</Label>
           <Input
             ref={emailInputRef}
             id="add-email"
             type="email"
-            placeholder="you@example.com"
+            placeholder={t("you@example.com")}
             autoComplete="email"
             required
             disabled={loading}
@@ -84,11 +87,11 @@ function AddAccountForm({ onClose }: Pick<AddAccountModalProps, "onClose">) {
           />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="add-password">Password</Label>
+          <Label htmlFor="add-password">{t("Password")}</Label>
           <Input
             id="add-password"
             type="password"
-            placeholder="Enter your password"
+            placeholder={t("Enter your password")}
             autoComplete="current-password"
             required
             disabled={loading}
@@ -105,7 +108,7 @@ function AddAccountForm({ onClose }: Pick<AddAccountModalProps, "onClose">) {
             disabled={loading}
             className="size-4 rounded border-muted-foreground/40 accent-primary"
           />
-          <span className="text-sm text-muted-foreground">Keep me logged in</span>
+          <span className="text-sm text-muted-foreground">{t("Keep me logged in")}</span>
         </label>
 
         <div className="flex justify-end gap-2 mt-2">
@@ -115,14 +118,14 @@ function AddAccountForm({ onClose }: Pick<AddAccountModalProps, "onClose">) {
             onClick={onClose}
             disabled={loading}
           >
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             type="submit"
             disabled={loading}
           >
             {loading && <Loader2 className="size-4 animate-spin" />}
-            {loading ? "Signing in..." : "Sign in"}
+            {t(loading ? "Signing in..." : "Sign in")}
           </Button>
         </div>
       </form>
@@ -131,6 +134,7 @@ function AddAccountForm({ onClose }: Pick<AddAccountModalProps, "onClose">) {
 }
 
 export function AddAccountModal({ open, onClose }: AddAccountModalProps) {
+  const { t } = useTranslation();
   const effectiveAnimationMode = useUiStore((s: UiState) => s.effectiveAnimationMode);
   const overlayMotionProps = useMemo(() => createFadeSlideVariants(effectiveAnimationMode, "y"), [effectiveAnimationMode]);
   const contentMotionProps = useMemo(() => createScaleFadeVariants(effectiveAnimationMode), [effectiveAnimationMode]);
@@ -162,16 +166,16 @@ export function AddAccountModal({ open, onClose }: AddAccountModalProps) {
                   className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-background p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
                 >
                   <Dialog.Title className="text-lg font-semibold mb-1">
-                    Add account
+                    {t("Add account")}
                   </Dialog.Title>
                   <Dialog.Description className="text-sm text-muted-foreground mb-4">
-                    Sign in to another email account
+                    {t("Sign in to another email account")}
                   </Dialog.Description>
                   <Dialog.Close asChild>
                     <button
                       type="button"
                       className="absolute right-4 top-4 rounded-md p-1 text-muted-foreground hover:text-foreground transition-colors"
-                      aria-label="Close"
+                      aria-label={t("Close")}
                     >
                       <X className="size-4" />
                     </button>

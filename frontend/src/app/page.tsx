@@ -1,10 +1,13 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { Lightbulb } from "lucide-react";
+import { LanguageSwitcher } from "@/components/shared/LanguageSwitcher";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +17,7 @@ import { brand } from "@/lib/brand";
 import { useAuthStore } from "@/stores/useAuthStore";
 
 export default function Home() {
+  const { t } = useTranslation();
   const router = useRouter();
   const setAccounts = useAuthStore((s) => s.setAccounts);
   const setActiveAccount = useAuthStore((s) => s.setActiveAccount);
@@ -60,7 +64,7 @@ export default function Home() {
       router.push("/mail");
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "An unexpected error occurred",
+        err instanceof Error ? err.message : t("An unexpected error occurred"),
       );
     } finally {
       setLoading(false);
@@ -77,7 +81,8 @@ export default function Home() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-background px-6 py-6 text-foreground">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap justify-end gap-2">
+        <LanguageSwitcher />
         <LoginThemeToggle />
       </div>
       <main className="flex flex-1 items-center justify-center py-10">
@@ -95,9 +100,7 @@ export default function Home() {
                 unoptimized
               />
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Sign in to Mail
-            </h1>
+            <h1 className="text-2xl font-semibold tracking-tight"> {t("Sign in to Mail")} </h1>
           </div>
 
           {error && (
@@ -107,11 +110,11 @@ export default function Home() {
           )}
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t("Email")}</Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="you@example.com"
+                placeholder={t("you@example.com")}
                 autoComplete="email"
                 required
                 disabled={loading}
@@ -121,11 +124,11 @@ export default function Home() {
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{t("Password")}</Label>
               <Input
                 id="password"
                 type="password"
-                placeholder="Enter your password"
+                placeholder={t("Enter your password")}
                 autoComplete="current-password"
                 required
                 disabled={loading}
@@ -143,7 +146,7 @@ export default function Home() {
                 disabled={loading}
                 className="size-4 rounded border-muted-foreground accent-primary"
               />
-              <span className="text-sm">Keep me logged in</span>
+              <span className="text-sm">{t("Keep me logged in")}</span>
             </label>
 
             <Button
@@ -152,16 +155,14 @@ export default function Home() {
               size="lg"
               disabled={loading}
             >
-              {loading ? "Signing in..." : "Sign in"}
+              {loading ? t("Signing in...") : t("Sign in")}
             </Button>
           </form>
           <Link
             href="/help"
             className="mt-6 flex min-h-11 items-center justify-center gap-2 rounded-md text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
           >
-            <Lightbulb className="size-4 shrink-0" aria-hidden="true" />
-            Need help setting up your email?
-          </Link>
+            <Lightbulb className="size-4 shrink-0" aria-hidden="true" /> {t("Need help setting up your email?")} </Link>
         </div>
       </main>
     </div>

@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useMemo, useRef, useEffect } from "react";
 import { useCalendarStore } from "@/stores/useCalendarStore";
 import { useCalendarEvents } from "@/hooks/useCalendar";
@@ -19,6 +21,7 @@ interface DayViewProps {
 }
 
 export function DayView({ timeFormat }: DayViewProps) {
+  const { t } = useTranslation();
   const selectedDate = useCalendarStore((s) => s.selectedDate);
   const setDate = useCalendarStore((s) => s.setDate);
   const selectEvent = useCalendarStore((s) => s.selectEvent);
@@ -78,7 +81,7 @@ export function DayView({ timeFormat }: DayViewProps) {
       {allDayEvents.length > 0 && (
         <div className="flex border-b border-border">
           <div className="w-[60px] shrink-0 border-r border-border px-1 py-1 text-[10px] text-muted-foreground">
-            All day
+            {t("All day")}
           </div>
           <div className="flex-1 p-1 space-y-0.5">
             {allDayEvents.map((ev) => {

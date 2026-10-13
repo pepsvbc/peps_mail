@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation } from "@/lib/i18n";
+
 import { useState, useRef, useCallback } from "react";
 import { Tag, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -17,6 +19,7 @@ interface TagPickerProps {
 }
 
 export function TagPicker({ folder, uid }: TagPickerProps) {
+  useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -53,14 +56,14 @@ export function TagPicker({ folder, uid }: TagPickerProps) {
         )}
       >
         <Tag className="size-4" />
-        <span className="hidden xl:inline">Tags</span>
+        <span className="hidden xl:inline">{t("Tags")}</span>
       </button>
 
       {isOpen && (
         <div className="absolute left-0 top-full z-50 mt-1 min-w-[180px] rounded-md border border-border bg-popover py-1 shadow-md">
           {allTags.length === 0 && (
             <span className="block px-3 py-1.5 text-sm text-muted-foreground">
-              No tags yet
+              {t("No tags yet")}
             </span>
           )}
           {allTags.map((tag) => {

@@ -58,7 +58,7 @@ pub fn get_preferences(conn: &Connection) -> Result<DisplayPreferences, String> 
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(DisplayPreferences {
             density: "comfortable".to_string(),
             theme: "system".to_string(),
-            language: "en".to_string(),
+            language: "system".to_string(),
             compose_format: "html".to_string(),
             deep_index: false,
             animation_mode: None,
@@ -76,7 +76,7 @@ pub fn update_preferences(
 ) -> Result<DisplayPreferences, String> {
     // Ensure the row exists.
     conn.execute(
-        "INSERT OR IGNORE INTO display_preferences (id) VALUES (1)",
+        "INSERT OR IGNORE INTO display_preferences (id, language) VALUES (1, 'system')",
         [],
     )
     .map_err(|e| format!("Failed to ensure preferences row: {e}"))?;
@@ -102,6 +102,9 @@ pub fn update_preferences(
         idx += 1;
     }
     if let Some(ref language) = data.language {
+        if language != "system" && language != "en" && language != "fr" {
+            return Err(format!("Invalid language: {language}"));
+        }
         sets.push(format!("language = ?{idx}"));
         values.push(Box::new(language.clone()));
         idx += 1;
@@ -162,7 +165,7 @@ mod tests {
 
         assert_eq!(prefs.density, "comfortable");
         assert_eq!(prefs.theme, "system");
-        assert_eq!(prefs.language, "en");
+        assert_eq!(prefs.language, "system");
         assert_eq!(prefs.compose_format, "html");
     }
 
@@ -185,7 +188,7 @@ mod tests {
 
         assert_eq!(prefs.density, "compact");
         assert_eq!(prefs.theme, "system");
-        assert_eq!(prefs.language, "en");
+        assert_eq!(prefs.language, "system");
     }
 
     #[test]
@@ -448,5 +451,55 @@ mod tests {
 
         assert_eq!(updated_prefs.density, "compact");
         assert_eq!(updated_prefs.animation_mode.as_deref(), Some("subtle"));
+    }
+
+    #[test]
+    fn test_language_choices_round_trip_and_invalid_choices_leave_value_unchanged() {
+        let conn = open_test_db();
+        for language in ["fr", "en", "system"] {
+            let data: UpdateDisplayPreferences =
+                serde_json::from_value(serde_json::json!({ "language": language })).unwrap();
+            assert_eq!(update_preferences(&conn, &data).unwrap().language, language);
+            assert_eq!(get_preferences(&conn).unwrap().language, language);
+        }
+        for language in ["de", "fr-CH", "", "invalid"] {
+            let data: UpdateDisplayPreferences =
+                serde_json::from_value(serde_json::json!({ "language": language })).unwrap();
+            assert!(
+                update_preferences(&conn, &data)
+                    .unwrap_err()
+                    .starts_with("Invalid language:")
+            );
+            assert_eq!(get_preferences(&conn).unwrap().language, "system");
+        }
+    }
+
+    #[test]
+    fn test_missing_preferences_row_preserves_system_language_when_other_fields_change() {
+        let conn = open_test_db();
+        conn.execute("DELETE FROM display_preferences", []).unwrap();
+        assert_eq!(get_preferences(&conn).unwrap().language, "system");
+        let data: UpdateDisplayPreferences =
+            serde_json::from_value(serde_json::json!({ "theme": "dark" })).unwrap();
+        assert_eq!(update_preferences(&conn, &data).unwrap().language, "system");
+    }
+
+    #[test]
+    fn test_language_migration_replaces_legacy_placeholder_only() {
+        let conn = open_test_db();
+        conn.execute(
+            "INSERT OR IGNORE INTO display_preferences (id) VALUES (1)",
+            [],
+        )
+        .unwrap();
+        for (previous, expected) in [("en", "system"), ("fr", "fr"), ("system", "system")] {
+            conn.execute("UPDATE display_preferences SET language = ?1", [previous])
+                .unwrap();
+            conn.execute_batch(include_str!(
+                "../../migrations/V020__language_preference.sql"
+            ))
+            .unwrap();
+            assert_eq!(get_preferences(&conn).unwrap().language, expected);
+        }
     }
 }

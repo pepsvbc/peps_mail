@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation } from "@/lib/i18n";
+
 import { useRef, useCallback, useEffect, useState, useMemo } from "react";
 import { useUiStore } from "@/stores/useUiStore";
 
@@ -66,6 +68,7 @@ export function EmailRenderer({
   theme = "auto",
   emailTheme
 }: EmailRendererProps) {
+  useTranslation();
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const appTheme = useUiStore((state) => state.theme);
@@ -522,7 +525,7 @@ export function EmailRenderer({
           style={{
             minHeight: "100%",
           }}
-          title="Email content"
+          title={t("Email content")}
           onLoad={handleIframeLoad}
         />
       </div>
@@ -616,7 +619,7 @@ export function EmailRenderer({
 
   return (
     <p className="p-4 text-sm text-muted-foreground">
-      No content available for this message.
+      {t("No content available for this message.")}
     </p>
   );
 }

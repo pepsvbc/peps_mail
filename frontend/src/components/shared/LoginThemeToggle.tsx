@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useEffect } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -63,12 +65,13 @@ function useLoginTheme() {
 }
 
 export function LoginThemeToggle({ className }: { className?: string }) {
+  const { t } = useTranslation();
   const { theme, selectTheme } = useLoginTheme();
 
   return (
     <div
       role="group"
-      aria-label="Color theme"
+      aria-label={t("Color theme")}
       className={cn("inline-flex gap-1 rounded-full border border-border bg-card p-1 shadow-sm", className)}
     >
       {options.map(({ value, label, icon: Icon }) => (
@@ -82,7 +85,7 @@ export function LoginThemeToggle({ className }: { className?: string }) {
           onClick={() => selectTheme(value)}
         >
           <Icon className="size-3.5" aria-hidden="true" />
-          {label}
+          {t(label)}
         </Button>
       ))}
     </div>

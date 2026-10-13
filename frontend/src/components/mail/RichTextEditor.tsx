@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation } from "@/lib/i18n";
+
 import { useCallback, useEffect, useRef } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -42,6 +44,7 @@ function ToolbarButton({
   title: string;
   children: React.ReactNode;
 }) {
+  useTranslation();
   return (
     <button
       type="button"
@@ -65,10 +68,11 @@ export function RichTextEditor({
   content,
   onChange,
   onImageUpload,
-  placeholder = "Write your message...",
+  placeholder = t("Write your message..."),
   className,
   compact = false,
 }: RichTextEditorProps) {
+  const { language } = useTranslation();
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   const editor = useEditor({
@@ -103,6 +107,13 @@ export function RichTextEditor({
     },
   });
 
+  useEffect(() => {
+    if (!editor) return;
+    const extension = editor.extensionManager.extensions.find((item) => item.name === "placeholder");
+    if (extension) extension.options.placeholder = placeholder;
+    editor.view.dispatch(editor.state.tr);
+  }, [editor, language, placeholder]);
+
   // Sync external content changes (e.g. when opening a draft)
   useEffect(() => {
     if (editor && content !== editor.getHTML()) {
@@ -118,7 +129,7 @@ export function RichTextEditor({
       return;
     }
 
-    const url = window.prompt("URL");
+    const url = window.prompt(t("URL"));
     if (url) {
       editor
         .chain()
@@ -153,21 +164,21 @@ export function RichTextEditor({
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBold().run()}
           active={editor.isActive("bold")}
-          title="Bold (Ctrl+B)"
+          title={t("Bold (Ctrl+B)")}
         >
           <Bold className="size-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleItalic().run()}
           active={editor.isActive("italic")}
-          title="Italic (Ctrl+I)"
+          title={t("Italic (Ctrl+I)")}
         >
           <Italic className="size-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleUnderline().run()}
           active={editor.isActive("underline")}
-          title="Underline (Ctrl+U)"
+          title={t("Underline (Ctrl+U)")}
         >
           <UnderlineIcon className="size-4" />
         </ToolbarButton>
@@ -177,7 +188,7 @@ export function RichTextEditor({
         <ToolbarButton
           onClick={handleLink}
           active={editor.isActive("link")}
-          title="Link"
+          title={t("Link")}
         >
           <LinkIcon className="size-4" />
         </ToolbarButton>
@@ -185,7 +196,7 @@ export function RichTextEditor({
         {onImageUpload && (
           <ToolbarButton
             onClick={() => imageInputRef.current?.click()}
-            title="Insert image"
+            title={t("Insert image")}
           >
             <ImageIcon className="size-4" />
           </ToolbarButton>
@@ -196,14 +207,14 @@ export function RichTextEditor({
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBulletList().run()}
           active={editor.isActive("bulletList")}
-          title="Bullet List"
+          title={t("Bullet List")}
         >
           <List className="size-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
           active={editor.isActive("orderedList")}
-          title="Ordered List"
+          title={t("Ordered List")}
         >
           <ListOrdered className="size-4" />
         </ToolbarButton>
@@ -213,14 +224,14 @@ export function RichTextEditor({
         <ToolbarButton
           onClick={() => editor.chain().focus().undo().run()}
           disabled={!editor.can().undo()}
-          title="Undo (Ctrl+Z)"
+          title={t("Undo (Ctrl+Z)")}
         >
           <Undo className="size-4" />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().redo().run()}
           disabled={!editor.can().redo()}
-          title="Redo (Ctrl+Shift+Z)"
+          title={t("Redo (Ctrl+Shift+Z)")}
         >
           <Redo className="size-4" />
         </ToolbarButton>

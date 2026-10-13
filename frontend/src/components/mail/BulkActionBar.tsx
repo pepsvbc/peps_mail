@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation } from "@/lib/i18n";
+
 import { useState, useRef, useCallback, useMemo } from "react";
 import { AnimatePresence } from "framer-motion";
 import {
@@ -26,6 +28,7 @@ import { createFadeSlideVariants } from "@/lib/motion/variants";
 import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
 
 export function BulkActionBar() {
+  useTranslation();
   const selectedUids = useUiStore((s) => s.selectedMessageUids);
   const activeFolder = useUiStore((s) => s.activeFolder);
   const clearBulkSelection = useUiStore((s) => s.clearBulkSelection);
@@ -137,7 +140,7 @@ export function BulkActionBar() {
     <>
       {/* Selection count */}
       <span className="mr-2 text-sm font-medium text-foreground">
-        {selectedUids.length} selected
+        {t(selectedUids.length === 1 ? "{count} selected" : "{count} selected messages", { count: selectedUids.length })}
       </span>
 
       {isBusy && (
@@ -147,7 +150,7 @@ export function BulkActionBar() {
       {/* Mark read */}
       <button
         type="button"
-        title="Mark as read"
+        title={t("Mark as read")}
         disabled={isBusy}
         onClick={handleMarkRead}
         className={cn(
@@ -161,7 +164,7 @@ export function BulkActionBar() {
       {/* Mark unread */}
       <button
         type="button"
-        title="Mark as unread"
+        title={t("Mark as unread")}
         disabled={isBusy}
         onClick={handleMarkUnread}
         className={cn(
@@ -175,7 +178,7 @@ export function BulkActionBar() {
       {/* Star */}
       <button
         type="button"
-        title="Star"
+        title={t("Star")}
         disabled={isBusy}
         onClick={handleStar}
         className={cn(
@@ -189,7 +192,7 @@ export function BulkActionBar() {
       {/* Delete */}
       <button
         type="button"
-        title="Delete"
+        title={t("Delete")}
         disabled={isBusy}
         onClick={handleDelete}
         className={cn(
@@ -204,7 +207,7 @@ export function BulkActionBar() {
       <div className="relative" ref={moveMenuRef}>
         <button
           type="button"
-          title="Move to folder"
+          title={t("Move to folder")}
           disabled={isBusy}
           onClick={() => setMoveMenuOpen((prev) => !prev)}
           className={cn(
@@ -232,7 +235,7 @@ export function BulkActionBar() {
               ))}
             {folders.filter((f) => f.name !== activeFolder).length === 0 && (
               <span className="block px-3 py-1.5 text-sm text-muted-foreground">
-                No other folders
+                {t("No other folders")}
               </span>
             )}
           </div>
@@ -243,7 +246,7 @@ export function BulkActionBar() {
       <div className="relative" ref={tagMenuRef}>
         <button
           type="button"
-          title="Add tag"
+          title={t("Add tag")}
           disabled={isBusy}
           onClick={() => setTagMenuOpen((prev) => !prev)}
           className={cn(
@@ -273,7 +276,7 @@ export function BulkActionBar() {
             ))}
             {allTags.length === 0 && (
               <span className="block px-3 py-1.5 text-sm text-muted-foreground">
-                No tags
+                {t("No tags")}
               </span>
             )}
           </div>
@@ -286,7 +289,7 @@ export function BulkActionBar() {
       {/* Clear selection */}
       <button
         type="button"
-        title="Clear selection"
+        title={t("Clear selection")}
         onClick={clearBulkSelection}
         className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >

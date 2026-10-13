@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation, getLocale } from "@/lib/i18n";
+
 import { useState, useEffect } from "react";
 import {
   CalendarDays,
@@ -23,7 +25,7 @@ interface IcsPreviewProps {
 }
 
 function formatDate(date: Date): string {
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(getLocale(), {
     weekday: "long",
     year: "numeric",
     month: "long",
@@ -32,7 +34,7 @@ function formatDate(date: Date): string {
 }
 
 function formatTime(date: Date): string {
-  return date.toLocaleTimeString(undefined, {
+  return date.toLocaleTimeString(getLocale(), {
     hour: "numeric",
     minute: "2-digit",
   });
@@ -47,11 +49,12 @@ function isSameDay(a: Date, b: Date): boolean {
 }
 
 function EventCard({ event }: { event: IcsEvent }) {
+  useTranslation();
   const dateTimeLabel = (() => {
     if (!event.dtstart) return null;
     if (event.isAllDay) {
       const line = formatDate(event.dtstart);
-      return `${line} (all day)`;
+      return t("{date} (all day)", { date: line });
     }
     const startDate = formatDate(event.dtstart);
     const startTime = formatTime(event.dtstart);
@@ -120,7 +123,7 @@ function EventCard({ event }: { event: IcsEvent }) {
 function icsEventToRequest(event: IcsEvent): CreateEventRequest {
   const now = new Date().toISOString();
   return {
-    title: event.summary || "Untitled Event",
+    title: event.summary || t("Untitled Event"),
     description: event.description || undefined,
     location: event.location || undefined,
     start_time: event.dtstart?.toISOString() ?? now,
@@ -131,6 +134,7 @@ function icsEventToRequest(event: IcsEvent): CreateEventRequest {
 }
 
 export function IcsPreview({ url, filename }: IcsPreviewProps) {
+  useTranslation();
   const [events, setEvents] = useState<IcsEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -143,7 +147,7 @@ export function IcsPreview({ url, filename }: IcsPreviewProps) {
     async function load() {
       try {
         const res = await fetch(url, { credentials: "same-origin" });
-        if (!res.ok) throw new Error(`Failed to fetch (${res.status})`);
+        if (!res.ok) throw new Error(t("Failed to fetch ({status})", { status: res.status }));
         const text = await res.text();
         const parsed = parseIcs(text);
         if (!cancelled) {
@@ -152,7 +156,7 @@ export function IcsPreview({ url, filename }: IcsPreviewProps) {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load");
+          setError(err instanceof Error ? err.message : t("Failed to load"));
           setLoading(false);
         }
       }
@@ -179,7 +183,7 @@ export function IcsPreview({ url, filename }: IcsPreviewProps) {
     return (
       <div className="flex flex-col items-center gap-3 text-muted-foreground">
         <Loader2 className="size-8 animate-spin" />
-        <p className="text-sm">Loading calendar event…</p>
+        <p className="text-sm">{t("Loading calendar event…")}</p>
       </div>
     );
   }
@@ -189,7 +193,7 @@ export function IcsPreview({ url, filename }: IcsPreviewProps) {
       <div className="flex flex-col items-center gap-4 text-center">
         <CalendarDays className="size-12 text-muted-foreground" />
         <p className="text-sm text-muted-foreground">
-          {error ?? "No events found in this file"}
+          {error ?? t("No events found in this file")}
         </p>
         <a
           href={url}
@@ -197,7 +201,7 @@ export function IcsPreview({ url, filename }: IcsPreviewProps) {
           className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
         >
           <Download className="size-4" />
-          Download
+          {t("Download")}
         </a>
       </div>
     );
@@ -211,7 +215,7 @@ export function IcsPreview({ url, filename }: IcsPreviewProps) {
       {added ? (
         <span className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white">
           <Check className="size-4" />
-          Added to Calendar
+          {t("Added to Calendar")}
         </span>
       ) : (
         <button
@@ -224,12 +228,12 @@ export function IcsPreview({ url, filename }: IcsPreviewProps) {
           ) : (
             <CalendarPlus className="size-4" />
           )}
-          {createEvent.isPending ? "Adding…" : "Add to Calendar"}
+          {createEvent.isPending ? t("Adding…") : t("Add to Calendar")}
         </button>
       )}
       {createEvent.error && (
         <p className="text-sm text-destructive">
-          Failed to add event. Please try again.
+          {t("Failed to add event. Please try again.")}
         </p>
       )}
     </div>

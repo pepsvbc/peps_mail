@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t } from "@/lib/i18n";
+
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import {
@@ -167,7 +169,7 @@ export function useMoveMessage() {
           return { ...current, results, total_count: current.total_count + 1 };
         });
       }
-      toast.error(err instanceof Error ? err.message : "Failed to move message");
+      toast.error(err instanceof Error ? err.message : t("Failed to move message"));
       const ui = useUiStore.getState();
       if (context && ui.activeFolder === fromFolder && ui.selectedMessageUid === context.advancedSelection) {
         ui.selectMessage(context.selectedMessageUid);

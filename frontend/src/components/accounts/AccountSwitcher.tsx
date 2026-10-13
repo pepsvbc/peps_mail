@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useUiStore } from "@/stores/useUiStore";
 import { cn } from "@/lib/utils";
@@ -16,6 +18,7 @@ import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
 import { useAccountUnreadCounts } from "@/hooks/useAccountUnreadCounts";
 
 export function AccountSwitcher() {
+  const { t } = useTranslation();
   const accounts = useAuthStore((s) => s.accounts);
   const activeAccountId = useAuthStore((s) => s.activeAccountId);
   const setActiveAccount = useAuthStore((s) => s.setActiveAccount);
@@ -121,7 +124,7 @@ export function AccountSwitcher() {
         <div className="fixed inset-0 bg-background z-[100] flex items-center justify-center">
           <div className="flex flex-col items-center gap-3">
             <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm text-muted-foreground">Switching account...</span>
+            <span className="text-sm text-muted-foreground">{t("Switching account...")}</span>
           </div>
         </div>
       )}
@@ -175,8 +178,8 @@ export function AccountSwitcher() {
                   const unread = unreadCounts[account.id];
                   const unreadCount = unread?.isError ? undefined : unread?.count;
                   const unreadLabel = unreadCount != null
-                    ? `${unreadCount} unread messages in Inbox`
-                    : unread?.isError ? "Unread Inbox count unavailable" : "Checking unread Inbox count";
+                    ? t(unreadCount === 1 ? "{count} unread message in Inbox" : "{count} unread messages in Inbox", { count: unreadCount })
+                    : unread?.isError ? t("Unread Inbox count unavailable") : t("Checking unread Inbox count");
 
                   return (
                     <div
@@ -235,7 +238,7 @@ export function AccountSwitcher() {
                               "p-1.5 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors",
                               isLoggingOut && "opacity-50 cursor-not-allowed"
                             )}
-                            title="Sign out this account"
+                            title={t("Sign out this account")}
                           >
                             <X className="size-4" />
                           </button>
@@ -258,7 +261,7 @@ export function AccountSwitcher() {
                   <div className="size-8 rounded-full bg-muted flex items-center justify-center shrink-0">
                     <Plus className="size-4" />
                   </div>
-                  <span className="font-medium">Add account</span>
+                  <span className="font-medium">{t("Add account")}</span>
                 </button>
 
                 {accounts.length > 1 && (
@@ -274,7 +277,7 @@ export function AccountSwitcher() {
                     <div className="size-8 rounded-full bg-muted flex items-center justify-center shrink-0">
                       <LogOut className="size-4" />
                     </div>
-                    <span className="font-medium">Sign out all accounts</span>
+                    <span className="font-medium">{t("Sign out all accounts")}</span>
                   </button>
                 )}
               </div>

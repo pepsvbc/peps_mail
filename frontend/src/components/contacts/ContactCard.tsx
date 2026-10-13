@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { Trash2, Building2, Mail, StickyNote, Clock, Tag, Users, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Contact, ContactGroup } from "@/types/contact";
@@ -10,9 +12,9 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "@/lib/api";
 
-function formatDate(dateStr: string): string {
+function formatDate(dateStr: string, locale: string): string {
   try {
-    return new Date(dateStr).toLocaleDateString(undefined, {
+    return new Date(dateStr).toLocaleDateString(locale, {
       year: "numeric",
       month: "short",
       day: "numeric",
@@ -74,6 +76,7 @@ export function ContactCard({
   isDeleting,
   groups = [],
 }: ContactCardProps) {
+  const { t, locale } = useTranslation();
   const addMember = useAddGroupMember();
   const removeMember = useRemoveGroupMember();
 
@@ -136,7 +139,7 @@ export function ContactCard({
               onClick={() => onDelete(contact.id)}
               disabled={isDeleting}
               className="text-muted-foreground hover:text-destructive"
-              title="Delete contact"
+              title={t("Delete contact")}
             >
               <Trash2 className="size-4" />
             </Button>
@@ -159,7 +162,9 @@ export function ContactCard({
 
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Tag className="size-4 shrink-0" />
-              <span className="capitalize">{contact.source}</span>
+              <span className="capitalize">
+                {contact.source === "manual" ? t("Manual") : contact.source === "auto" ? t("Automatic") : contact.source === "imported" ? t("Imported") : contact.source}
+              </span>
             </div>
 
             {/* Groups section */}
@@ -182,7 +187,7 @@ export function ContactCard({
                           })
                         }
                         className="rounded-full p-0.5 hover:bg-primary/20"
-                        title={`Remove from ${g.name}`}
+                        title={t("Remove from {group}", { group: g.name })}
                       >
                         <X className="size-3" />
                       </button>
@@ -195,7 +200,7 @@ export function ContactCard({
                         className="inline-flex items-center gap-1 rounded-full border border-dashed border-muted-foreground/30 px-2 py-0.5 text-xs text-muted-foreground hover:border-primary hover:text-primary"
                       >
                         <Plus className="size-3" />
-                        Add to group
+                        {t("Add to group")}
                       </button>
                       <div className="absolute left-0 top-full z-10 mt-1 hidden min-w-[140px] rounded-md border border-border bg-popover p-1 shadow-md group-hover:block">
                         {nonMemberGroups.map((g) => (
@@ -218,7 +223,7 @@ export function ContactCard({
                   )}
                   {memberGroups.length === 0 && nonMemberGroups.length === 0 && (
                     <span className="text-xs text-muted-foreground/60">
-                      No groups
+                      {t("No groups")}
                     </span>
                   )}
                 </div>
@@ -228,13 +233,13 @@ export function ContactCard({
             <div className="flex items-center gap-4 text-xs text-muted-foreground/70">
               <div className="flex items-center gap-1">
                 <Clock className="size-3" />
-                <span>Created {formatDate(contact.created_at)}</span>
+                <span>{t("Created {date}", { date: formatDate(contact.created_at, locale) })}</span>
               </div>
               {contact.last_contacted && (
-                <span>Last contacted {formatDate(contact.last_contacted)}</span>
+                <span>{t("Last contacted {date}", { date: formatDate(contact.last_contacted, locale) })}</span>
               )}
               {contact.contact_count > 0 && (
-                <span>{contact.contact_count} interactions</span>
+                <span>{t(contact.contact_count === 1 ? "{count} interaction" : "{count} interactions", { count: contact.contact_count })}</span>
               )}
             </div>
           </div>

@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation } from "@/lib/i18n";
+
 import { useState, useRef, useEffect, useMemo } from "react";
 import { AnimatePresence } from "framer-motion";
 import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
@@ -22,6 +24,7 @@ const PRESET_COLORS = [
 ];
 
 export function TagSection() {
+  useTranslation();
   const { data, isLoading } = useTags();
   const createTag = useCreateTag();
   const deleteTag = useDeleteTag();
@@ -98,7 +101,7 @@ export function TagSection() {
               deleteTag.mutate(tag.id);
             }}
             className="hidden rounded p-0.5 text-muted-foreground hover:text-destructive group-hover:block"
-            title="Delete tag"
+            title={t("Delete tag")}
           >
             <X className="size-3" />
           </button>
@@ -130,7 +133,7 @@ export function TagSection() {
                     setNewName("");
                   }
                 }}
-                placeholder="Tag name"
+                placeholder={t("Tag name")}
                 className="min-w-0 flex-1 truncate rounded border border-input bg-background px-2 py-1 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring/50"
                 autoComplete="off"
                 spellCheck={false}
@@ -176,7 +179,7 @@ export function TagSection() {
                 "hover:bg-primary/90",
               )}
             >
-              {createTag.isPending ? "Creating..." : "Create"}
+              {createTag.isPending ? t("Creating...") : t("Create")}
             </button>
           </AnimatedDiv>
         )}
@@ -199,7 +202,7 @@ export function TagSection() {
               !isCollapsed && "rotate-90",
             )}
           />
-          <span className="flex-1 text-left">Tags</span>
+          <span className="flex-1 text-left">{t("Tags")}</span>
         </button>
         <button
           type="button"
@@ -208,7 +211,7 @@ export function TagSection() {
             setIsCollapsed(false);
           }}
           className="rounded p-0.5 hover:bg-sidebar-accent"
-          title="Create tag"
+          title={t("Create tag")}
         >
           <Plus className="size-3" />
         </button>

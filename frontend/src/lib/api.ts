@@ -1,4 +1,5 @@
 import { toast } from "sonner";
+import { getLanguage, translate } from "@/lib/i18n";
 
 import { useAuthStore } from "@/stores/useAuthStore";
 
@@ -25,10 +26,28 @@ interface AccountsResponse {
   browserSessionExpired?: boolean;
 }
 
+function localizeError(error: ApiError): string {
+  const message = error.message ?? "An unexpected error occurred";
+  if (getLanguage() !== "fr") return message;
+
+  const translated = translate(message);
+  if (translated !== message) return translated;
+
+  // Only specific codes have a known meaning; preserve unknown server detail.
+  if (error.code === "ACCOUNT_SESSION_EXPIRED") return translate("Account session expired");
+  if (error.code === "DUPLICATE_ACCOUNT") return translate("This account is already logged in");
+  if (error.code === "CSRF_REJECTED") return translate("Request rejected. Please reload the page and try again.");
+  if (error.code === "SERVER_UNREACHABLE") {
+    const summary = translate("Unable to reach the mail server");
+    return error.message ? `${summary}: ${error.message}` : summary;
+  }
+  return message;
+}
+
 function handleAccountSessionExpired(error: ApiError): void {
   if (error.code === "ACCOUNT_SESSION_EXPIRED" && error.accountId) {
     useAuthStore.getState().removeAccount(error.accountId);
-    toast.error(error.message ?? "Account session expired");
+    toast.error(localizeError({ ...error, message: error.message ?? "Account session expired" }));
     fetch(`${API_BASE}/auth/accounts/${error.accountId}`, {
       method: "DELETE",
       headers: { "X-Requested-With": "XMLHttpRequest" },
@@ -41,7 +60,7 @@ async function parseErrorResponse(res: Response, handleSessionExpiry = true): Pr
   const data: ErrorResponse = await res.json();
   const error = data.error ?? {};
   if (handleSessionExpiry) handleAccountSessionExpired(error);
-  return new Error(error.message ?? "An unexpected error occurred");
+  return new Error(localizeError(error));
 }
 
 function getActiveAccountHeader(accountId = useAuthStore.getState().activeAccountId): Record<string, string> {

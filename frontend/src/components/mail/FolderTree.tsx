@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation } from "@/lib/i18n";
+
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Inbox,
@@ -24,22 +26,12 @@ import { Button } from "@/components/ui/button";
 import { FolderContextMenu } from "@/components/mail/FolderContextMenu";
 import { CreateFolderDialog } from "@/components/mail/CreateFolderDialog";
 import { AccountSwitcher } from "@/components/accounts/AccountSwitcher";
+import { formatFolderName } from "@/lib/mail-folders";
 import { cn } from "@/lib/utils";
 import { TagSection } from "@/components/mail/TagSection";
 import type { Folder as FolderType } from "@/types/folder";
 
-/** Map raw folder names to user-friendly display names. */
-export function formatFolderName(name: string): string {
-  const lower = name.toLowerCase();
-  if (lower === "inbox") return "Inbox";
-  if (lower === "drafts" || lower === "[gmail]/drafts") return "Drafts";
-  if (lower === "sent" || lower === "[gmail]/sent mail") return "Sent";
-  if (lower === "trash" || lower === "[gmail]/trash") return "Trash";
-  if (lower === "junk" || lower === "spam" || lower === "[gmail]/spam") return "Spam";
-  if (lower === "archive" || lower === "[gmail]/all mail") return "Archive";
-  if (lower === "starred" || lower === "flagged") return "Starred";
-  return name;
-}
+export { formatFolderName } from "@/lib/mail-folders";
 
 /** Check whether a folder name refers to the Drafts folder. */
 export function isDraftsFolder(name: string): boolean {
@@ -75,6 +67,7 @@ function getFolderIcon(name: string) {
 }
 
 function SkeletonList() {
+  useTranslation();
   return (
     <div className="flex flex-col gap-1 p-2">
       {Array.from({ length: 5 }).map((_, i) => (
@@ -94,6 +87,7 @@ function InlineRenameInput({
   currentName: string;
   onDone: () => void;
 }) {
+  useTranslation();
   const [value, setValue] = useState(currentName);
   const inputRef = useRef<HTMLInputElement>(null);
   const renameFolder = useRenameFolder();
@@ -157,7 +151,7 @@ function InlineRenameInput({
             type="button"
             onClick={handleSubmit}
             className="rounded p-0.5 text-muted-foreground hover:text-foreground"
-            aria-label="Confirm rename"
+            aria-label={t("Confirm rename")}
           >
             <Check className="size-3.5" />
           </button>
@@ -165,7 +159,7 @@ function InlineRenameInput({
             type="button"
             onClick={onDone}
             className="rounded p-0.5 text-muted-foreground hover:text-foreground"
-            aria-label="Cancel rename"
+            aria-label={t("Cancel rename")}
           >
             <X className="size-3.5" />
           </button>
@@ -173,7 +167,7 @@ function InlineRenameInput({
       )}
       {renameFolder.isError && (
         <span className="text-xs text-destructive" title={renameFolder.error?.message}>
-          Error
+          {t("Error")}
         </span>
       )}
     </div>
@@ -191,6 +185,7 @@ function FolderItem({
   onStartRename: () => void;
   onEndRename: () => void;
 }) {
+  useTranslation();
   const activeFolder = useUiStore((s) => s.activeFolder);
   const setActiveFolder = useUiStore((s) => s.setActiveFolder);
   const clearSearch = useUiStore((s) => s.clearSearch);
@@ -316,13 +311,14 @@ function formatBytes(bytes: number): string {
 }
 
 function MailboxSpace({ usageBytes, limitBytes }: { usageBytes: number; limitBytes: number | null }) {
+  useTranslation();
   const unlimited = !limitBytes || limitBytes <= 0;
 
   if (unlimited) {
     return (
       <div className="mt-1 px-1">
         <p className="text-[11px] leading-none text-muted-foreground">
-          {formatBytes(usageBytes)} used
+          {t("{usage} used", { usage: formatBytes(usageBytes) })}
         </p>
       </div>
     );
@@ -347,13 +343,14 @@ function MailboxSpace({ usageBytes, limitBytes }: { usageBytes: number; limitByt
         "mt-1 text-[11px] leading-none",
         isHigh ? "text-destructive" : "text-muted-foreground",
       )}>
-        {formatBytes(usageBytes)} of {formatBytes(limitBytes)} used
+        {t("{usage} of {limit} used", { usage: formatBytes(usageBytes), limit: formatBytes(limitBytes) })}
       </p>
     </div>
   );
 }
 
 export function FolderTree() {
+  useTranslation();
   const { data, isLoading, isError, refetch } = useFolders();
   const { data: quota } = useQuota();
   const activeFolder = useUiStore((s) => s.activeFolder);
@@ -378,10 +375,10 @@ export function FolderTree() {
         {isError && (
           <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">
             <p className="text-sm text-muted-foreground">
-              Failed to load folders
+              {t("Failed to load folders")}
             </p>
             <Button variant="outline" size="sm" onClick={() => refetch()}>
-              Retry
+              {t("Retry")}
             </Button>
           </div>
         )}
@@ -419,7 +416,7 @@ export function FolderTree() {
           onClick={() => setCreateDialogOpen(true)}
         >
           <FolderPlus className="size-4" />
-          New folder
+          {t("New folder")}
         </Button>
         {quota?.usage_bytes != null && (
           <>

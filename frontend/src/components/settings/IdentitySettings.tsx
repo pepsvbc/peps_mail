@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useCallback, useState } from "react";
 import { Plus, Pencil, Trash2, Star, Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -52,6 +54,7 @@ function IdentityForm({
   onCancel: () => void;
   saving: boolean;
 }) {
+  const { t } = useTranslation();
   const [form, setForm] = useState<IdentityFormData>(initial);
 
   return (
@@ -59,7 +62,7 @@ function IdentityForm({
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label className="mb-1 block text-xs font-medium text-muted-foreground">
-            Email address
+            {t("Email address")}
           </label>
           <input
             type="email"
@@ -71,34 +74,34 @@ function IdentityForm({
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-muted-foreground">
-            Display name
+            {t("Display name")}
           </label>
           <input
             type="text"
             value={form.display_name}
             onChange={(e) => setForm({ ...form, display_name: e.target.value })}
             className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary"
-            placeholder="Your Name"
+            placeholder={t("Your Name")}
           />
         </div>
       </div>
       <div>
         <label className="mb-1 block text-xs font-medium text-muted-foreground">
-          Signature
+          {t("Signature")}
         </label>
         <div className="rounded-md border border-border bg-background">
           <RichTextEditor
             content={form.signature_html}
             onChange={(html) => setForm({ ...form, signature_html: html })}
             onImageUpload={handleSignatureImageUpload}
-            placeholder="Best regards, Your Name"
+            placeholder={t("Best regards, Your Name")}
             compact
           />
         </div>
         {form.signature_html && (
           <div className="mt-2">
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              Preview
+              {t("Preview")}
             </label>
             <div
               className="rounded-md border border-border bg-background px-3 py-2 prose prose-sm dark:prose-invert max-w-none text-xs"
@@ -116,7 +119,7 @@ function IdentityForm({
           className="size-4 rounded border-border"
         />
         <label htmlFor="is-default" className="text-sm text-muted-foreground">
-          Set as default identity
+          {t("Set as default identity")}
         </label>
       </div>
       <div className="flex items-center gap-2">
@@ -134,13 +137,13 @@ function IdentityForm({
           ) : (
             <Check className="size-4" />
           )}
-          Save
+          {t("Save")}
         </button>
         <button
           onClick={onCancel}
           className="rounded-lg px-4 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
         >
-          Cancel
+          {t("Cancel")}
         </button>
       </div>
     </div>
@@ -148,6 +151,7 @@ function IdentityForm({
 }
 
 export function IdentitySettings() {
+  const { t } = useTranslation();
   const { data: identities, isLoading } = useIdentities();
   const createIdentity = useCreateIdentity();
   const updateIdentity = useUpdateIdentity();
@@ -167,14 +171,14 @@ export function IdentitySettings() {
         },
         {
           onSuccess: () => {
-            toast.success("Identity created");
+            toast.success(t("Identity created"));
             setShowAddForm(false);
           },
-          onError: (e) => toast.error(`Failed to create: ${e.message}`),
+          onError: (e) => toast.error(t("Failed to create: {error}", { error: e.message })),
         },
       );
     },
-    [createIdentity],
+    [createIdentity, t],
   );
 
   const handleUpdate = useCallback(
@@ -191,35 +195,35 @@ export function IdentitySettings() {
         },
         {
           onSuccess: () => {
-            toast.success("Identity updated");
+            toast.success(t("Identity updated"));
             setEditingId(null);
           },
-          onError: (e) => toast.error(`Failed to update: ${e.message}`),
+          onError: (e) => toast.error(t("Failed to update: {error}", { error: e.message })),
         },
       );
     },
-    [updateIdentity],
+    [updateIdentity, t],
   );
 
   const handleDelete = useCallback(
     (identity: Identity) => {
       if (identity.is_default) {
-        toast.error("Cannot delete the default identity");
+        toast.error(t("Cannot delete the default identity"));
         return;
       }
       deleteIdentity.mutate(identity.id, {
-        onSuccess: () => toast.success("Identity deleted"),
-        onError: (e) => toast.error(`Failed to delete: ${e.message}`),
+        onSuccess: () => toast.success(t("Identity deleted")),
+        onError: (e) => toast.error(t("Failed to delete: {error}", { error: e.message })),
       });
     },
-    [deleteIdentity],
+    [deleteIdentity, t],
   );
 
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="size-4 animate-spin" />
-        Loading identities...
+        {t("Loading identities...")}
       </div>
     );
   }
@@ -228,9 +232,9 @@ export function IdentitySettings() {
     <div className="max-w-2xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold">Sender Identities</h2>
+          <h2 className="text-base font-semibold">{t("Sender Identities")}</h2>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Manage email addresses and signatures used when sending messages.
+            {t("Manage email addresses and signatures used when sending messages.")}
           </p>
         </div>
         {!showAddForm && (
@@ -239,7 +243,7 @@ export function IdentitySettings() {
             className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
           >
             <Plus className="size-4" />
-            Add identity
+            {t("Add identity")}
           </button>
         )}
       </div>
@@ -285,7 +289,7 @@ export function IdentitySettings() {
                   </div>
                   {identity.signature_html && (
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      Has signature
+                      {t("Has signature")}
                     </p>
                   )}
                 </div>
@@ -294,7 +298,7 @@ export function IdentitySettings() {
                 <button
                   onClick={() => setEditingId(identity.id)}
                   className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                  title="Edit"
+                  title={t("Edit")}
                 >
                   <Pencil className="size-4" />
                 </button>
@@ -304,8 +308,8 @@ export function IdentitySettings() {
                   className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-destructive disabled:cursor-not-allowed disabled:opacity-30"
                   title={
                     identity.is_default
-                      ? "Cannot delete default identity"
-                      : "Delete"
+                      ? t("Cannot delete default identity")
+                      : t("Delete")
                   }
                 >
                   <Trash2 className="size-4" />

@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation } from "@/lib/i18n";
+
 import { useMemo } from "react";
 import { Dialog } from "radix-ui";
 import { AnimatePresence } from "framer-motion";
@@ -27,6 +29,7 @@ export function AttachmentPreviewDialog({
   previewUrl,
   onClose,
 }: AttachmentPreviewDialogProps) {
+  useTranslation();
   const effectiveAnimationMode = useUiStore((s) => s.effectiveAnimationMode);
   const overlayMotionProps = useMemo(() => createFadeSlideVariants(effectiveAnimationMode, "y"), [effectiveAnimationMode]);
   const contentMotionProps = useMemo(() => createScaleFadeVariants(effectiveAnimationMode), [effectiveAnimationMode]);
@@ -67,14 +70,14 @@ export function AttachmentPreviewDialog({
                     href={previewUrl}
                     download={attachment.filename}
                     className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                    title="Download"
+                    title={t("Download")}
                   >
                     <Download className="size-4" />
                   </a>
                   <Dialog.Close asChild>
                     <button
                       className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                      title="Close"
+                      title={t("Close")}
                     >
                       <X className="size-4" />
                     </button>
@@ -99,7 +102,7 @@ export function AttachmentPreviewDialog({
                   <div className="flex flex-col items-center gap-4 text-center">
                     <Paperclip className="size-12 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">
-                      Preview not available for this file type
+                      {t("Preview not available for this file type")}
                     </p>
                     <a
                       href={previewUrl}
@@ -107,7 +110,7 @@ export function AttachmentPreviewDialog({
                       className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
                     >
                       <Download className="size-4" />
-                      Download
+                      {t("Download")}
                     </a>
                   </div>
                 )}

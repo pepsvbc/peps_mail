@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useMemo, useRef, useEffect } from "react";
 import { useCalendarStore } from "@/stores/useCalendarStore";
 import { useCalendarEvents } from "@/hooks/useCalendar";
@@ -22,6 +24,7 @@ interface WeekViewProps {
 }
 
 export function WeekView({ weekStartsOn, timeFormat }: WeekViewProps) {
+  const { t, locale } = useTranslation();
   const selectedDate = useCalendarStore((s) => s.selectedDate);
   const setDate = useCalendarStore((s) => s.setDate);
   const selectEvent = useCalendarStore((s) => s.selectEvent);
@@ -111,7 +114,7 @@ export function WeekView({ weekStartsOn, timeFormat }: WeekViewProps) {
             )}
           >
             <div className="text-xs text-muted-foreground">
-              {day.toLocaleDateString("en-US", { weekday: "short" })}
+              {day.toLocaleDateString(locale, { weekday: "short" })}
             </div>
             <div
               className={cn(
@@ -129,7 +132,7 @@ export function WeekView({ weekStartsOn, timeFormat }: WeekViewProps) {
       {allDayEvents.length > 0 && (
         <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b border-border">
           <div className="border-r border-border px-1 py-1 text-[10px] text-muted-foreground">
-            All day
+            {t("All day")}
           </div>
           {days.map((day, i) => {
             const dayAllDay = allDayEvents.filter((ev) => {

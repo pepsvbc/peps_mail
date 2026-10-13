@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation } from "@/lib/i18n";
+
 import { useState, useRef, useEffect, useMemo } from "react";
 import { AnimatePresence } from "framer-motion";
 import { FolderInput } from "lucide-react";
@@ -19,6 +21,7 @@ export function MoveToFolderMenu({
   currentFolder,
   onMove,
 }: MoveToFolderMenuProps) {
+  useTranslation();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const { data } = useFolders();
@@ -52,7 +55,7 @@ export function MoveToFolderMenu({
         className="gap-1.5"
       >
         <FolderInput className="size-4" />
-        Move to...
+        {t("Move to...")}
       </Button>
 
       <AnimatePresence>
@@ -68,7 +71,7 @@ export function MoveToFolderMenu({
           >
             {folders.length === 0 ? (
               <div className="px-3 py-2 text-sm text-muted-foreground">
-                No other folders
+                {t("No other folders")}
               </div>
             ) : (
               folders.map((folder) => (

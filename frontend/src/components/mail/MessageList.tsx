@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation, getLocale } from "@/lib/i18n";
+
 import { useRef, useCallback, useEffect, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { AnimatePresence } from "framer-motion";
@@ -25,6 +27,7 @@ const ROW_MOTION_VARIANTS_BY_MODE: Record<AnimationMode, MotionVariants> = Objec
 ) as Record<AnimationMode, MotionVariants>;
 
 function SkeletonRows({ count, height }: { count: number; height: number }) {
+  useTranslation();
   return (
     <div className="flex flex-col">
       {Array.from({ length: count }).map((_, i) => (
@@ -52,12 +55,12 @@ function humanizeDate(iso: string): string {
   const diffMinutes = Math.floor(diffMs / 60_000);
   const diffHours = Math.floor(diffMs / 3_600_000);
 
-  if (diffMinutes < 1) return "just now";
+  if (diffMinutes < 1) return t("just now");
   if (diffMinutes < 60) {
-    return diffMinutes === 1 ? "1 minute ago" : `${diffMinutes} minutes ago`;
+    return diffMinutes === 1 ? t("1 minute ago") : t("{count} minutes ago", { count: diffMinutes });
   }
   if (diffHours < 24) {
-    return diffHours === 1 ? "1 hour ago" : `${diffHours} hours ago`;
+    return diffHours === 1 ? t("1 hour ago") : t("{count} hours ago", { count: diffHours });
   }
 
   const yesterday = new Date(now);
@@ -67,19 +70,19 @@ function humanizeDate(iso: string): string {
     date.getMonth() === yesterday.getMonth() &&
     date.getDate() === yesterday.getDate()
   ) {
-    return "yesterday";
+    return t("yesterday");
   }
 
-  return date.toLocaleString("en-US", {
+  return date.toLocaleString(getLocale(), {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
-    hour12: true,
   });
 }
 
 function DraftItems() {
+  useTranslation();
   const { data } = useListDrafts(true);
   const deleteDraft = useDeleteDraft();
   const openDraft = useComposeStore((s) => s.openDraft);
@@ -138,7 +141,7 @@ function DraftItems() {
           <div className="flex items-center gap-2">
             <PenLine className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate text-xs font-normal text-muted-foreground">
-              {draft.to || "No recipient"}
+              {draft.to || t("No recipient")}
             </span>
             <span className="shrink-0 text-xs font-normal text-muted-foreground">
               {humanizeDate(draft.updated_at)}
@@ -149,7 +152,7 @@ function DraftItems() {
                 deleteDraft.mutate(draft.id);
               }}
               className="hidden shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground group-hover:flex items-center justify-center"
-              title="Delete draft"
+              title={t("Delete draft")}
             >
               <X className="size-3" />
             </button>
@@ -158,7 +161,7 @@ function DraftItems() {
           {/* Bottom row: subject */}
           <div className="flex items-center gap-2">
             <span className="min-w-0 flex-1 truncate text-sm font-normal text-foreground">
-              {draft.subject || "(no subject)"}
+              {draft.subject || t("(no subject)")}
             </span>
           </div>
         </div>
@@ -168,13 +171,14 @@ function DraftItems() {
 }
 
 function ToggleReadingPaneButton() {
+  useTranslation();
   const visible = useUiStore((s) => s.readingPaneVisible);
   const setVisible = useUiStore((s) => s.setReadingPaneVisible);
 
   return (
     <button
       type="button"
-      aria-label={visible ? "Hide reading pane" : "Show reading pane"}
+      aria-label={visible ? t("Hide reading pane") : t("Show reading pane")}
       onClick={() => setVisible(!visible)}
       className={cn(
         "flex size-6 items-center justify-center rounded transition-colors hover:bg-accent",
@@ -187,6 +191,7 @@ function ToggleReadingPaneButton() {
 }
 
 export function MessageList() {
+  useTranslation();
   const activeFolder = useUiStore((s) => s.activeFolder);
   const activeTagId = useUiStore((s) => s.activeTagId);
   const density = useUiStore((s) => s.density);
@@ -370,7 +375,7 @@ export function MessageList() {
           {!isLoading && !isError && messages.length > 0 && (
             <button
               type="button"
-              aria-label={allSelected ? "Deselect all" : "Select all"}
+              aria-label={allSelected ? t("Deselect all") : t("Select all")}
               onClick={handleSelectAllToggle}
               className={cn(
                 "flex size-4 shrink-0 items-center justify-center rounded border transition-colors",
@@ -395,15 +400,15 @@ export function MessageList() {
             </button>
           )}
           <h2 className="text-sm font-semibold">
-            {isTagView ? `Tag: ${activeTagName ?? "..."}` : formatFolderName(activeFolder)}
+            {isTagView ? t("Tag: {name}", { name: activeTagName ?? "..." }) : formatFolderName(activeFolder)}
           </h2>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground">
-            {isLoading && !data ? "\u2026" : `${totalCount} messages`}
+            {isLoading && !data ? "\u2026" : t(totalCount === 1 ? "{count} message" : "{count} messages", { count: totalCount })}
           </span>
           {isSyncing && (
-            <span className="animate-pulse text-xs text-primary">syncing…</span>
+            <span className="animate-pulse text-xs text-primary">{t("syncing…")}</span>
           )}
           <ToggleReadingPaneButton />
         </div>
@@ -428,10 +433,10 @@ export function MessageList() {
       {isError && (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 py-8 text-center">
           <p className="text-sm text-muted-foreground">
-            Failed to load messages
+            {t("Failed to load messages")}
           </p>
           <Button variant="outline" size="sm" onClick={() => refetch()}>
-            Retry
+            {t("Retry")}
           </Button>
         </div>
       )}
@@ -439,7 +444,7 @@ export function MessageList() {
       {/* Empty state (only when not a drafts folder or no drafts either) */}
       {!isLoading && !isError && messages.length === 0 && !showDrafts && (
         <div className="flex flex-1 items-center justify-center text-muted-foreground">
-          {isTagView ? "No messages with this tag" : "No messages in this folder"}
+          {isTagView ? t("No messages with this tag") : t("No messages in this folder")}
         </div>
       )}
 
@@ -520,7 +525,7 @@ export function MessageList() {
           )}
           {isFetchingNextPage && (
             <div className="flex items-center justify-center py-2">
-              <span className="text-xs text-muted-foreground">Loading more...</span>
+              <span className="text-xs text-muted-foreground">{t("Loading more...")}</span>
             </div>
           )}
         </div>

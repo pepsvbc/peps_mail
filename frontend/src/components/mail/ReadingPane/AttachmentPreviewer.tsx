@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation } from "@/lib/i18n";
+
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Dialog } from "radix-ui";
 import { AnimatePresence } from "framer-motion";
@@ -42,6 +44,7 @@ export function AttachmentPreviewer({
   initialIndex,
   onClose,
 }: AttachmentPreviewerProps) {
+  useTranslation();
   const effectiveAnimationMode = useUiStore((s) => s.effectiveAnimationMode);
   const overlayMotionProps = useMemo(() => createFadeSlideVariants(effectiveAnimationMode, "y"), [effectiveAnimationMode]);
   const contentMotionProps = useMemo(() => createScaleFadeVariants(effectiveAnimationMode), [effectiveAnimationMode]);
@@ -97,14 +100,14 @@ export function AttachmentPreviewer({
             <Dialog.Title className="flex items-center gap-2 text-sm font-semibold">
               <Paperclip className="size-4 text-muted-foreground" />
               <span className="max-w-[400px] truncate">
-                {att.filename ?? "Attachment"}
+                {att.filename ?? t("Attachment")}
               </span>
               <span className="text-xs font-normal text-muted-foreground">
                 ({formatFileSize(att.size)})
               </span>
               {attachments.length > 1 && (
                 <span className="text-xs font-normal text-muted-foreground">
-                  — {index + 1} of {attachments.length}
+                  — {t("{current} of {total}", { current: index + 1, total: attachments.length })}
                 </span>
               )}
             </Dialog.Title>
@@ -115,7 +118,7 @@ export function AttachmentPreviewer({
                     onClick={goPrev}
                     disabled={index === 0}
                     className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30"
-                    title="Previous"
+                    title={t("Previous")}
                   >
                     <ChevronLeft className="size-4" />
                   </button>
@@ -123,7 +126,7 @@ export function AttachmentPreviewer({
                     onClick={goNext}
                     disabled={index === attachments.length - 1}
                     className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30"
-                    title="Next"
+                    title={t("Next")}
                   >
                     <ChevronRight className="size-4" />
                   </button>
@@ -133,14 +136,14 @@ export function AttachmentPreviewer({
                 href={url}
                 download={att.filename ?? undefined}
                 className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                title="Download"
+                title={t("Download")}
               >
                 <Download className="size-4" />
               </a>
               <Dialog.Close asChild>
                 <button
                   className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                  title="Close"
+                  title={t("Close")}
                 >
                   <X className="size-4" />
                 </button>
@@ -164,7 +167,7 @@ export function AttachmentPreviewer({
                         ? "border-primary bg-accent"
                         : "border-transparent bg-muted hover:border-muted-foreground/30",
                     )}
-                    title={thumb.filename ?? `Attachment ${i + 1}`}
+                    title={thumb.filename ?? t("Attachment {number}", { number: i + 1 })}
                   >
                     {thumb.content_type.startsWith("image/") ? (
                       // eslint-disable-next-line @next/next/no-img-element -- blob URL thumbnail, not optimizable
@@ -192,7 +195,7 @@ export function AttachmentPreviewer({
               // eslint-disable-next-line @next/next/no-img-element -- blob URL preview, not optimizable
               <img
                 src={url}
-                alt={att.filename ?? "Attachment"}
+                alt={att.filename ?? t("Attachment")}
                 className="max-h-full max-w-full object-contain"
               />
             ) : isPdfAttachment(att.content_type, att.filename) ? (
@@ -207,7 +210,7 @@ export function AttachmentPreviewer({
               <div className="flex flex-col items-center gap-4 text-center">
                 <Paperclip className="size-12 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">
-                  Preview not available for this file type
+                  {t("Preview not available for this file type")}
                 </p>
                 <a
                   href={url}
@@ -215,7 +218,7 @@ export function AttachmentPreviewer({
                   className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
                 >
                   <Download className="size-4" />
-                  Download
+                  {t("Download")}
                 </a>
               </div>
             )}

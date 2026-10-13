@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import type { WsStatus } from "@/hooks/useWebSocket";
 import { cn } from "@/lib/utils";
 import { useSyncExternalStore } from "react";
@@ -60,14 +62,15 @@ interface ConnectionStatusProps {
 }
 
 export function ConnectionStatus({ status, failCount }: ConnectionStatusProps) {
+  const { t } = useTranslation();
   const isActive = useNetworkActivity();
   const isReconnecting = status === "connecting" || (status === "disconnected" && failCount < 3);
   const isFailed = status === "disconnected" && failCount >= 3;
   const isConnected = status === "connected";
 
   const label = isConnected
-    ? isActive ? "Syncing..." : "Connected"
-    : isReconnecting ? "Reconnecting..." : "Disconnected";
+    ? isActive ? t("Syncing...") : t("Connected")
+    : isReconnecting ? t("Reconnecting...") : t("Disconnected");
 
   return (
     <div className="flex items-center justify-center py-2" title={label}>

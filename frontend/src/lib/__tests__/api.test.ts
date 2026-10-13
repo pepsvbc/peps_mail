@@ -2,11 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import { apiGet } from "../api";
 import { useAuthStore } from "@/stores/useAuthStore";
+import { useLanguageStore } from "@/lib/i18n";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useLanguageStore.setState({ language: "en", preference: "system", initialized: false, hasStoredPreference: false });
   useAuthStore.setState({ accounts: [], activeAccountId: "active-account" });
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
     ok: true,
@@ -14,7 +16,11 @@ beforeEach(() => {
   }));
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  useLanguageStore.setState({ language: "en", preference: "system", initialized: false, hasStoredPreference: false });
+  localStorage.removeItem("oxi-language");
+});
 
 describe("account-scoped requests", () => {
   it("defaults to the currently active account", async () => {
@@ -88,5 +94,45 @@ describe("account-scoped requests", () => {
     expect(useAuthStore.getState().activeAccountId).toBe("other-account");
     expect(toast.error).toHaveBeenCalledOnce();
     expect(fetch).toHaveBeenCalledWith("/api/auth/accounts/active-account", expect.objectContaining({ method: "DELETE" }));
+  });
+});
+
+
+describe("localized API errors", () => {
+  beforeEach(() => useLanguageStore.getState().setLanguage("fr"));
+
+  it("translates known sign-in failures", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({ error: { code: "UNAUTHORIZED", message: "Invalid email or password" } }),
+    } as Response);
+    await expect(apiGet("/test")).rejects.toThrow("Adresse e-mail ou mot de passe incorrect");
+  });
+
+  it("keeps unknown server details unchanged", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({ error: { code: "SERVICE_UNAVAILABLE", message: "IMAP error: custom server detail" } }),
+    } as Response);
+    await expect(apiGet("/test")).rejects.toThrow("IMAP error: custom server detail");
+  });
+
+  it("adds a French explanation without losing connection failure details", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({ error: { code: "SERVER_UNREACHABLE", message: "Connection timed out" } }),
+    } as Response);
+    await expect(apiGet("/test")).rejects.toThrow("Impossible de joindre le serveur de messagerie: Connection timed out");
+  });
+
+  it("translates the session-expiry toast and still removes the expired account", async () => {
+    useAuthStore.setState({ accounts: [{ id: "active-account", email: "mail@example.com", imapHost: "imap.example.com", smtpHost: "smtp.example.com" }] });
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({ error: { code: "ACCOUNT_SESSION_EXPIRED", accountId: "active-account", message: "Account session has expired" } }),
+    } as Response);
+    await expect(apiGet("/folders")).rejects.toThrow("La session du compte a expiré");
+    expect(toast.error).toHaveBeenCalledWith("La session du compte a expiré");
+    expect(useAuthStore.getState().accounts).toEqual([]);
   });
 });

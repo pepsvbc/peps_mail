@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import HelpPage from "../help/page";
 import { useAuthStore } from "@/stores/useAuthStore";
+import { useLanguageStore } from "@/lib/i18n";
 
 const settings = {
   imap: { host: "imap.club.example", port: 993, security: "SSL/TLS" },
@@ -21,6 +22,7 @@ function renderHelp() {
 }
 
 beforeEach(() => {
+  useLanguageStore.setState({ language: "en", preference: "system", initialized: false, hasStoredPreference: false });
   useAuthStore.setState({ accounts: [], activeAccountId: null });
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
@@ -28,6 +30,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  useLanguageStore.setState({ language: "en" });
   vi.unstubAllGlobals();
 });
 
@@ -55,7 +58,7 @@ describe("public mail setup guide", () => {
     renderHelp();
 
     expect(await screen.findByRole("link", { name: "Download iOS configuration" }))
-      .toHaveAttribute("href", "/club/api/setup/apple.mobileconfig");
+      .toHaveAttribute("href", "/club/api/setup/apple.mobileconfig?lang=en");
     expect(screen.getByRole("link", { name: /iPhone & iPad/ })).toHaveAttribute("href", "#apple");
     expect(screen.getByRole("link", { name: /Android & other mail apps/ })).toHaveAttribute("href", "#manual");
   });
@@ -67,6 +70,24 @@ describe("public mail setup guide", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Loading mail server settings");
     expect(screen.getByRole("button", { name: "Download iOS configuration" })).toBeDisabled();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("switches the public guide and profile download to French without another request", async () => {
+    fetchMock.mockResolvedValue(Response.json(settings));
+    renderHelp();
+    await screen.findByRole("link", { name: "Download iOS configuration" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Français" }));
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("La messagerie de votre club.");
+    expect(screen.getByRole("link", { name: "Télécharger la configuration iOS" }))
+      .toHaveAttribute("href", "/api/setup/apple.mobileconfig?lang=fr");
+    expect(screen.getByRole("table")).toHaveTextContent("Réception (IMAP)");
+    expect(screen.getByRole("table")).toHaveTextContent("imap.club.example");
+    expect(localStorage.getItem("oxi-language")).toBe("fr");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "English" }));
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Your club email.");
   });
 
   it("shows a useful retry when setup is unavailable, then restores settings and download", async () => {

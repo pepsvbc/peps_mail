@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useState, useCallback, useMemo, useRef } from "react";
 import { AnimatePresence } from "framer-motion";
 import {
@@ -36,6 +38,7 @@ import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
 import type { Contact } from "@/types/contact";
 
 export function ContactsPanel() {
+  const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
@@ -165,7 +168,7 @@ export function ContactsPanel() {
           <div className="flex items-center gap-2">
             <Users className="size-5 text-primary" />
             <h1 className="text-base font-semibold text-foreground">
-              Contacts
+              {t("Contacts")}
             </h1>
             {data && (
               <span className="text-xs text-muted-foreground">
@@ -178,7 +181,7 @@ export function ContactsPanel() {
               variant="ghost"
               size="icon-sm"
               onClick={handleImport}
-              title="Import contacts (.vcf)"
+              title={t("Import contacts (.vcf)")}
               disabled={importContacts.isPending}
             >
               <Upload className="size-4" />
@@ -187,7 +190,7 @@ export function ContactsPanel() {
               variant="ghost"
               size="icon-sm"
               onClick={handleExport}
-              title="Export contacts (.vcf)"
+              title={t("Export contacts (.vcf)")}
             >
               <Download className="size-4" />
             </Button>
@@ -195,7 +198,7 @@ export function ContactsPanel() {
               variant="ghost"
               size="icon-sm"
               onClick={() => setGroupDialogOpen(true)}
-              title="New group"
+              title={t("New group")}
             >
               <FolderPlus className="size-4" />
             </Button>
@@ -205,7 +208,7 @@ export function ContactsPanel() {
               className="gap-1.5"
             >
               <UserPlus className="size-4" />
-              New
+              {t("New")}
             </Button>
           </div>
         </div>
@@ -222,9 +225,7 @@ export function ContactsPanel() {
         {/* Import status */}
         {importContacts.isSuccess && (
           <div className="border-b border-border bg-emerald-500/10 px-4 py-2 text-xs text-emerald-600 dark:text-emerald-400">
-            Imported: {importContacts.data.created} created,{" "}
-            {importContacts.data.updated} updated,{" "}
-            {importContacts.data.skipped} skipped
+            {t("Imported: {created} created, {updated} updated, {skipped} skipped", importContacts.data)}
           </div>
         )}
 
@@ -240,7 +241,7 @@ export function ContactsPanel() {
                   : "bg-muted text-muted-foreground hover:bg-accent"
               }`}
             >
-              All
+              {t("All")}
             </button>
             {groups.map((g) => (
               <div key={g.id} className="group relative flex items-center">
@@ -266,7 +267,7 @@ export function ContactsPanel() {
                       setEditingGroup({ id: g.id, name: g.name });
                     }}
                     className="rounded p-0.5 text-muted-foreground hover:text-foreground"
-                    title="Rename group"
+                    title={t("Rename group")}
                   >
                     <Pencil className="size-3" />
                   </button>
@@ -278,7 +279,7 @@ export function ContactsPanel() {
                       deleteGroup.mutate(g.id);
                     }}
                     className="rounded p-0.5 text-muted-foreground hover:text-destructive"
-                    title="Delete group"
+                    title={t("Delete group")}
                   >
                     <Trash2 className="size-3" />
                   </button>
@@ -294,7 +295,7 @@ export function ContactsPanel() {
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search contacts..."
+              placeholder={t("Search contacts...")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="h-8 w-full rounded-md border border-input bg-transparent pl-8 pr-3 text-sm placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none dark:bg-input/30"
@@ -312,7 +313,7 @@ export function ContactsPanel() {
 
           {error && (
             <div className="px-4 py-8 text-center text-sm text-destructive">
-              Failed to load contacts
+              {t("Failed to load contacts")}
             </div>
           )}
 
@@ -321,10 +322,10 @@ export function ContactsPanel() {
               <Users className="size-10 text-muted-foreground/40" />
               <p className="text-sm text-muted-foreground">
                 {search
-                  ? "No contacts found"
+                  ? t("No contacts found")
                   : activeGroupId
-                    ? "No contacts in this group"
-                    : "No contacts yet"}
+                    ? t("No contacts in this group")
+                    : t("No contacts yet")}
               </p>
               {!search && !activeGroupId && (
                 <Button
@@ -334,7 +335,7 @@ export function ContactsPanel() {
                   className="mt-2 gap-1.5"
                 >
                   <UserPlus className="size-4" />
-                  Add your first contact
+                  {t("Add your first contact")}
                 </Button>
               )}
             </div>
@@ -406,7 +407,7 @@ export function ContactsPanel() {
             >
               <Users className="size-12 text-muted-foreground/30" />
               <p className="text-sm text-muted-foreground">
-                Select a contact to view details
+                {t("Select a contact to view details")}
               </p>
             </AnimatedDiv>
           )}
@@ -427,7 +428,7 @@ export function ContactsPanel() {
         onClose={() => setGroupDialogOpen(false)}
         onSubmit={handleCreateGroup}
         isPending={createGroup.isPending}
-        title="New Group"
+        title={t("New Group")}
       />
 
       {/* Rename group dialog */}
@@ -437,7 +438,7 @@ export function ContactsPanel() {
         onSubmit={handleUpdateGroup}
         isPending={updateGroup.isPending}
         initialName={editingGroup?.name ?? ""}
-        title="Rename Group"
+        title={t("Rename Group")}
       />
     </AnimatedDiv>
   );

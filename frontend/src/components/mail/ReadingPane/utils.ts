@@ -1,3 +1,5 @@
+import { translate as t, getLocale } from "@/lib/i18n";
+
 /** Format bytes as human-readable file size. */
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -17,12 +19,12 @@ export function humanizeDate(iso: string): string {
   const diffMinutes = Math.floor(diffMs / 60_000);
   const diffHours = Math.floor(diffMs / 3_600_000);
 
-  if (diffMinutes < 1) return "just now";
+  if (diffMinutes < 1) return t("just now");
   if (diffMinutes < 60) {
-    return diffMinutes === 1 ? "1 minute ago" : `${diffMinutes} minutes ago`;
+    return diffMinutes === 1 ? t("1 minute ago") : t("{count} minutes ago", { count: diffMinutes });
   }
   if (diffHours < 24) {
-    return diffHours === 1 ? "1 hour ago" : `${diffHours} hours ago`;
+    return diffHours === 1 ? t("1 hour ago") : t("{count} hours ago", { count: diffHours });
   }
 
   // Check if yesterday
@@ -33,16 +35,15 @@ export function humanizeDate(iso: string): string {
     date.getMonth() === yesterday.getMonth() &&
     date.getDate() === yesterday.getDate()
   ) {
-    return "yesterday";
+    return t("yesterday");
   }
 
   // Older — show normal date
-  return date.toLocaleString("en-US", {
+  return date.toLocaleString(getLocale(), {
     month: "short",
     day: "numeric",
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
-    hour12: true,
   });
 }

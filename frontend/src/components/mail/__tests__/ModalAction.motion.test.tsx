@@ -455,6 +455,6 @@ describe("Modal and action motion transitions", () => {
     mockUiState.selectedMessageUids = [...mockBulkUids];
     rerender(<BulkActionBar />);
     expect(screen.queryByTestId("bulk-action-bar-transition")).toBeNull();
-    expect(screen.getByText("2 selected")).toBeTruthy();
+    expect(screen.getByText("2 selected messages")).toBeTruthy();
   });
 });

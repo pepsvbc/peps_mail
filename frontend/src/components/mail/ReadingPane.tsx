@@ -1,5 +1,7 @@
 "use client";
 
+import { translate as t, useTranslation } from "@/lib/i18n";
+
 import { useState, useEffect, useRef, useMemo } from "react";
 import { AnimatePresence } from "framer-motion";
 import {
@@ -38,6 +40,7 @@ type BodyMode = "html" | "plain";
 type EmailTheme = "auto" | "light" | "dark";
 
 export function ReadingPane() {
+  useTranslation();
   const activeFolder = useUiStore((s) => s.activeFolder);
   const selectedMessageUid = useUiStore((s) => s.selectedMessageUid);
   const effectiveAnimationMode = useUiStore((s) => s.effectiveAnimationMode);
@@ -99,7 +102,7 @@ export function ReadingPane() {
   if (selectedMessageUid === null) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
-        Select a message to read
+        {t("Select a message to read")}
       </div>
     );
   }
@@ -116,14 +119,14 @@ export function ReadingPane() {
 
   // Error
   if (isError || !data) {
-    const errMsg = error?.message ?? "Unknown error";
+    const errMsg = error?.message ?? t("Unknown error");
     console.error(`[ReadingPane] Failed to load message uid=${selectedMessageUid} folder=${activeFolder}:`, errMsg);
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-4 py-8 text-center">
-        <p className="text-sm text-muted-foreground">Failed to load message</p>
+        <p className="text-sm text-muted-foreground">{t("Failed to load message")}</p>
         <p className="max-w-md text-xs text-muted-foreground/60">{errMsg}</p>
         <Button variant="outline" size="sm" onClick={() => refetch()}>
-          Retry
+          {t("Retry")}
         </Button>
       </div>
     );
@@ -150,18 +153,18 @@ export function ReadingPane() {
 
         {headerMode === "summary" ? (
           <div className="text-sm text-foreground">
-            From{" "}
+            {t("From")}{" "}
             <AddressChip
               address={data.from_address}
               name={data.from_name || null}
             />
             {" "}
-            on {humanizeDate(data.date)}
+            · {humanizeDate(data.date)}
           </div>
         ) : (
           <>
             <div className="text-sm text-foreground">
-              <span className="font-medium text-muted-foreground">From: </span>
+              <span className="font-medium text-muted-foreground">{t("From:")} </span>
               <AddressChip
                 address={data.from_address}
                 name={data.from_name || null}
@@ -169,13 +172,13 @@ export function ReadingPane() {
             </div>
 
             <div className="text-sm text-foreground">
-              <span className="font-medium text-muted-foreground">To: </span>
+              <span className="font-medium text-muted-foreground">{t("To:")} </span>
               <AddressList addresses={data.to_addresses} />
             </div>
 
             {data.cc_addresses.length > 0 && (
               <div className="text-sm text-foreground">
-                <span className="font-medium text-muted-foreground">Cc: </span>
+                <span className="font-medium text-muted-foreground">{t("Cc:")} </span>
                 <AddressList addresses={data.cc_addresses} />
               </div>
             )}
@@ -201,7 +204,7 @@ export function ReadingPane() {
             ) : (
               <ChevronDown className="size-3" />
             )}
-            {headerMode === "details" ? "Summary" : "Details"}
+            {headerMode === "details" ? t("Summary") : t("Details")}
           </button>
 
           {/* Plain text / HTML toggle */}
@@ -221,7 +224,7 @@ export function ReadingPane() {
             ) : (
               <Code className="size-3" />
             )}
-            {bodyMode === "html" ? "Plain text" : "HTML"}
+            {bodyMode === "html" ? t("Plain text") : "HTML"}
           </button>
 
           {/* Headers toggle (shows as selected when active) */}
@@ -235,7 +238,7 @@ export function ReadingPane() {
             }`}
           >
             <FileCode className="size-3" />
-            Headers
+            {t("Headers")}
           </button>
 
           {/* Email Theme toggle */}
@@ -256,7 +259,7 @@ export function ReadingPane() {
             {emailTheme === "auto" && <Monitor className="size-3" />}
             {emailTheme === "light" && <Sun className="size-3" />}
             {emailTheme === "dark" && <Moon className="size-3" />}
-            {emailTheme === "auto" ? "Auto theme" : emailTheme === "light" ? "Light mode" : "Dark mode"}
+            {emailTheme === "auto" ? t("Auto theme") : emailTheme === "light" ? t("Light mode") : t("Dark mode")}
           </button>
         </div>
       </div>
@@ -273,7 +276,7 @@ export function ReadingPane() {
             >
               <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
               <span className="max-w-[200px] truncate">
-                {att.filename ?? "Attachment"}
+                {att.filename ?? t("Attachment")}
               </span>
               <span className="text-muted-foreground">
                 ({formatFileSize(att.size)})
@@ -309,7 +312,7 @@ export function ReadingPane() {
         <div className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/50 px-4 py-2">
           <ShieldAlert className="size-4 shrink-0 text-muted-foreground" />
           <span className="flex-1 text-xs text-muted-foreground">
-            To protect your privacy, remote resources have been blocked.
+            {t("To protect your privacy, remote resources have been blocked.")}
           </span>
           <Button
             variant="outline"
@@ -319,7 +322,7 @@ export function ReadingPane() {
               setAllowedRemoteMessages((prev) => new Set(prev).add(messageKey))
             }
           >
-            Allow
+            {t("Allow")}
           </Button>
         </div>
       )}
@@ -328,11 +331,11 @@ export function ReadingPane() {
       <div className="min-h-0 flex-1" key={messageKey}>
         {showHeaders ? (
           <pre className="h-full overflow-auto whitespace-pre-wrap break-words p-4 text-xs leading-relaxed text-foreground">
-            {data.raw_headers || "No headers available"}
+            {data.raw_headers || t("No headers available")}
           </pre>
         ) : bodyMode === "plain" ? (
           <pre className="h-full overflow-auto whitespace-pre-wrap break-words p-4 text-sm leading-relaxed text-foreground">
-            {data.text || "No plain text available"}
+            {data.text || t("No plain text available")}
           </pre>
         ) : (
           <EmailRenderer

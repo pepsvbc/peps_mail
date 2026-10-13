@@ -1,5 +1,7 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
+
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence } from "framer-motion";
@@ -24,6 +26,7 @@ import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
 import { cn } from "@/lib/utils";
 
 export function EventForm() {
+  const { t } = useTranslation();
   const showEventForm = useCalendarStore((s) => s.showEventForm);
   const editingEventId = useCalendarStore((s) => s.editingEventId);
   const closeEventForm = useCalendarStore((s) => s.closeEventForm);
@@ -210,12 +213,13 @@ export function EventForm() {
       >
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-foreground">
-            {isEditing ? "Edit Event" : "New Event"}
+            {isEditing ? t("Edit Event") : t("New Event")}
           </h2>
           <Button
             variant="ghost"
             size="icon-sm"
             onClick={closeEventForm}
+            aria-label={t("Close")}
             className="text-muted-foreground"
           >
             <X className="size-4" />
@@ -226,13 +230,13 @@ export function EventForm() {
           {/* Title */}
           <div className="space-y-1.5">
             <Label htmlFor="event-title">
-              Title <span className="text-destructive">*</span>
+              {t("Title")} <span className="text-destructive">*</span>
             </Label>
             <Input
               id="event-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Event title"
+              placeholder={t("Event title")}
               required
               autoFocus
             />
@@ -248,14 +252,14 @@ export function EventForm() {
               className="size-4 rounded border-input"
             />
             <Label htmlFor="event-allday" className="cursor-pointer">
-              All day
+              {t("All day")}
             </Label>
           </div>
 
           {/* Date/time inputs */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="event-start">Start</Label>
+              <Label htmlFor="event-start">{t("Start")}</Label>
               <Input
                 id="event-start"
                 type={allDay ? "date" : "datetime-local"}
@@ -265,7 +269,7 @@ export function EventForm() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="event-end">End</Label>
+              <Label htmlFor="event-end">{t("End")}</Label>
               <Input
                 id="event-end"
                 type={allDay ? "date" : "datetime-local"}
@@ -278,23 +282,23 @@ export function EventForm() {
 
           {/* Location */}
           <div className="space-y-1.5">
-            <Label htmlFor="event-location">Location</Label>
+            <Label htmlFor="event-location">{t("Location")}</Label>
             <Input
               id="event-location"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
-              placeholder="Add location"
+              placeholder={t("Add location")}
             />
           </div>
 
           {/* Description */}
           <div className="space-y-1.5">
-            <Label htmlFor="event-description">Description</Label>
+            <Label htmlFor="event-description">{t("Description")}</Label>
             <textarea
               id="event-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Add description..."
+              placeholder={t("Add description...")}
               rows={3}
               className="w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none resize-none dark:bg-input/30"
             />
@@ -302,7 +306,7 @@ export function EventForm() {
 
           {/* Meeting URL */}
           <div className="space-y-1.5">
-            <Label htmlFor="event-meeting-url">Meeting URL</Label>
+            <Label htmlFor="event-meeting-url">{t("Meeting URL")}</Label>
             <Input
               id="event-meeting-url"
               type="url"
@@ -315,7 +319,7 @@ export function EventForm() {
           {/* Attendees */}
           <div className="space-y-1.5">
             <Label htmlFor="event-attendees">
-              Attendees (comma-separated emails)
+              {t("Attendees (comma-separated emails)")}
             </Label>
             <Input
               id="event-attendees"
@@ -327,7 +331,7 @@ export function EventForm() {
 
           {/* Color */}
           <div className="space-y-1.5">
-            <Label>Color</Label>
+            <Label>{t("Color")}</Label>
             <div className="flex gap-1.5">
               {EVENT_COLORS.map((c) => (
                 <button
@@ -341,7 +345,8 @@ export function EventForm() {
                       ? "ring-2 ring-foreground ring-offset-2 ring-offset-background"
                       : "opacity-60 hover:opacity-100",
                   )}
-                  title={c.name}
+                  title={t(c.name)}
+                  aria-label={t(c.name)}
                 />
               ))}
             </div>
@@ -349,7 +354,7 @@ export function EventForm() {
 
           {/* Reminder */}
           <div className="space-y-1.5">
-            <Label htmlFor="event-reminder">Reminder</Label>
+            <Label htmlFor="event-reminder">{t("Reminder")}</Label>
             <select
               id="event-reminder"
               value={reminderMinutes ?? ""}
@@ -362,7 +367,7 @@ export function EventForm() {
             >
               {REMINDER_OPTIONS.map((opt) => (
                 <option key={opt.label} value={opt.value ?? ""}>
-                  {opt.label}
+                  {t(opt.label)}
                 </option>
               ))}
             </select>
@@ -376,14 +381,14 @@ export function EventForm() {
               onClick={closeEventForm}
               disabled={isPending}
             >
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button type="submit" disabled={isPending || !title.trim()}>
               {isPending
-                ? "Saving..."
+                ? t("Saving...")
                 : isEditing
-                  ? "Update Event"
-                  : "Create Event"}
+                  ? t("Update Event")
+                  : t("Create Event")}
             </Button>
           </div>
         </form>
