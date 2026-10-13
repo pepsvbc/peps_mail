@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import {
   Card,
   CardContent,
@@ -13,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiPost, fetchAccounts } from "@/lib/api";
+import { brand } from "@/lib/brand";
 import { useAuthStore } from "@/stores/useAuthStore";
 
 function getCookie(name: string): string | null {
@@ -131,12 +133,23 @@ export default function Home() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-8">
       <div className="w-full max-w-sm">
         {/* Branding */}
         <div className="mb-8 text-center">
+          <div className="mx-auto mb-4 h-36 w-64 overflow-hidden">
+            <Image
+              src={brand.logoPath}
+              alt={brand.name}
+              width={256}
+              height={256}
+              className="-mt-14"
+              priority
+              unoptimized
+            />
+          </div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">
-            oxi<span className="text-primary">.email</span>
+            {brand.appName}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Sign in to your account

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { Providers } from "@/components/providers";
+import { brand } from "@/lib/brand";
 import "./globals.css";
 
 const inter = Inter({
@@ -14,8 +15,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "oxi.email",
-  description: "A modern email client built with Rust and Next.js",
+  title: brand.appName,
+  description: brand.description,
 };
 
 export default function RootLayout({

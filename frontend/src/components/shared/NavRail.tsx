@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Tooltip } from "radix-ui";
 import { apiPost } from "@/lib/api";
+import { brand } from "@/lib/brand";
 import { runThemeSpreadTransition } from "@/lib/motion/theme-spread";
 import { cn } from "@/lib/utils";
 import { useComposeStore } from "@/stores/useComposeStore";
@@ -118,8 +119,13 @@ export function NavRail() {
     <Tooltip.Provider delayDuration={400}>
       <div className="relative flex h-full w-14 flex-col items-center border-r border-border bg-sidebar py-3">
         {/* Logo */}
-        <div className="mb-4 flex size-10 items-center justify-center">
-          <span className="text-lg font-bold text-primary">o.</span>
+        <div
+          className="mb-4 flex size-10 items-center justify-center"
+          role="img"
+          aria-label={brand.appName}
+          title={brand.appName}
+        >
+          <span aria-hidden="true" className="flex size-8 items-center justify-center rounded-lg bg-primary text-lg font-bold text-primary-foreground">P</span>
         </div>
 
         {/* Top actions */}

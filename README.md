@@ -1,25 +1,33 @@
 <div align="center">
 
-<img src="assets/Gemini_Generated_Image_de71m3de71m3de71.png" alt="oxi logo" width="180" />
+<img src="frontend/public/peps-vbc-logo.png" alt="PEPS VBC logo" width="180" />
 
-# oxi
+# PEPS VBC Mail
 
-**Modern, fast, and secure open-source webmail client built with React + Rust.**
+**The email client for PEPS VBC volleyball club.**
 
-A feature-complete replacement for Roundcube that connects to any existing IMAP/SMTP mail server.\
-Not a mail platform — just a clean, modern webmail UI.
+A themed fork of [oxi](https://github.com/c0h1b4/oxi), built with React + Rust.\
+Connects to an existing IMAP/SMTP mail server.
 
-[![CI](https://github.com/c0h1b4/oxi/actions/workflows/ci.yml/badge.svg)](https://github.com/c0h1b4/oxi/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/c0h1b4/oxi)](https://github.com/c0h1b4/oxi/stargazers)
-[![Last commit](https://img.shields.io/github/last-commit/c0h1b4/oxi)](https://github.com/c0h1b4/oxi/commits/main)
-[![Docker](https://img.shields.io/badge/docker-ghcr.io-blue)](https://ghcr.io/c0h1b4/oxi)
+[![CI](https://github.com/pepsvbc/peps_mail/actions/workflows/ci.yml/badge.svg)](https://github.com/pepsvbc/peps_mail/actions/workflows/ci.yml)
+
+[Club website](https://pepsvbc.ch/) · [Original project](https://github.com/c0h1b4/oxi)
 
 </div>
 
 ---
 
-<!-- Add a screenshot here: ![oxi screenshot](assets/screenshot.png) -->
+## Club Theme
+
+This fork adds the PEPS VBC logo, purple light and dark themes, app title, and icons. Mail functionality and authentication remain inherited from oxi.
+
+| Branding | Location |
+|----------|----------|
+| Club name, app title, description, and logo path | [`frontend/src/lib/brand.ts`](frontend/src/lib/brand.ts) |
+| Light and dark colour palettes | [`frontend/src/app/globals.css`](frontend/src/app/globals.css) |
+| Club logo | [`frontend/public/peps-vbc-logo.png`](frontend/public/peps-vbc-logo.png) |
+| Browser icons | [`frontend/src/app/icon.svg`](frontend/src/app/icon.svg), [`frontend/src/app/favicon.ico`](frontend/src/app/favicon.ico) |
+| Notification icon | [`frontend/public/notification-icon.svg`](frontend/public/notification-icon.svg) |
 
 ## Features
 
@@ -47,53 +55,41 @@ Not a mail platform — just a clean, modern webmail UI.
 
 ### Docker (recommended)
 
+Build this fork using the included [`docker-compose.yml`](docker-compose.yml). From the repository root:
+
 ```bash
-docker run -d \
-  --name oxi \
-  -p 3001:3001 \
-  -e IMAP_HOST=mail.example.com \
-  -e SMTP_HOST=mail.example.com \
-  -v oxi-data:/data \
-  ghcr.io/c0h1b4/oxi:latest
-```
+# Create your local configuration if it does not already exist.
+[ -f .env ] || cp .env.example .env
 
-Or with `docker-compose.yml`:
-
-```yaml
-services:
-  app:
-    image: ghcr.io/c0h1b4/oxi:latest
-    ports:
-      - "3001:3001"
-    environment:
-      - IMAP_HOST=mail.example.com
-      - SMTP_HOST=mail.example.com
-    volumes:
-      - oxi-data:/data
-
-volumes:
-  oxi-data:
+# Set your IMAP/SMTP hosts, ports, and TLS settings in .env, then:
+docker compose up -d --build
 ```
 
 Then open [http://localhost:3001](http://localhost:3001) and log in with your email credentials.
 
+The upstream oxi image contains the original branding; building this checkout includes the PEPS VBC theme.
+
 ### Local Development
 
 ```bash
-# Frontend
-cd frontend && bun install && bun run build
+# From the repository root, build the frontend and backend.
+(cd frontend && bun install && bun run build)
+(cd backend && cargo build --release)
 
-# Backend
-cd backend && cargo build --release
+# Export your local .env settings for direct backend execution.
+set -a
+. ./.env
+set +a
 
 # Run (serves frontend + API on port 3001)
-STATIC_DIR=../frontend/out IMAP_HOST=mail.example.com SMTP_HOST=mail.example.com \
-  ./target/release/oxi-email-server
+STATIC_DIR=frontend/out DATA_DIR=./data ./backend/target/release/oxi-email-server
 ```
 
 ## Configuration
 
-All configuration is via environment variables:
+Keep actual mail-server settings in your local `.env`, which is ignored by Git. [`.env.example`](.env.example) is a generic, public template. Docker Compose reads `.env` for the variables referenced in `docker-compose.yml`; direct backend runs require environment variables exported into the shell.
+
+The following table lists backend defaults:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -140,16 +136,6 @@ cd frontend && bun run lint
 cd backend && cargo clippy -- -D warnings
 ```
 
-## Roadmap
-
-oxi is under active development. Core email functionality (read, compose, search, contacts, calendar) is implemented. Coming next:
-
-- Sieve filter support
-- Attachment previews
-- Keyboard shortcuts
-- Theme customization
-- Multi-account support
-
 ## Contributing
 
 Contributions are welcome! Please:
@@ -159,16 +145,6 @@ Contributions are welcome! Please:
 3. Commit your changes
 4. Open a pull request against `main`
 
-## License
+## Credits
 
-[MIT](LICENSE)
-
----
-
-<div align="center">
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=c0h1b4/oxi&type=Date)](https://star-history.com/#c0h1b4/oxi&Date)
-
-</div>
+Based on [oxi](https://github.com/c0h1b4/oxi). PEPS VBC branding comes from the [club website](https://pepsvbc.ch/).

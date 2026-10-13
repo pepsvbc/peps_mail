@@ -8,6 +8,7 @@ import { SearchBar } from "@/components/mail/SearchBar";
 import { SearchResults } from "@/components/mail/SearchResults";
 import { MessageActionBar } from "@/components/mail/MessageActionBar";
 import { isValidCommittedSearch } from "@/lib/search-parser";
+import { brand } from "@/lib/brand";
 
 interface ThreePanelLayoutProps {
   sidebar: React.ReactNode;
@@ -249,10 +250,11 @@ export function ThreePanelLayout({
               {selectedMessageUid !== null ? (
                 <div className="flex min-h-0 flex-1">{readingPane}</div>
               ) : (
-                <div className="flex h-full w-full items-center justify-center">
-                  <span className="text-2xl font-bold tracking-tight text-muted-foreground/40">
-                    oxi<span className="text-primary/40">.email</span>
-                  </span>
+                <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-6 text-center">
+                  <p className="text-2xl font-bold tracking-tight text-primary">
+                    {brand.appName}
+                  </p>
+                  <p className="text-sm text-muted-foreground">Select a message to read it.</p>
                 </div>
               )}
             </section>
