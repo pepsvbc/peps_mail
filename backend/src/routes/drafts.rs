@@ -11,6 +11,7 @@ use crate::config::AppConfig;
 use crate::db;
 use crate::error::AppError;
 use crate::imap::client::ImapClient;
+use crate::realtime::events::{EventBus, MailEvent};
 
 /// Draft IDs are also directory names, so they must remain a single safe path
 /// component. Accept the frontend's generated IDs and existing simple IDs.
@@ -47,6 +48,8 @@ pub struct UpsertDraftRequest {
     pub html_body: Option<String>,
     pub in_reply_to: Option<String>,
     pub references: Option<String>,
+    #[serde(default)]
+    pub defer_sync: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -103,10 +106,17 @@ pub async fn upsert_draft_handler(
     Extension(session): Extension<SessionState>,
     Extension(config): Extension<Arc<AppConfig>>,
     Extension(imap_client): Extension<Arc<dyn ImapClient>>,
+    event_bus: Option<Extension<Arc<EventBus>>>,
     Json(req): Json<UpsertDraftRequest>,
 ) -> Result<Response, AppError> {
     validate_draft_id(&req.id)?;
-    let _guard = super::draft_sync::lock(&session.user_hash, &req.id).await;
+    // Interactive saves persist immediately, even while an earlier IMAP sync
+    // holds the draft lock. SQLite and deletion tombstones protect local writes.
+    let _guard = if req.defer_sync {
+        None
+    } else {
+        Some(super::draft_sync::lock(&session.user_hash, &req.id).await)
+    };
 
     let conn = db::pool::open_user_db(&config.data_dir, &session.user_hash)
         .map_err(|e| AppError::InternalError(format!("Failed to open database: {e}")))?;
@@ -125,21 +135,70 @@ pub async fn upsert_draft_handler(
     )
     .map_err(AppError::InternalError)?;
 
-    let bytes = build_draft_rfc822(&req, &session, &config)?;
-    super::draft_sync::sync(
-        &session,
-        &config,
-        imap_client.as_ref(),
-        &req.id,
-        Some(bytes),
-    )
-    .await?;
+    drop(conn);
+    if req.defer_sync {
+        let id = req.id.clone();
+        tokio::spawn(async move {
+            let _guard = super::draft_sync::lock(&session.user_hash, &id).await;
+            // Read the latest persisted revision after acquiring the lock:
+            // queued saves must never restore an older body or a deleted draft.
+            let result = sync_saved_draft(&id, &session, &config, imap_client.as_ref()).await;
+            if let Err(error) = &result {
+                tracing::warn!(%error, "Background draft sync failed; draft retained locally");
+            }
+            if let Some(Extension(bus)) = event_bus {
+                bus.publish(
+                    &session.user_hash,
+                    MailEvent::DraftsUpdated {
+                        synced: result.is_ok(),
+                    },
+                )
+                .await;
+            }
+        });
+        return Ok(Json(DraftResponse {
+            id: req.id,
+            status: "saved_locally".into(),
+        })
+        .into_response());
+    }
+    sync_saved_draft(&req.id, &session, &config, imap_client.as_ref()).await?;
 
     Ok(Json(DraftResponse {
         id: req.id,
         status: "saved".to_string(),
     })
     .into_response())
+}
+
+async fn sync_saved_draft(
+    id: &str,
+    session: &SessionState,
+    config: &AppConfig,
+    imap: &dyn ImapClient,
+) -> Result<(), AppError> {
+    let draft = {
+        let conn = db::pool::open_user_db(&config.data_dir, &session.user_hash)
+            .map_err(AppError::InternalError)?;
+        db::drafts::get_draft(&conn, id).map_err(AppError::InternalError)?
+    };
+    let Some(draft) = draft else {
+        return Ok(());
+    };
+    let req = UpsertDraftRequest {
+        id: draft.id,
+        to: draft.to_addresses,
+        cc: draft.cc_addresses,
+        bcc: draft.bcc_addresses,
+        subject: draft.subject,
+        text_body: draft.text_body,
+        html_body: draft.html_body,
+        in_reply_to: draft.in_reply_to,
+        references: draft.references_header,
+        defer_sync: false,
+    };
+    let bytes = build_draft_rfc822(&req, session, config)?;
+    super::draft_sync::sync(session, config, imap, id, Some(bytes)).await
 }
 
 /// Build RFC822 with recipients, attachments and inline images for IMAP APPEND.

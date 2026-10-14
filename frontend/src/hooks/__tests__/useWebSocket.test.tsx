@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useWebSocket } from "../useWebSocket";
 import { useAuthStore, type Account } from "@/stores/useAuthStore";
+import { toast } from "sonner";
 
 class MockWebSocket {
   static sockets: MockWebSocket[] = [];
@@ -50,6 +51,24 @@ afterEach(() => {
 });
 
 describe("mail event unread updates", () => {
+  it.each([true, false])("refreshes draft sources after background sync (success=%s)", (synced) => {
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const warning = vi.spyOn(toast, "warning");
+    renderHook(() => useWebSocket(), { wrapper });
+    act(() => {
+      MockWebSocket.sockets[0].onmessage?.({ data: JSON.stringify({
+        accountId: "first", event: { type: "DraftsUpdated", data: { synced } },
+      }) });
+      vi.advanceTimersByTime(300);
+    });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["drafts"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["messages"] });
+    if (!synced) expect(warning).toHaveBeenCalledWith(
+      "Draft saved locally, but mail server sync failed. Reopen it and save to retry.",
+    );
+    warning.mockRestore();
+  });
+
   it.each(["NewMessages", "FlagsChanged", "FolderUpdated"])("refreshes only the inactive account's count for %s", (eventType) => {
     const invalidate = vi.spyOn(client, "invalidateQueries");
     const onEvent = vi.fn();

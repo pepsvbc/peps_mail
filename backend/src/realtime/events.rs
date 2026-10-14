@@ -19,6 +19,8 @@ pub enum MailEvent {
     FlagsChanged { folder: String },
     /// Folder list or counts changed.
     FolderUpdated,
+    /// Background draft synchronization completed; local data remains durable.
+    DraftsUpdated { synced: bool },
 }
 
 /// Fan-out event bus: per-user broadcast channels.

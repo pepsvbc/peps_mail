@@ -170,6 +170,7 @@ export function useSaveDraft() {
         html_body: params.htmlBody,
         in_reply_to: params.inReplyTo,
         references: params.references,
+        defer_sync: true,
       }),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["drafts"] });

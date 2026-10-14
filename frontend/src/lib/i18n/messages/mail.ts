@@ -99,6 +99,8 @@ export const mailMessages: Record<string, string> = {
   "No messages in this folder": "Aucun message dans ce dossier",
   "Loading more...": "Chargement…",
   "Draft saved": "Brouillon enregistré",
+  "Draft saved locally": "Brouillon enregistré localement",
+  "Draft saved locally, but mail server sync failed. Reopen it and save to retry.": "Brouillon enregistré localement, mais la synchronisation avec le serveur a échoué. Rouvrez-le et enregistrez-le pour réessayer.",
   "Switch back to this draft's account before sending.": "Revenez au compte de ce brouillon avant de l’envoyer.",
   "Message sent": "Message envoyé",
   "Message sent, but a copy could not be saved to Sent. Do not resend.": "Message envoyé, mais la copie n’a pas pu être enregistrée dans les messages envoyés. Ne le renvoyez pas.",

@@ -97,6 +97,16 @@ describe("composer window controls", () => {
     expect(useComposeStore.getState()).toMatchObject({ isOpen: true, draftId: "club-news-draft", subject: "Club news" });
   });
 
+  it("closes after the durable local save without waiting for mail server sync", () => {
+    const success = vi.spyOn(toast, "success");
+    saveDraft.mutate.mockImplementation((_data, callbacks) => callbacks?.onSuccess?.({ status: "saved_locally" }));
+    render(<ComposeDialog />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Message body" }), { target: { value: "Reply text" } });
+    fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
+    expect(useComposeStore.getState().isOpen).toBe(false);
+    expect(success).toHaveBeenCalledWith("Draft saved locally");
+  });
+
   it("keeps edits made while a save-and-close is pending", () => {
     saveDraft.mutate.mockImplementation(() => {});
     render(<ComposeDialog />);

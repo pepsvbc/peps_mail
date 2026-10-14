@@ -47,19 +47,10 @@ pub fn upsert_draft(
     in_reply_to: Option<&str>,
     references_header: Option<&str>,
 ) -> Result<(), String> {
-    if conn
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM deleted_drafts WHERE id = ?1)",
-            [id],
-            |row| row.get::<_, bool>(0),
-        )
-        .map_err(|e| e.to_string())?
-    {
-        return Err("Draft has already been deleted".into());
-    }
-    conn.execute(
+    let changed = conn.execute(
         "INSERT INTO drafts (id, to_addresses, cc_addresses, bcc_addresses, subject, text_body, html_body, in_reply_to, references_header, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'))
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now')
+         WHERE NOT EXISTS (SELECT 1 FROM deleted_drafts WHERE id = ?1)
          ON CONFLICT(id) DO UPDATE SET
              to_addresses = excluded.to_addresses,
              cc_addresses = excluded.cc_addresses,
@@ -83,6 +74,9 @@ pub fn upsert_draft(
         ],
     )
     .map_err(|e| format!("Failed to upsert draft: {e}"))?;
+    if changed == 0 {
+        return Err("Draft has already been deleted".into());
+    }
     Ok(())
 }
 

@@ -3,13 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/useAuthStore";
+import { toast } from "sonner";
+import { translate as t } from "@/lib/i18n";
 
 export type WsStatus = "connected" | "connecting" | "disconnected";
 
 export interface MailEvent {
-  type: "NewMessages" | "FlagsChanged" | "FolderUpdated";
+  type: "NewMessages" | "FlagsChanged" | "FolderUpdated" | "DraftsUpdated";
   data?: {
-    folder: string;
+    folder?: string;
+    synced?: boolean;
     count?: number;
     latest_sender?: string;
     latest_subject?: string;
@@ -100,6 +103,14 @@ export function useWebSocket(onEvent?: (event: MailEvent) => void) {
           onEventRef.current?.(mailEvent);
 
           switch (mailEvent.type) {
+            case "DraftsUpdated":
+              scheduleInvalidation(["drafts"]);
+              scheduleInvalidation(["messages"]);
+              scheduleInvalidation(["folders"]);
+              if (mailEvent.data?.synced === false) {
+                toast.warning(t("Draft saved locally, but mail server sync failed. Reopen it and save to retry."));
+              }
+              break;
             case "NewMessages":
               if (mailEvent.data?.folder) {
                 scheduleInvalidation(["messages", mailEvent.data.folder]);

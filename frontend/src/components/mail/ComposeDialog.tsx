@@ -213,14 +213,14 @@ export function ComposeDialog() {
           references: references,
         },
         {
-          onSuccess: () => {
+          onSuccess: (result) => {
             const current = useComposeStore.getState();
             if (current.draftId !== currentDraftId || !isCurrentAccount()) return;
             lastSavedHashRef.current = hash;
             lastSavedDraftIdRef.current = currentDraftId;
             setDraftSaved(true);
             setTimeout(() => setDraftSaved(false), 3000);
-            toast.success(t("Draft saved"));
+            toast.success(t(result?.status === "saved_locally" ? "Draft saved locally" : "Draft saved"));
             const currentHash = `${current.to}|${current.cc}|${current.bcc}|${current.subject}|${current.body}`;
             if (currentHash === hash) onSaved?.();
           },

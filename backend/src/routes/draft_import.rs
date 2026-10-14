@@ -302,6 +302,135 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn interactive_save_returns_durable_latest_edits_while_imap_is_busy() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(&dir);
+        let imap = imap();
+        let id = "slow-reply";
+        let busy = super::super::draft_sync::lock("alice", id).await;
+        for subject in ["First edit", "Latest edit"] {
+            let mut req = save_request(id, None);
+            req.subject = subject.into();
+            req.defer_sync = true;
+            let response = tokio::time::timeout(
+                std::time::Duration::from_millis(500),
+                super::super::drafts::upsert_draft_handler(
+                    Extension(session()),
+                    Extension(config.clone()),
+                    Extension(imap.clone()),
+                    None,
+                    Json(req),
+                ),
+            )
+            .await
+            .expect("local save must not wait for IMAP")
+            .unwrap();
+            let value: serde_json::Value = serde_json::from_slice(
+                &axum::body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(value["status"], "saved_locally");
+            let conn = db::pool::open_user_db(&config.data_dir, "alice").unwrap();
+            assert_eq!(
+                db::drafts::get_draft(&conn, id).unwrap().unwrap().subject,
+                subject
+            );
+        }
+        assert!(imap.draft_syncs.lock().unwrap().is_empty());
+        tokio::task::yield_now().await;
+        drop(busy);
+        let _finished = super::super::draft_sync::lock("alice", id).await;
+        let calls = imap.draft_syncs.lock().unwrap();
+        assert_eq!(calls.len(), 2);
+        for call in calls.iter() {
+            let parsed = mail_parser::MessageParser::default()
+                .parse(call.content.as_ref().unwrap())
+                .unwrap();
+            assert_eq!(parsed.subject(), Some("Latest edit"));
+        }
+        assert_eq!(imap.draft_remote.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn background_sync_failure_notifies_client_and_keeps_saved_reply() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(&dir);
+        let imap = Arc::new(MockImapClient::new().with_append_error(
+            crate::imap::client::ImapError::ConnectionFailed("Offline".into()),
+        ));
+        let bus = Arc::new(crate::realtime::events::EventBus::new());
+        let mut events = bus.subscribe("alice").await;
+        let mut req = save_request("offline-reply", None);
+        req.defer_sync = true;
+        super::super::drafts::upsert_draft_handler(
+            Extension(session()),
+            Extension(config.clone()),
+            Extension(imap),
+            Some(Extension(bus)),
+            Json(req),
+        )
+        .await
+        .unwrap();
+        let event = tokio::time::timeout(std::time::Duration::from_secs(2), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            event,
+            crate::realtime::events::MailEvent::DraftsUpdated { synced: false }
+        ));
+        let conn = db::pool::open_user_db(&config.data_dir, "alice").unwrap();
+        assert_eq!(
+            db::drafts::get_draft(&conn, "offline-reply")
+                .unwrap()
+                .unwrap()
+                .text_body,
+            "Edited text"
+        );
+    }
+
+    #[tokio::test]
+    async fn queued_background_save_cannot_recreate_a_deleted_reply() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(&dir);
+        let imap = imap();
+        let id = "deleted-reply";
+        let busy = super::super::draft_sync::lock("alice", id).await;
+        let mut req = save_request(id, None);
+        req.defer_sync = true;
+        super::super::drafts::upsert_draft_handler(
+            Extension(session()),
+            Extension(config.clone()),
+            Extension(imap.clone()),
+            None,
+            Json(req),
+        )
+        .await
+        .unwrap();
+        let conn = db::pool::open_user_db(&config.data_dir, "alice").unwrap();
+        db::drafts::delete_draft(&conn, id).unwrap();
+        tokio::task::yield_now().await;
+        drop(busy);
+        let _finished = super::super::draft_sync::lock("alice", id).await;
+        assert!(imap.draft_syncs.lock().unwrap().is_empty());
+        let mut delayed = save_request(id, None);
+        delayed.defer_sync = true;
+        assert!(
+            super::super::drafts::upsert_draft_handler(
+                Extension(session()),
+                Extension(config),
+                Extension(imap),
+                None,
+                Json(delayed),
+            )
+            .await
+            .is_err()
+        );
+    }
+
+    #[tokio::test]
     async fn import_save_reopen_and_discard_keep_one_server_draft() {
         let dir = tempfile::tempdir().unwrap();
         let config = config(&dir);
@@ -325,6 +454,7 @@ mod tests {
                 Extension(session()),
                 Extension(config.clone()),
                 Extension(imap.clone()),
+                None,
                 Json(save_request(id, original["html_body"].as_str())),
             )
             .await
@@ -392,6 +522,7 @@ mod tests {
                 Extension(session()),
                 Extension(config),
                 Extension(imap.clone()),
+                None,
                 Json(save_request(id, None))
             )
             .await
@@ -414,6 +545,7 @@ mod tests {
                 Extension(session()),
                 Extension(config.clone()),
                 Extension(imap.clone()),
+                None,
                 Json(req),
             )
             .await
@@ -517,6 +649,7 @@ mod tests {
                 Extension(session()),
                 Extension(config.clone()),
                 Extension(failing.clone()),
+                None,
                 Json(save_request(id, None))
             )
             .await
