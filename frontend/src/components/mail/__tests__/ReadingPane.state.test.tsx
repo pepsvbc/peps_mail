@@ -36,7 +36,9 @@ vi.mock("../EmailRenderer", () => ({
   ),
   hasRemoteResources: (html: string | null) => Boolean(html),
 }));
-vi.mock("../ThreadView", () => ({ ThreadView: () => null }));
+vi.mock("../MessageReplyActions", () => ({ MessageReplyActions: () => <div data-testid="reply-actions" /> }));
+
+vi.mock("../ThreadView", () => ({ ThreadView: () => <div data-testid="thread-view" /> }));
 vi.mock("../ReadingPane/index", () => ({
   AddressChip: () => null,
   AddressList: () => null,
@@ -149,4 +151,17 @@ describe("ReadingPane remote resource consent", () => {
     expect(screen.queryByRole("button", { name: "Allow" })).toBeNull();
     expect(screen.getByTestId("email-renderer").getAttribute("data-remote-blocked")).toBe("false");
   });
+});
+
+it("does not include inbox messages with a matching UID in a Drafts thread", () => {
+  ui.activeFolder = "Drafts";
+  setMessage();
+  const response = useMessage();
+  response.data.thread = [
+    { uid: 7, folder: "Drafts" },
+    { uid: 7, folder: "INBOX" },
+  ];
+  render(<ReadingPane />);
+  expect(screen.queryByTestId("thread-view")).toBeNull();
+  expect(screen.getAllByTestId("reply-actions")).toHaveLength(2);
 });

@@ -39,6 +39,14 @@ describe("DisplaySettings animation mode", () => {
     localStorage.removeItem("peps-mail-language");
   });
 
+  it("saves the Gmail-style reading layout and can restore split view", () => {
+    render(<DisplaySettings />);
+    fireEvent.click(screen.getByRole("button", { name: "Full message" }));
+    expect(mockMutate).toHaveBeenCalledWith({ hide_message_list: true }, expect.any(Object));
+    fireEvent.click(screen.getByRole("button", { name: "Split view" }));
+    expect(mockMutate).toHaveBeenCalledWith({ hide_message_list: false }, expect.any(Object));
+  });
+
   it("saves Standard density between Compact and Comfortable", () => {
     render(<DisplaySettings />);
     const densityOptions = screen.getAllByRole("button").filter((button) => ["Compact", "Standard", "Comfortable"].includes(button.textContent ?? ""));

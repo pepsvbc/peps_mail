@@ -13,6 +13,7 @@ export interface DisplayPreferences {
   compose_format: "html" | "text";
   animation_mode?: AnimationMode | null;
   deep_index: boolean;
+  hide_message_list?: boolean;
   updated_at: string;
 }
 
@@ -23,6 +24,7 @@ interface UpdateDisplayPreferences {
   compose_format?: "html" | "text";
   animation_mode?: AnimationMode | null;
   deep_index?: boolean;
+  hide_message_list?: boolean;
 }
 
 export function useDisplayPreferences() {

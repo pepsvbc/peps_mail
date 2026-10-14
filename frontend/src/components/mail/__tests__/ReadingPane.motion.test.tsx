@@ -83,6 +83,8 @@ vi.mock("../EmailRenderer", () => ({
   hasRemoteResources: () => false,
 }));
 
+vi.mock("../MessageReplyActions", () => ({ MessageReplyActions: () => <div data-testid="reply-actions" /> }));
+
 vi.mock("../ThreadView", () => ({
   ThreadView: () => <div data-testid="thread-view" />,
 }));

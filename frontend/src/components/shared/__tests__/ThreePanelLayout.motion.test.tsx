@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockUiState } = vi.hoisted(() => ({
   mockUiState: {
@@ -9,6 +9,7 @@ const { mockUiState } = vi.hoisted(() => ({
     searchActive: false,
     searchQuery: "",
     readingPaneVisible: true,
+    hideMessageList: false,
     effectiveAnimationMode: "medium" as "rich" | "medium" | "subtle" | "off",
     setSidebarWidth: vi.fn(),
     setMessageListWidth: vi.fn(),
@@ -32,7 +33,7 @@ vi.mock("@/components/mail/SearchResults", () => ({
 }));
 
 vi.mock("@/components/mail/MessageActionBar", () => ({
-  MessageActionBar: vi.fn(() => <div data-testid="message-action-bar" />),
+  MessageActionBar: vi.fn(({ showBack }: { showBack: boolean }) => <div data-testid="message-action-bar" data-show-back={String(showBack)} />),
 }));
 
 import { ThreePanelLayout } from "../ThreePanelLayout";
@@ -172,5 +173,43 @@ describe("ThreePanelLayout motion transitions", () => {
     expect(classList).toContain("min-h-0");
     expect(classList).toContain("flex-1");
     expect(classList).toContain("flex-col");
+  });
+});
+
+describe("Gmail-style reading layout", () => {
+  beforeEach(() => {
+    mockUiState.hideMessageList = true;
+    mockUiState.selectedMessageUid = null;
+    mockUiState.searchActive = false;
+    mockUiState.readingPaneVisible = true;
+    mockUiState.effectiveAnimationMode = "off";
+  });
+
+  it("opens a full-width reader and restores the mounted list on return", () => {
+    const { rerender } = renderLayout();
+    const list = screen.getByRole("main");
+    expect(list.className).not.toContain("!hidden");
+    expect(list.style.width).toBe("");
+    expect(screen.queryByTestId("reading-pane")).toBeNull();
+    mockUiState.selectedMessageUid = 7;
+    const layout = <ThreePanelLayout sidebar={<div />} messageList={<div data-testid="message-list" />} readingPane={<div data-testid="reading-pane" />} />;
+    rerender(layout);
+    expect(list.className).toContain("!hidden");
+    expect(screen.getByTestId("reading-pane")).toBeTruthy();
+    expect(screen.getByTestId("message-action-bar").getAttribute("data-show-back")).toBe("true");
+    mockUiState.selectedMessageUid = null;
+    rerender(<ThreePanelLayout sidebar={<div />} messageList={<div data-testid="message-list" />} readingPane={<div data-testid="reading-pane" />} />);
+    expect(screen.getByRole("main")).toBe(list);
+    expect(list.className).not.toContain("!hidden");
+    expect(screen.queryByTestId("reading-pane")).toBeNull();
+  });
+
+  it("keeps search results when opening a message", () => {
+    mockUiState.searchActive = true;
+    mockUiState.searchQuery = "from:alice";
+    mockUiState.selectedMessageUid = 7;
+    renderLayout();
+    expect(screen.getByTestId("search-results")).toBeTruthy();
+    expect(screen.getByRole("main").className).toContain("!hidden");
   });
 });

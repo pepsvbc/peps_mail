@@ -111,6 +111,7 @@ mod tests {
                 language: None,
                 compose_format: None,
                 deep_index: None,
+                hide_message_list: None,
                 animation_mode: Some(Some("ultra".to_string())),
             }),
         )
@@ -151,6 +152,7 @@ mod tests {
                 language: None,
                 compose_format: None,
                 deep_index: None,
+                hide_message_list: None,
                 animation_mode: Some(Some("ultra".to_string())),
             }),
         )

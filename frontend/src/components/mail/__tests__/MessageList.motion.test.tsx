@@ -322,3 +322,17 @@ describe("MessageList and MessageListItem motion transitions", () => {
     expect(secondRow?.style.transform).toBe("");
   });
 });
+
+it("does not leave exiting inbox rows visible after switching to Drafts", () => {
+  mockUiState.activeFolder = "INBOX";
+  mockUiState.effectiveAnimationMode = "medium";
+  setMessages([1]);
+  const { rerender } = render(<MessageList />);
+  expect(screen.getByText("Subject 1")).toBeTruthy();
+  mockUiState.activeFolder = "Drafts";
+  setMessages([2]);
+  mockUseMessages().data.pages[0].messages[0].folder = "Drafts";
+  rerender(<MessageList />);
+  expect(screen.queryByText("Subject 1")).toBeNull();
+  expect(screen.getByText("Subject 2")).toBeTruthy();
+});

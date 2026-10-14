@@ -65,6 +65,7 @@ export interface UiState {
   sidebarWidth: number;
   messageListWidth: number;
   readingPaneVisible: boolean;
+  hideMessageList: boolean;
   density: MailDensity;
   theme: ThemeMode;
   searchQuery: string;
@@ -87,6 +88,7 @@ export interface UiState {
   selectMessage: (uid: number | null) => void;
   setSidebarWidth: (width: number) => void;
   setMessageListWidth: (width: number) => void;
+  setHideMessageList: (hide: boolean) => void;
   setReadingPaneVisible: (visible: boolean) => void;
   setDensity: (density: MailDensity) => void;
   setTheme: (theme: ThemeMode) => void;
@@ -120,6 +122,7 @@ export const useUiStore: UseBoundStore<StoreApi<UiState>> = create<UiState>((set
   sidebarWidth: initial.sidebarWidth,
   messageListWidth: initial.messageListWidth,
   readingPaneVisible: true,
+  hideMessageList: false,
   density: DEFAULT_MAIL_DENSITY,
   theme: "system",
   searchQuery: "",
@@ -150,6 +153,7 @@ export const useUiStore: UseBoundStore<StoreApi<UiState>> = create<UiState>((set
     saveSettings({ messageListWidth: width });
     set({ messageListWidth: width });
   },
+  setHideMessageList: (hideMessageList) => set({ hideMessageList }),
   setReadingPaneVisible: (visible) => set({ readingPaneVisible: visible }),
   setDensity: (density) => set({ density }),
   setTheme: (theme) => set({ theme }),

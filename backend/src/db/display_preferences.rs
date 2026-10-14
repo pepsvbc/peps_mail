@@ -8,6 +8,7 @@ pub struct DisplayPreferences {
     pub language: String,
     pub compose_format: String,
     pub deep_index: bool,
+    pub hide_message_list: bool,
     pub animation_mode: Option<String>,
     pub updated_at: String,
 }
@@ -19,6 +20,7 @@ pub struct UpdateDisplayPreferences {
     pub language: Option<String>,
     pub compose_format: Option<String>,
     pub deep_index: Option<bool>,
+    pub hide_message_list: Option<bool>,
     #[serde(default, deserialize_with = "deserialize_animation_mode_field")]
     pub animation_mode: Option<Option<String>>,
 }
@@ -37,7 +39,7 @@ where
 /// Returns sensible defaults if the row does not yet exist.
 pub fn get_preferences(conn: &Connection) -> Result<DisplayPreferences, String> {
     let result = conn.query_row(
-        "SELECT density, theme, language, compose_format, deep_index, animation_mode, updated_at FROM display_preferences WHERE id = 1",
+        "SELECT density, theme, language, compose_format, deep_index, animation_mode, updated_at, hide_message_list FROM display_preferences WHERE id = 1",
         [],
         |row| {
             let deep_index_int: i32 = row.get(4)?;
@@ -49,6 +51,7 @@ pub fn get_preferences(conn: &Connection) -> Result<DisplayPreferences, String> 
                 deep_index: deep_index_int != 0,
                 animation_mode: row.get(5)?,
                 updated_at: row.get(6)?,
+                hide_message_list: row.get(7)?,
             })
         },
     );
@@ -61,6 +64,7 @@ pub fn get_preferences(conn: &Connection) -> Result<DisplayPreferences, String> 
             language: "system".to_string(),
             compose_format: "html".to_string(),
             deep_index: false,
+            hide_message_list: false,
             animation_mode: None,
             updated_at: String::new(),
         }),
@@ -117,6 +121,11 @@ pub fn update_preferences(
         values.push(Box::new(compose_format.clone()));
         idx += 1;
     }
+    if let Some(hide_message_list) = data.hide_message_list {
+        sets.push(format!("hide_message_list = ?{idx}"));
+        values.push(Box::new(hide_message_list as i32));
+        idx += 1;
+    }
     if let Some(deep_index) = data.deep_index {
         sets.push(format!("deep_index = ?{idx}"));
         values.push(Box::new(deep_index as i32));
@@ -170,6 +179,24 @@ mod tests {
     }
 
     #[test]
+    fn reading_layout_persists_and_survives_unrelated_updates() {
+        let conn = open_test_db();
+        assert!(!get_preferences(&conn).unwrap().hide_message_list);
+        for hide in [true, false] {
+            let data: UpdateDisplayPreferences =
+                serde_json::from_value(serde_json::json!({"hide_message_list": hide})).unwrap();
+            assert_eq!(
+                update_preferences(&conn, &data).unwrap().hide_message_list,
+                hide
+            );
+            let data: UpdateDisplayPreferences =
+                serde_json::from_value(serde_json::json!({"theme": "dark"})).unwrap();
+            update_preferences(&conn, &data).unwrap();
+            assert_eq!(get_preferences(&conn).unwrap().hide_message_list, hide);
+        }
+    }
+
+    #[test]
     fn test_update_density() {
         let conn = open_test_db();
 
@@ -182,6 +209,7 @@ mod tests {
                     language: None,
                     compose_format: None,
                     deep_index: None,
+                    hide_message_list: None,
                     animation_mode: None,
                 },
             )
@@ -205,6 +233,7 @@ mod tests {
                 language: None,
                 compose_format: None,
                 deep_index: None,
+                hide_message_list: None,
                 animation_mode: None,
             },
         )
@@ -226,6 +255,7 @@ mod tests {
                 language: Some("en".to_string()),
                 compose_format: None,
                 deep_index: None,
+                hide_message_list: None,
                 animation_mode: None,
             },
         )
@@ -248,6 +278,7 @@ mod tests {
                 language: None,
                 compose_format: None,
                 deep_index: None,
+                hide_message_list: None,
                 animation_mode: None,
             },
         );
@@ -268,6 +299,7 @@ mod tests {
                 language: None,
                 compose_format: None,
                 deep_index: None,
+                hide_message_list: None,
                 animation_mode: None,
             },
         );
@@ -288,6 +320,7 @@ mod tests {
                 language: None,
                 compose_format: Some("text".to_string()),
                 deep_index: None,
+                hide_message_list: None,
                 animation_mode: None,
             },
         )
@@ -309,6 +342,7 @@ mod tests {
                 language: None,
                 compose_format: Some("markdown".to_string()),
                 deep_index: None,
+                hide_message_list: None,
                 animation_mode: None,
             },
         );
@@ -329,6 +363,7 @@ mod tests {
                 language: None,
                 compose_format: None,
                 deep_index: None,
+                hide_message_list: None,
                 animation_mode: None,
             },
         )
@@ -358,6 +393,7 @@ mod tests {
                 language: None,
                 compose_format: None,
                 deep_index: None,
+                hide_message_list: None,
                 animation_mode: Some(Some("medium".to_string())),
             },
         )
@@ -378,6 +414,7 @@ mod tests {
                 language: None,
                 compose_format: None,
                 deep_index: None,
+                hide_message_list: None,
                 animation_mode: Some(Some("ultra".to_string())),
             },
         );
@@ -398,6 +435,7 @@ mod tests {
                 language: None,
                 compose_format: None,
                 deep_index: None,
+                hide_message_list: None,
                 animation_mode: Some(Some("medium".to_string())),
             },
         )
@@ -412,6 +450,7 @@ mod tests {
                 language: None,
                 compose_format: None,
                 deep_index: None,
+                hide_message_list: None,
                 animation_mode: Some(None),
             },
         )
@@ -432,6 +471,7 @@ mod tests {
                 language: None,
                 compose_format: None,
                 deep_index: None,
+                hide_message_list: None,
                 animation_mode: Some(Some("subtle".to_string())),
             },
         )
@@ -446,6 +486,7 @@ mod tests {
                 language: None,
                 compose_format: None,
                 deep_index: None,
+                hide_message_list: None,
                 animation_mode: None,
             },
         )

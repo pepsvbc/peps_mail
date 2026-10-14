@@ -4,7 +4,7 @@ import { useTranslation } from "@/lib/i18n";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "radix-ui";
-import { ArrowLeft, X, MailOpen } from "lucide-react";
+import { X, MailOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AnimatePresence } from "framer-motion";
@@ -118,7 +118,6 @@ export function ThreePanelLayout({
   const containerRef = useRef<HTMLDivElement>(null);
   const folderDrawerOpen = useUiStore((s) => s.folderDrawerOpen);
   const setFolderDrawerOpen = useUiStore((s) => s.setFolderDrawerOpen);
-  const selectMessage = useUiStore((s) => s.selectMessage);
   const sidebarWidth = useUiStore((s) => s.sidebarWidth);
   const messageListWidth = useUiStore((s) => s.messageListWidth);
   const setSidebarWidth = useUiStore((s) => s.setSidebarWidth);
@@ -127,6 +126,9 @@ export function ThreePanelLayout({
   const searchActive = useUiStore((s) => s.searchActive);
   const searchQuery = useUiStore((s) => s.searchQuery);
   const readingPaneVisible = useUiStore((s) => s.readingPaneVisible);
+  const hideMessageList = useUiStore((s) => s.hideMessageList);
+  const singlePane = hideMessageList || !readingPaneVisible;
+  const readingMessage = selectedMessageUid !== null;
   const hasValidCommittedSearch = isValidCommittedSearch(searchQuery);
   const showSearchResults = searchActive && hasValidCommittedSearch;
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
@@ -149,7 +151,7 @@ export function ThreePanelLayout({
   }, []);
 
   const maxMessageListWidth = useMemo(() => {
-    if (!readingPaneVisible) {
+    if (singlePane) {
       return MAX_MESSAGE_LIST_WIDTH;
     }
 
@@ -168,9 +170,9 @@ export function ThreePanelLayout({
       MIN_MESSAGE_LIST_WIDTH,
       Math.min(MAX_MESSAGE_LIST_WIDTH, remaining),
     );
-  }, [containerWidth, readingPaneVisible, sidebarWidth]);
+  }, [containerWidth, singlePane, sidebarWidth]);
 
-  const resolvedMessageListWidth = readingPaneVisible
+  const resolvedMessageListWidth = !singlePane
     ? Math.max(MIN_MESSAGE_LIST_WIDTH, Math.min(messageListWidth, maxMessageListWidth))
     : null;
 
@@ -219,12 +221,13 @@ export function ThreePanelLayout({
 
       {/* Center panel — search bar + message list or search results */}
       <main
-        className={
-          readingPaneVisible
+        className={cn(
+          !singlePane
             ? "mail-list-panel flex shrink-0 flex-col overflow-hidden border-x border-border"
-            : "mail-list-panel flex min-w-0 flex-1 flex-col overflow-hidden border-l border-border"
-        }
-        style={readingPaneVisible ? { width: resolvedMessageListWidth ?? messageListWidth } : undefined}
+            : "mail-list-panel flex min-w-0 flex-1 flex-col overflow-hidden border-l border-border",
+          singlePane && readingMessage && "!hidden",
+        )}
+        style={!singlePane ? { width: resolvedMessageListWidth ?? messageListWidth } : undefined}
       >
         <MailboxHeader />
         <SearchBar />
@@ -259,7 +262,7 @@ export function ThreePanelLayout({
 
       {/* Resize handle: message list | reading pane */}
       <AnimatePresence initial={false}>
-        {(readingPaneVisible || selectedMessageUid !== null) && (
+        {(!singlePane || readingMessage) && (
           <AnimatedDiv
             key="reading-pane"
             data-testid="three-panel-reading-pane-transition"
@@ -267,14 +270,11 @@ export function ThreePanelLayout({
             initial={readingPaneTransition.initial}
             animate={readingPaneTransition.animate}
             exit={readingPaneTransition.exit}
-            className={cn("mail-reader-panel flex min-h-0 min-w-0 flex-1", !readingPaneVisible && "md:!hidden")}
+            className="mail-reader-panel flex min-h-0 min-w-0 flex-1"
           >
-            <ResizeHandle onDrag={handleMessageListDrag} />
+            {!singlePane && <ResizeHandle onDrag={handleMessageListDrag} />}
             <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <div className="flex items-center border-b border-border md:hidden">
-                <Button variant="ghost" className="m-2 gap-2" onClick={() => selectMessage(null)}><ArrowLeft className="size-4" />{t("Back to messages")}</Button>
-              </div>
-              <MessageActionBar />
+              <MessageActionBar showBack={singlePane} />
               {selectedMessageUid !== null ? (
                 <div className="flex min-h-0 flex-1">{readingPane}</div>
               ) : (

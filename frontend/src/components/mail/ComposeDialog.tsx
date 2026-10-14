@@ -655,16 +655,13 @@ export function ComposeDialog() {
                 ) : t("New Message")}
               </Dialog.Title>
               <div className="flex shrink-0 items-center gap-1">
-                {(["left", "right"] as const).map((side) => (
-                  <button key={side} type="button"
-                    onClick={() => { setPosition(side); setExpanded(false); }}
-                    className={cn("rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground", position === side && !expanded && "bg-background text-foreground shadow-sm")}
-                    aria-pressed={position === side && !expanded}
-                    aria-label={t(side === "left" ? "Move composer to left" : "Move composer to right")}
-                    title={t(side === "left" ? "Move composer to left" : "Move composer to right")}>
-                    {side === "left" ? <PanelLeft className="size-4" /> : <PanelRight className="size-4" />}
-                  </button>
-                ))}
+                <button type="button"
+                  onClick={() => { setPosition(position === "right" ? "left" : "right"); setExpanded(false); }}
+                  className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  aria-label={t(position === "right" ? "Move composer to left" : "Move composer to right")}
+                  title={t(position === "right" ? "Move composer to left" : "Move composer to right")}>
+                  {position === "right" ? <PanelLeft className="size-4" /> : <PanelRight className="size-4" />}
+                </button>
                 {!isMinimized && (
                   <>
                     <button

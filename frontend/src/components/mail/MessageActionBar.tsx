@@ -8,9 +8,7 @@ import { useFolders } from "@/hooks/useFolders";
 import { findJunkFolder } from "@/lib/mail-folders";
 import {
   FolderInput,
-  Reply,
-  ReplyAll,
-  Forward,
+  ArrowLeft,
   Trash2,
   Archive,
   Star,
@@ -30,47 +28,11 @@ import {
 import { MoveToFolderMenu } from "./MoveToFolderMenu";
 import { TagPicker } from "./TagPicker";
 import { Button } from "@/components/ui/button";
-import { useComposeStore } from "@/stores/useComposeStore";
-import { useAuthStore } from "@/stores/useAuthStore";
-import {
-  extractHeader,
-  buildReplySubject,
-  buildForwardSubject,
-  buildReplyBody,
-  buildForwardBody,
-  buildReplyBodyHtml,
-  buildForwardBodyHtml,
-  buildReferences,
-} from "@/lib/email-utils";
-import type { EmailAddress } from "@/types/message";
-import { useIdentities } from "@/hooks/useIdentities";
-import type { Identity } from "@/types/identity";
+import { MessageReplyActions } from "./MessageReplyActions";
 import { createFadeSlideVariants, createScaleFadeVariants } from "@/lib/motion/variants";
 import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
 
-/** Find the identity whose email matches one of the To/CC addresses. */
-function findMatchingIdentity(
-  identities: Identity[] | undefined,
-  toAddresses: EmailAddress[],
-  ccAddresses: EmailAddress[],
-): number | null {
-  if (!identities || identities.length === 0) return null;
-  const allRecipientEmails = [...toAddresses, ...ccAddresses].map((a) =>
-    a.address.toLowerCase(),
-  );
-  const match = identities.find((i) =>
-    allRecipientEmails.includes(i.email.toLowerCase()),
-  );
-  return match?.id ?? null;
-}
-
-function formatAddressList(addresses: EmailAddress[]): string {
-  return addresses
-    .map((a) => (a.name ? `${a.name} <${a.address}>` : a.address))
-    .join(", ");
-}
-
-export function MessageActionBar() {
+export function MessageActionBar({ showBack = false }: { showBack?: boolean }) {
   useTranslation();
   const activeFolder = useUiStore((s) => s.activeFolder);
   const selectedMessageUid = useUiStore((s) => s.selectedMessageUid);
@@ -80,7 +42,6 @@ export function MessageActionBar() {
   const deleteMessage = useDeleteMessage();
 
   const { data } = useMessage(activeFolder, selectedMessageUid ?? 0);
-  const { data: identities } = useIdentities();
 
   const disabled = !data;
   const effectiveAnimationMode = useUiStore((s) => s.effectiveAnimationMode);
@@ -92,82 +53,6 @@ export function MessageActionBar() {
 
   const isSeen = data?.flags.includes("\\Seen") ?? false;
   const isFlagged = data?.flags.includes("\\Flagged") ?? false;
-
-  // Reply All is redundant for 1-to-1 conversations (no other recipients besides sender + me)
-  const isDirectConversation = (() => {
-    if (!data) return false;
-    const myEmail = useAuthStore.getState().activeAccount()?.email ?? "";
-    const otherRecipients = [...data.to_addresses, ...data.cc_addresses].filter(
-      (a) =>
-        a.address.toLowerCase() !== myEmail.toLowerCase() &&
-        a.address.toLowerCase() !== data.from_address.toLowerCase(),
-    );
-    return otherRecipients.length === 0;
-  })();
-
-  const handleReply = () => {
-    if (!data) return;
-    const messageId = extractHeader(data.raw_headers, "Message-ID");
-    const refs = extractHeader(data.raw_headers, "References");
-    const matchedId = findMatchingIdentity(identities, data.to_addresses, data.cc_addresses);
-    const hasHtml = !!(data.html && data.html.trim());
-    useComposeStore.getState().openReply({
-      to: data.from_address,
-      cc: "",
-      subject: buildReplySubject(data.subject),
-      body: hasHtml
-        ? buildReplyBodyHtml(data.html!, data.from_address, data.date)
-        : buildReplyBody(data.text, data.from_address, data.date),
-      inReplyTo: messageId,
-      references: buildReferences(refs, messageId),
-      fromIdentityId: matchedId,
-      isHtml: hasHtml,
-    });
-  };
-
-  const handleReplyAll = () => {
-    if (!data) return;
-    const myEmail = useAuthStore.getState().activeAccount()?.email ?? "";
-    const messageId = extractHeader(data.raw_headers, "Message-ID");
-    const refs = extractHeader(data.raw_headers, "References");
-    const replyTo = data.from_address;
-    const allRecipients = [
-      ...data.to_addresses,
-      ...data.cc_addresses,
-    ].filter(
-      (a) =>
-        a.address.toLowerCase() !== myEmail.toLowerCase() &&
-        a.address.toLowerCase() !== data.from_address.toLowerCase(),
-    );
-    const ccList = allRecipients.map((a) => a.address).join(", ");
-    const matchedId = findMatchingIdentity(identities, data.to_addresses, data.cc_addresses);
-    const hasHtml = !!(data.html && data.html.trim());
-    useComposeStore.getState().openReply({
-      to: replyTo,
-      cc: ccList,
-      subject: buildReplySubject(data.subject),
-      body: hasHtml
-        ? buildReplyBodyHtml(data.html!, data.from_address, data.date)
-        : buildReplyBody(data.text, data.from_address, data.date),
-      inReplyTo: messageId,
-      references: buildReferences(refs, messageId),
-      fromIdentityId: matchedId,
-      isHtml: hasHtml,
-    });
-  };
-
-  const handleForward = () => {
-    if (!data) return;
-    const toList = formatAddressList(data.to_addresses);
-    const hasHtml = !!(data.html && data.html.trim());
-    useComposeStore.getState().openForward({
-      subject: buildForwardSubject(data.subject),
-      body: hasHtml
-        ? buildForwardBodyHtml(data.html!, data.from_address, data.date, data.subject, toList)
-        : buildForwardBody(data.text, data.from_address, data.date, data.subject, toList),
-      isHtml: hasHtml,
-    });
-  };
 
   const handleDelete = () => {
     if (!data) return;
@@ -234,24 +119,12 @@ export function MessageActionBar() {
       exit="exit"
       className="flex min-h-14 shrink-0 flex-wrap items-center gap-0.5 border-b border-border px-2 py-2"
     >
-      {/* Reply */}
-      <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled={disabled} title={t("Reply")} onClick={handleReply}>
-        <Reply className="size-4" />
-        <span className="sr-only">{t("Reply")}</span>
+      <Button variant="ghost" size="icon" className={showBack ? "size-8 shrink-0" : "size-8 shrink-0 md:hidden"}
+        title={t("Back to messages")} aria-label={t("Back to messages")}
+        onClick={() => useUiStore.getState().selectMessage(null)}>
+        <ArrowLeft className="size-4" />
       </Button>
-
-      {/* Reply All — disabled for 1-to-1 conversations */}
-      <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled={disabled || isDirectConversation} title={t("Reply all")} onClick={handleReplyAll}>
-        <ReplyAll className="size-4" />
-        <span className="sr-only">{t("Reply all")}</span>
-      </Button>
-
-      {/* Forward */}
-      <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled={disabled} title={t("Forward")} onClick={handleForward}>
-        <Forward className="size-4" />
-        <span className="sr-only">{t("Forward")}</span>
-      </Button>
-
+      <MessageReplyActions />
       <div className="mx-0.5 h-5 w-px shrink-0 bg-border" />
 
       {/* Delete */}

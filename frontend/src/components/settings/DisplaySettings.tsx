@@ -130,6 +130,7 @@ export function DisplaySettings() {
         compose_format: "html",
         animation_mode: null,
         deep_index: false,
+        hide_message_list: false,
       },
       { onError: (e) => toast.error(t("Failed to reset: {message}", { message: e.message })) },
     );
@@ -152,6 +153,20 @@ export function DisplaySettings() {
       </div>
 
       <div className="space-y-3">
+        <SegmentedControl
+          label={t("Reading layout")}
+          description={t("Hide the message list when opening an email, like Gmail")}
+          value={prefs.hide_message_list ? "full" : "split"}
+          options={[
+            { value: "split", label: t("Split view") },
+            { value: "full", label: t("Full message") },
+          ]}
+          onChange={(value) => updatePrefs.mutate(
+            { hide_message_list: value === "full" },
+            { onError: (e) => toast.error(t("Failed to update: {message}", { message: e.message })) },
+          )}
+        />
+
         <SegmentedControl
           label={t("Density")}
           description={t("Controls the spacing of the message list")}

@@ -23,6 +23,7 @@ import { useMessage, useUpdateFlags } from "@/hooks/useMessages";
 import { createFadeSlideVariants } from "@/lib/motion/variants";
 import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
 import { EmailRenderer, hasRemoteResources } from "./EmailRenderer";
+import { MessageReplyActions } from "./MessageReplyActions";
 import { ThreadView } from "./ThreadView";
 import { Button } from "@/components/ui/button";
 import {
@@ -267,6 +268,10 @@ export function ReadingPane() {
         </div>
       </div>
 
+      <div className="shrink-0 border-b border-border px-4 py-1">
+        <MessageReplyActions />
+      </div>
+
       {/* Attachment bar */}
       {data.attachments.length > 0 && (
         <div className="flex shrink-0 gap-2 overflow-x-auto border-b border-border px-4 py-2">
@@ -303,7 +308,7 @@ export function ReadingPane() {
       {/* Thread view — only shown when there are multiple messages in the thread */}
       {data.thread && data.thread.length > 1 && (() => {
         const visibleThread = data.thread.filter(
-          (m) => m.folder === activeFolder || m.uid === data.uid,
+          (m) => m.folder === activeFolder,
         );
         return visibleThread.length > 1 ? (
           <ThreadView thread={visibleThread} currentUid={data.uid} />
@@ -349,6 +354,9 @@ export function ReadingPane() {
             emailTheme={data.email_theme}
           />
         )}
+      </div>
+      <div className="shrink-0 border-t border-border px-4 py-3">
+        <MessageReplyActions labeled />
       </div>
     </div>
   );

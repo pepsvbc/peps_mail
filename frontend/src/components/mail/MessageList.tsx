@@ -437,7 +437,7 @@ export function MessageList() {
                 position: "relative",
               }}
             >
-              <AnimatePresence initial={false}>
+              <AnimatePresence key={`${activeFolder}:${activeTagId ?? ""}`} initial={false}>
                 {virtualItems.map((virtualRow) => {
                   const message = messages[virtualRow.index];
                   if (!message) return null;
@@ -453,7 +453,7 @@ export function MessageList() {
 
                   return (
                     <AnimatedDiv
-                      key={message.uid}
+                      key={`${message.folder}:${message.uid}`}
                       data-testid="message-list-row-transition"
                       data-row-uid={String(message.uid)}
                       data-row-changed={changedVisibleDelays.has(message.uid) ? "true" : "false"}
