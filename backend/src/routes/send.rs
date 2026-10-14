@@ -39,6 +39,7 @@ pub struct SendResponse {
     pub status: String,
     pub message_id: String,
     pub sent_copy_saved: bool,
+    pub draft_removed: bool,
 }
 
 /// Handler for `POST /api/messages/send`.
@@ -55,6 +56,12 @@ pub async fn send_message_handler(
     if let Some(draft_id) = &req.draft_id {
         validate_draft_id(draft_id)?;
     }
+
+    let _draft_guard = if let Some(id) = &req.draft_id {
+        Some(super::draft_sync::lock(&session.user_hash, id).await)
+    } else {
+        None
+    };
 
     // Validate: at least one recipient.
     if req.to.is_empty() && req.cc.is_empty() && req.bcc.is_empty() {
@@ -160,15 +167,28 @@ pub async fn send_message_handler(
         }
     };
 
-    // Clean up draft and attachment files after successful send.
-    if let Some(ref draft_id) = req.draft_id {
-        cleanup_draft(&config.data_dir, &session.user_hash, draft_id).await;
-    }
+    // Never report SMTP failure if only post-send draft cleanup fails.
+    let draft_removed = if let Some(ref draft_id) = req.draft_id {
+        match super::draft_sync::sync(&session, &config, imap_client.as_ref(), draft_id, None).await
+        {
+            Ok(()) => {
+                cleanup_draft(&config.data_dir, &session.user_hash, draft_id).await;
+                true
+            }
+            Err(error) => {
+                tracing::warn!(%error, "Message sent but original draft could not be removed; retained for retry");
+                false
+            }
+        }
+    } else {
+        true
+    };
 
     Ok(Json(SendResponse {
         status: "sent".to_string(),
         message_id,
         sent_copy_saved,
+        draft_removed,
     })
     .into_response())
 }
@@ -270,7 +290,7 @@ fn invalidate_sent_cache(
 }
 
 /// Load attachment data from disk for a given draft.
-fn load_draft_attachments(
+pub(super) fn load_draft_attachments(
     data_dir: &str,
     user_hash: &str,
     draft_id: &str,
@@ -322,6 +342,14 @@ async fn cleanup_draft(data_dir: &str, user_hash: &str, draft_id: &str) {
 
 /// Build RFC822 bytes from a SendableMessage for IMAP APPEND.
 fn build_rfc822_bytes(message: &SendableMessage, message_id: &str) -> Result<Vec<u8>, String> {
+    build_message_bytes(message, message_id, false)
+}
+
+pub(super) fn build_message_bytes(
+    message: &SendableMessage,
+    message_id: &str,
+    draft: bool,
+) -> Result<Vec<u8>, String> {
     use lettre::message::{Attachment, Mailbox, MultiPart, SinglePart, header::ContentType};
 
     let from_mailbox: Mailbox = message
@@ -329,10 +357,18 @@ fn build_rfc822_bytes(message: &SendableMessage, message_id: &str) -> Result<Vec
         .parse()
         .map_err(|e: lettre::address::AddressError| e.to_string())?;
 
+    let draft_envelope_address = from_mailbox.email.clone();
     let mut builder = lettre::Message::builder()
         .from(from_mailbox)
         .subject(&message.subject)
         .message_id(Some(message_id.to_string()));
+    if draft {
+        // Drafts may be incomplete and must retain Bcc for later editing.
+        builder = builder.keep_bcc().envelope(
+            lettre::address::Envelope::new(None, vec![draft_envelope_address])
+                .map_err(|e| e.to_string())?,
+        );
+    }
 
     for addr in &message.to {
         let mailbox: Mailbox = addr

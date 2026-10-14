@@ -16,6 +16,8 @@ pub struct MockImapClient {
     should_fail: Mutex<Option<ImapError>>,
     append_error: Mutex<Option<ImapError>>,
     pub created_folders: Mutex<Vec<String>>,
+    pub draft_syncs: Mutex<Vec<DraftSyncRequest>>,
+    pub draft_remote: Mutex<std::collections::HashMap<String, u32>>,
     pub appended: Mutex<Vec<(String, Vec<u8>)>>,
     pub folder_status_calls: Mutex<Vec<(ImapCredentials, String)>>,
     pub unread_count_calls: Mutex<Vec<(ImapCredentials, String)>>,
@@ -34,6 +36,8 @@ impl MockImapClient {
             should_fail: Mutex::new(None),
             append_error: Mutex::new(None),
             created_folders: Mutex::new(Vec::new()),
+            draft_syncs: Mutex::new(Vec::new()),
+            draft_remote: Mutex::new(std::collections::HashMap::new()),
             appended: Mutex::new(Vec::new()),
             folder_status_calls: Mutex::new(Vec::new()),
             unread_count_calls: Mutex::new(Vec::new()),
@@ -272,6 +276,47 @@ impl ImapClient for MockImapClient {
             .unwrap()
             .push((folder.to_string(), message_bytes.to_vec()));
         Ok(())
+    }
+
+    async fn sync_draft(
+        &self,
+        _creds: &ImapCredentials,
+        request: &DraftSyncRequest,
+    ) -> Result<DraftSyncResult, ImapError> {
+        if let Some(ref error) = *self.should_fail.lock().unwrap() {
+            return Err(clone_error(error));
+        }
+        if let Some(ref error) = *self.append_error.lock().unwrap() {
+            return Err(clone_error(error));
+        }
+        let validity = self
+            .folder_status
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|s| s.uid_validity)
+            .unwrap_or(1);
+        if request.uid_validity.is_some_and(|v| v != validity) {
+            return Err(ImapError::ProtocolError("UIDVALIDITY changed".into()));
+        }
+        let mut calls = self.draft_syncs.lock().unwrap();
+        calls.push(request.clone());
+        let mut remote = self.draft_remote.lock().unwrap();
+        let mut removed_uids: Vec<u32> = request.uid.into_iter().collect();
+        if let Some(old) = remote.remove(&request.message_id) {
+            if !removed_uids.contains(&old) {
+                removed_uids.push(old);
+            }
+        }
+        let uid = request.content.as_ref().map(|_| 1000 + calls.len() as u32);
+        if let Some(uid) = uid {
+            remote.insert(request.message_id.clone(), uid);
+        }
+        Ok(DraftSyncResult {
+            uid_validity: validity,
+            uid,
+            removed_uids,
+        })
     }
 
     async fn create_folder(

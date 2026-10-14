@@ -8,8 +8,9 @@ import type { Identity } from "@/types/identity";
 import { ComposeDialog } from "../ComposeDialog";
 import { toast } from "sonner";
 
-const { saveDraft, sendMessage, uploadAttachment, switchAccount, identities } = vi.hoisted(() => ({
+const { saveDraft, deleteDraft, sendMessage, uploadAttachment, switchAccount, identities } = vi.hoisted(() => ({
   saveDraft: { isPending: false, mutate: vi.fn() },
+  deleteDraft: { isPending: false, mutate: vi.fn() },
   sendMessage: { isPending: false, mutate: vi.fn() },
   switchAccount: { isPending: false, mutate: vi.fn() },
   uploadAttachment: { isPending: false, mutate: vi.fn() },
@@ -21,7 +22,7 @@ vi.mock("@/hooks/useCompose", () => ({
   useSendMessage: () => sendMessage,
   useUploadAttachment: () => uploadAttachment,
   useDeleteAttachment: () => ({ mutate: vi.fn() }),
-  useDeleteDraft: () => ({ mutate: vi.fn() }),
+  useDeleteDraft: () => deleteDraft,
 }));
 
 vi.mock("@/hooks/useComposeAccount", () => ({ useComposeAccount: () => switchAccount }));
@@ -64,6 +65,8 @@ describe("composer window controls", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    saveDraft.mutate.mockImplementation((_data, callbacks) => callbacks?.onSuccess?.());
+    deleteDraft.mutate.mockImplementation((_id, callbacks) => callbacks?.onSuccess?.());
     Element.prototype.scrollIntoView = vi.fn();
     identities.data = [];
     uploadAttachment.isPending = false;
@@ -84,6 +87,37 @@ describe("composer window controls", () => {
     vi.restoreAllMocks();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("keeps the editor open when saving on close fails", () => {
+    saveDraft.mutate.mockImplementation((_data, callbacks) => callbacks?.onError?.(new Error("Offline")));
+    render(<ComposeDialog />);
+    fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
+    expect(useComposeStore.getState()).toMatchObject({ isOpen: true, draftId: "club-news-draft", subject: "Club news" });
+  });
+
+  it("keeps edits made while a save-and-close is pending", () => {
+    saveDraft.mutate.mockImplementation(() => {});
+    render(<ComposeDialog />);
+    fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Message body" }), {
+      target: { value: "New edits during save" },
+    });
+    act(() => saveDraft.mutate.mock.calls[0][1].onSuccess());
+    expect(useComposeStore.getState()).toMatchObject({ isOpen: true, body: "New edits during save" });
+  });
+
+  it("only closes the composer after deleting the original draft succeeds", () => {
+    deleteDraft.mutate.mockImplementation(() => {});
+    render(<ComposeDialog />);
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Discard" }).at(-1)!);
+    expect(deleteDraft.mutate).toHaveBeenCalledWith("club-news-draft", expect.any(Object));
+    expect(useComposeStore.getState().isOpen).toBe(true);
+    act(() => deleteDraft.mutate.mock.calls[0][1].onError(new Error("Offline")));
+    expect(useComposeStore.getState().isOpen).toBe(true);
+    act(() => deleteDraft.mutate.mock.calls[0][1].onSuccess());
+    expect(useComposeStore.getState().isOpen).toBe(false);
   });
 
   it("always shows the account address in From, including without saved identities", () => {

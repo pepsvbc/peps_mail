@@ -1,5 +1,6 @@
 /** French translations for mail, composition, and message actions. */
 export const mailMessages: Record<string, string> = {
+  "Message sent, but the server draft could not be removed. Do not resend.": "Message envoyé, mais le brouillon sur le serveur n’a pas pu être supprimé. Ne renvoyez pas le message.",
   "Draft": "Brouillon",
   "Reading layout": "Disposition de lecture",
   "Hide the message list when opening an email, like Gmail": "Masquer la liste des messages à l’ouverture d’un e-mail, comme Gmail",

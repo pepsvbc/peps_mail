@@ -1,5 +1,6 @@
 use rusqlite::{Connection, params};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 /// A locally-saved draft message.
 #[derive(Debug, Clone, Serialize)]
@@ -15,6 +16,9 @@ pub struct Draft {
     pub references_header: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub source_folder: Option<String>,
+    pub source_uid_validity: Option<u32>,
+    pub source_uid: Option<u32>,
 }
 
 /// An attachment associated with a draft.
@@ -29,7 +33,7 @@ pub struct DraftAttachment {
     pub created_at: String,
 }
 
-/// Insert or update a draft. Uses INSERT OR REPLACE to upsert.
+/// Insert or update a draft while retaining its source and attachment records.
 #[allow(clippy::too_many_arguments)]
 pub fn upsert_draft(
     conn: &Connection,
@@ -43,6 +47,16 @@ pub fn upsert_draft(
     in_reply_to: Option<&str>,
     references_header: Option<&str>,
 ) -> Result<(), String> {
+    if conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM deleted_drafts WHERE id = ?1)",
+            [id],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|e| e.to_string())?
+    {
+        return Err("Draft has already been deleted".into());
+    }
     conn.execute(
         "INSERT INTO drafts (id, to_addresses, cc_addresses, bcc_addresses, subject, text_body, html_body, in_reply_to, references_header, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'))
@@ -75,7 +89,7 @@ pub fn upsert_draft(
 /// Retrieve a single draft by ID.
 pub fn get_draft(conn: &Connection, id: &str) -> Result<Option<Draft>, String> {
     let result = conn.query_row(
-        "SELECT id, to_addresses, cc_addresses, bcc_addresses, subject, text_body, html_body, in_reply_to, references_header, created_at, updated_at
+        "SELECT id, to_addresses, cc_addresses, bcc_addresses, subject, text_body, html_body, in_reply_to, references_header, created_at, updated_at, source_folder, source_uid_validity, source_uid
          FROM drafts WHERE id = ?1",
         params![id],
         |row| {
@@ -91,6 +105,9 @@ pub fn get_draft(conn: &Connection, id: &str) -> Result<Option<Draft>, String> {
                 references_header: row.get(8)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
+                source_folder: row.get(11)?,
+                source_uid_validity: row.get(12)?,
+                source_uid: row.get(13)?,
             })
         },
     );
@@ -106,7 +123,7 @@ pub fn get_draft(conn: &Connection, id: &str) -> Result<Option<Draft>, String> {
 pub fn list_drafts(conn: &Connection) -> Result<Vec<Draft>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, to_addresses, cc_addresses, bcc_addresses, subject, text_body, html_body, in_reply_to, references_header, created_at, updated_at
+            "SELECT id, to_addresses, cc_addresses, bcc_addresses, subject, text_body, html_body, in_reply_to, references_header, created_at, updated_at, source_folder, source_uid_validity, source_uid
              FROM drafts ORDER BY updated_at DESC",
         )
         .map_err(|e| format!("Failed to prepare list_drafts: {e}"))?;
@@ -125,6 +142,9 @@ pub fn list_drafts(conn: &Connection) -> Result<Vec<Draft>, String> {
                 references_header: row.get(8)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
+                source_folder: row.get(11)?,
+                source_uid_validity: row.get(12)?,
+                source_uid: row.get(13)?,
             })
         })
         .map_err(|e| format!("Failed to query drafts: {e}"))?;
@@ -138,9 +158,16 @@ pub fn list_drafts(conn: &Connection) -> Result<Vec<Draft>, String> {
 
 /// Delete a draft by ID. Cascade will handle attachments in DB.
 pub fn delete_draft(conn: &Connection, id: &str) -> Result<bool, String> {
-    let deleted = conn
-        .execute("DELETE FROM drafts WHERE id = ?1", params![id])
-        .map_err(|e| format!("Failed to delete draft: {e}"))?;
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute(
+        "INSERT OR IGNORE INTO deleted_drafts(id) SELECT id FROM drafts WHERE id = ?1",
+        [id],
+    )
+    .map_err(|e| e.to_string())?;
+    let deleted = tx
+        .execute("DELETE FROM drafts WHERE id = ?1", [id])
+        .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(deleted > 0)
 }
 
@@ -239,8 +266,32 @@ mod tests {
     fn test_upsert_updates_existing() {
         let conn = open_test_db();
 
-        upsert_draft(&conn, "draft-1", "bob@example.com", "", "", "v1", "body1", None, None, None).unwrap();
-        upsert_draft(&conn, "draft-1", "carol@example.com", "", "", "v2", "body2", None, None, None).unwrap();
+        upsert_draft(
+            &conn,
+            "draft-1",
+            "bob@example.com",
+            "",
+            "",
+            "v1",
+            "body1",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        upsert_draft(
+            &conn,
+            "draft-1",
+            "carol@example.com",
+            "",
+            "",
+            "v2",
+            "body2",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         let draft = get_draft(&conn, "draft-1").unwrap().unwrap();
         assert_eq!(draft.to_addresses, "carol@example.com");
@@ -327,7 +378,16 @@ mod tests {
         let conn = open_test_db();
 
         upsert_draft(&conn, "draft-1", "", "", "", "Test", "", None, None, None).unwrap();
-        add_draft_attachment(&conn, "att-1", "draft-1", "file.pdf", "application/pdf", 100, "/path").unwrap();
+        add_draft_attachment(
+            &conn,
+            "att-1",
+            "draft-1",
+            "file.pdf",
+            "application/pdf",
+            100,
+            "/path",
+        )
+        .unwrap();
 
         let deleted = delete_draft_attachment(&conn, "att-1").unwrap();
         assert!(deleted);
@@ -341,12 +401,89 @@ mod tests {
         let conn = open_test_db();
 
         upsert_draft(&conn, "draft-1", "", "", "", "Test", "", None, None, None).unwrap();
-        add_draft_attachment(&conn, "att-1", "draft-1", "file.pdf", "application/pdf", 100, "/path").unwrap();
-        add_draft_attachment(&conn, "att-2", "draft-1", "pic.jpg", "image/jpeg", 200, "/path2").unwrap();
+        add_draft_attachment(
+            &conn,
+            "att-1",
+            "draft-1",
+            "file.pdf",
+            "application/pdf",
+            100,
+            "/path",
+        )
+        .unwrap();
+        add_draft_attachment(
+            &conn,
+            "att-2",
+            "draft-1",
+            "pic.jpg",
+            "image/jpeg",
+            200,
+            "/path2",
+        )
+        .unwrap();
 
         delete_draft(&conn, "draft-1").unwrap();
 
         let atts = get_draft_attachments(&conn, "draft-1").unwrap();
         assert!(atts.is_empty());
     }
+}
+
+/// Stable identity used by older imports as well as new ones.
+pub fn imported_id(folder: &str, uid_validity: u32, uid: u32) -> String {
+    format!(
+        "imap-{:x}",
+        Sha256::digest(format!("{folder}\0{uid_validity}\0{uid}"))
+    )
+}
+
+pub fn set_source(
+    conn: &Connection,
+    id: &str,
+    folder: &str,
+    uid_validity: Option<u32>,
+    uid: Option<u32>,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE drafts SET source_folder=?2, source_uid_validity=?3, source_uid=?4 WHERE id=?1",
+        params![id, folder, uid_validity, uid],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn find_by_source(
+    conn: &Connection,
+    folder: &str,
+    uid_validity: u32,
+    uid: u32,
+) -> Result<Option<String>, String> {
+    use rusqlite::OptionalExtension;
+    conn.query_row(
+        "SELECT id FROM drafts WHERE source_folder=?1 AND source_uid_validity=?2 AND source_uid=?3",
+        params![folder, uid_validity, uid],
+        |r| r.get(0),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+/// Recover exact folder/UID links for drafts imported before source tracking.
+/// Never guess from subjects, senders, or message contents.
+pub fn recover_sources(conn: &Connection) -> Result<(), String> {
+    let mut stmt = conn.prepare("SELECT m.folder,m.uid,f.uid_validity FROM messages m JOIN folders f ON f.name=m.folder WHERE m.flags LIKE '%\\Draft%' OR f.flags LIKE '%\\Drafts%' OR lower(m.folder) IN ('drafts','[gmail]/drafts','brouillons')").map_err(|e| e.to_string())?;
+    let sources = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, u32>(1)?,
+                row.get::<_, u32>(2)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+    for source in sources {
+        let (folder, uid, validity) = source.map_err(|e| e.to_string())?;
+        conn.execute("UPDATE drafts SET source_folder=?2,source_uid_validity=?3,source_uid=?4 WHERE id=?1 AND source_folder IS NULL", params![imported_id(&folder, validity, uid),folder,validity,uid]).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }

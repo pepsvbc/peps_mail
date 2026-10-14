@@ -26,6 +26,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (19, include_str!("../../migrations/V019__known_addresses.sql")),
     (20, include_str!("../../migrations/V020__language_preference.sql")),
     (21, include_str!("../../migrations/V021__reading_layout.sql")),
+    (22, include_str!("../../migrations/V022__draft_sources.sql")),
 ];
 
 /// Run any pending migrations based on SQLite's `user_version` PRAGMA.

@@ -1,5 +1,7 @@
 "use client";
 
+import { toast } from "sonner";
+
 import { MESSAGE_ROW_HEIGHT } from "@/lib/mail-density";
 
 import { translate as t, useTranslation, getLocale } from "@/lib/i18n";
@@ -128,7 +130,7 @@ function DraftItems() {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                deleteDraft.mutate(draft.id);
+                deleteDraft.mutate(draft.id, { onError: (error) => toast.error(error.message) });
               }}
               className="hidden shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground group-hover:flex items-center justify-center"
               title={t("Delete draft")}
@@ -180,6 +182,7 @@ export function MessageList() {
   const { data: folders } = useFolders();
   const showDrafts = !activeTagId && isDraftsFolder(activeFolder, folders?.folders.find((f) => f.name === activeFolder)?.attributes);
   const { openDraft, isPending: openingDraft } = useOpenDraft();
+  const { data: localDrafts } = useListDrafts(showDrafts);
   const selectedMessageUids = useUiStore((s) => s.selectedMessageUids);
   const bulkSelectMode = useUiStore((s) => s.bulkSelectMode);
   const keyboardNav = useUiStore((s) => s.keyboardNav);
@@ -205,7 +208,11 @@ export function MessageList() {
 
   // Flatten all pages into a single array of messages.
   // Never render a row from another folder, even if a stale response is cached.
-  const folderMessages = data?.pages.flatMap((page) => page.messages).filter((message) => message.folder === activeFolder) ?? [];
+  const folderMessages = data?.pages.flatMap((page) => page.messages).filter((message) =>
+    message.folder === activeFolder && !(showDrafts && localDrafts?.drafts.some((draft) =>
+      draft.source_folder === message.folder && draft.source_uid === message.uid
+    ))
+  ) ?? [];
   const tagMessages = isTagView ? (tagQuery.data?.messages ?? []) : [];
   const allMessages = isTagView ? tagMessages : folderMessages;
   const messages = unreadOnly && !showDrafts ? allMessages.filter((message) => !message.flags.includes("\\Seen")) : allMessages;

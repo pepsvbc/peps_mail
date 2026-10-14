@@ -3,7 +3,6 @@ use std::{path::Path, sync::Arc};
 
 use axum::{Extension, Json, extract::Path as AxumPath, response::Response};
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 
 use crate::imap::client::{ImapClient, ImapCredentials};
 use crate::{auth::session::SessionState, config::AppConfig, db, error::AppError};
@@ -59,15 +58,12 @@ pub async fn import_draft_handler(
         .folder_status(&creds, &req.folder)
         .await
         .map_err(|e| AppError::ServiceUnavailable(e.to_string()))?;
-    let id = format!(
-        "imap-{:x}",
-        Sha256::digest(format!(
-            "{}\0{}\0{}",
-            req.folder, status.uid_validity, req.uid
-        ))
-    );
     let mut conn = db::pool::open_user_db(&config.data_dir, &session.user_hash)
         .map_err(|e| AppError::InternalError(e.to_string()))?;
+    let id = db::drafts::find_by_source(&conn, &req.folder, status.uid_validity, req.uid)
+        .map_err(AppError::InternalError)?
+        .unwrap_or_else(|| db::drafts::imported_id(&req.folder, status.uid_validity, req.uid));
+    let _guard = super::draft_sync::lock(&session.user_hash, &id).await;
     if db::drafts::get_draft(&conn, &id)
         .map_err(AppError::InternalError)?
         .is_none()
@@ -146,6 +142,14 @@ pub async fn import_draft_handler(
         tx.commit()
             .map_err(|e| AppError::InternalError(e.to_string()))?;
     }
+    db::drafts::set_source(
+        &conn,
+        &id,
+        &req.folder,
+        Some(status.uid_validity),
+        Some(req.uid),
+    )
+    .map_err(AppError::InternalError)?;
     super::drafts::get_draft_handler(Extension(session), Extension(config), AxumPath(id)).await
 }
 
@@ -194,7 +198,7 @@ mod tests {
         }
     }
 
-    fn imap() -> Arc<dyn ImapClient> {
+    fn imap() -> Arc<MockImapClient> {
         Arc::new(MockImapClient::new()
             .with_folders(vec![ImapFolder { name: "Brouillons".into(), delimiter: None, attributes: vec!["\\Drafts".into()] }])
             .with_folder_status(FolderStatus { uid_validity: 42, exists: 1, uid_next: 8 })
@@ -278,6 +282,259 @@ mod tests {
         assert_eq!(reopened["id"], id);
         assert_eq!(reopened["subject"], "Edited");
         assert_eq!(reopened["attachments"].as_array().unwrap().len(), 1);
+    }
+
+    fn config(dir: &tempfile::TempDir) -> Arc<AppConfig> {
+        Arc::new(
+            figment::Figment::new()
+                .merge(("data_dir", dir.path().to_str().unwrap()))
+                .extract()
+                .unwrap(),
+        )
+    }
+
+    fn save_request(id: &str, html: Option<&str>) -> super::super::drafts::UpsertDraftRequest {
+        serde_json::from_value(serde_json::json!({
+            "id": id, "to": "bob@example.com", "bcc": "hidden@example.com",
+            "subject": "Edited draft", "text_body": "Edited text", "html_body": html
+        }))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn import_save_reopen_and_discard_keep_one_server_draft() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(&dir);
+        let imap = imap();
+        let original = import(config.clone(), imap.clone(), "Brouillons")
+            .await
+            .unwrap();
+        let id = original["id"].as_str().unwrap();
+        assert_eq!(
+            import(config.clone(), imap.clone(), "Brouillons")
+                .await
+                .unwrap()["id"],
+            id
+        );
+        assert!(
+            imap.draft_syncs.lock().unwrap().is_empty(),
+            "opening must not append a draft"
+        );
+        for _ in 0..2 {
+            super::super::drafts::upsert_draft_handler(
+                Extension(session()),
+                Extension(config.clone()),
+                Extension(imap.clone()),
+                Json(save_request(id, original["html_body"].as_str())),
+            )
+            .await
+            .unwrap();
+        }
+        let calls = imap.draft_syncs.lock().unwrap().clone();
+        assert_eq!(calls[0].uid, Some(7));
+        assert_eq!(calls[1].uid, Some(1001));
+        assert_eq!(calls[0].message_id, calls[1].message_id);
+        assert_eq!(imap.draft_remote.lock().unwrap().len(), 1);
+        let saved = mail_parser::MessageParser::default()
+            .parse(calls[1].content.as_ref().unwrap())
+            .unwrap();
+        assert_eq!(addresses(saved.bcc()), "hidden@example.com");
+        assert_eq!(saved.attachment_count(), 1);
+        assert!(!saved.body_html(0).unwrap().contains("/api/drafts/"));
+        assert!(saved.body_html(0).unwrap().contains("cid:"));
+        // New IMAP UID reopens the same local draft, not another import.
+        let reopened = import_draft_handler(
+            Extension(session()),
+            Extension(config.clone()),
+            Extension(imap.clone()),
+            Json(ImportDraftRequest {
+                folder: "Brouillons".into(),
+                uid: 1002,
+            }),
+        )
+        .await
+        .unwrap();
+        let value: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(reopened.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(value["id"], id);
+        assert_eq!(value["subject"], "Edited draft");
+        super::super::drafts::delete_draft_handler(
+            Extension(session()),
+            Extension(config.clone()),
+            Extension(imap.clone()),
+            AxumPath(id.to_string()),
+        )
+        .await
+        .unwrap();
+        assert!(imap.draft_remote.lock().unwrap().is_empty());
+        assert_eq!(
+            imap.draft_syncs.lock().unwrap().last().unwrap().uid,
+            Some(1002)
+        );
+        let conn = db::pool::open_user_db(&config.data_dir, "alice").unwrap();
+        assert!(db::drafts::get_draft(&conn, id).unwrap().is_none());
+        // A delayed save cannot resurrect the discarded draft.
+        assert!(
+            super::super::drafts::upsert_draft_handler(
+                Extension(session()),
+                Extension(config),
+                Extension(imap.clone()),
+                Json(save_request(id, None))
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(imap.draft_syncs.lock().unwrap().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn new_draft_without_recipients_replaces_its_first_server_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(&dir);
+        let imap = imap();
+        for _ in 0..2 {
+            let mut req = save_request("new-empty-recipients", None);
+            req.to.clear();
+            req.cc.clear();
+            req.bcc.clear();
+            super::super::drafts::upsert_draft_handler(
+                Extension(session()),
+                Extension(config.clone()),
+                Extension(imap.clone()),
+                Json(req),
+            )
+            .await
+            .unwrap();
+        }
+        let calls = imap.draft_syncs.lock().unwrap();
+        assert_eq!(calls[0].uid, None);
+        assert_eq!(calls[1].uid, Some(1001));
+        assert_eq!(calls[0].folder, "Brouillons");
+        assert_eq!(imap.draft_remote.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn legacy_imports_recover_the_original_and_delete_failure_keeps_local_edits() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(&dir);
+        let original = import(config.clone(), imap(), "Brouillons").await.unwrap();
+        let id = original["id"].as_str().unwrap();
+        let conn = db::pool::open_user_db(&config.data_dir, "alice").unwrap();
+        db::folders::upsert_folder(
+            &conn,
+            "Brouillons",
+            None,
+            None,
+            "\\Drafts",
+            true,
+            1,
+            0,
+            42,
+            0,
+        )
+        .unwrap();
+        db::messages::upsert_message(
+            &conn,
+            "Brouillons",
+            7,
+            None,
+            None,
+            None,
+            "Original",
+            "alice@example.com",
+            "",
+            "[]",
+            "[]",
+            "",
+            "\\Draft",
+            1,
+            false,
+            "",
+            None,
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE drafts SET source_folder=NULL,source_uid_validity=NULL,source_uid=NULL",
+            [],
+        )
+        .unwrap();
+        let offline = Arc::new(MockImapClient::new().with_error(
+            crate::imap::client::ImapError::ConnectionFailed("Offline".into()),
+        ));
+        assert!(
+            super::super::drafts::delete_draft_handler(
+                Extension(session()),
+                Extension(config.clone()),
+                Extension(offline),
+                AxumPath(id.to_string())
+            )
+            .await
+            .is_err()
+        );
+        let recovered = db::drafts::get_draft(&conn, id).unwrap().unwrap();
+        assert_eq!(recovered.source_uid, Some(7));
+        let imap = imap();
+        super::super::drafts::delete_draft_handler(
+            Extension(session()),
+            Extension(config),
+            Extension(imap.clone()),
+            AxumPath(id.to_string()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(imap.draft_syncs.lock().unwrap()[0].uid, Some(7));
+        assert!(
+            db::messages::get_single_message(&conn, "Brouillons", 7)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_save_and_uidvalidity_change_never_remove_original() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(&dir);
+        let original = import(config.clone(), imap(), "Brouillons").await.unwrap();
+        let id = original["id"].as_str().unwrap();
+        let failing = Arc::new(MockImapClient::new().with_append_error(
+            crate::imap::client::ImapError::ConnectionFailed("Offline".into()),
+        ));
+        assert!(
+            super::super::drafts::upsert_draft_handler(
+                Extension(session()),
+                Extension(config.clone()),
+                Extension(failing.clone()),
+                Json(save_request(id, None))
+            )
+            .await
+            .is_err()
+        );
+        let conn = db::pool::open_user_db(&config.data_dir, "alice").unwrap();
+        let draft = db::drafts::get_draft(&conn, id).unwrap().unwrap();
+        assert_eq!(draft.subject, "Edited draft");
+        assert_eq!(draft.source_uid, Some(7));
+        assert!(failing.draft_syncs.lock().unwrap().is_empty());
+        let replaced_mailbox = Arc::new(MockImapClient::new().with_folder_status(FolderStatus {
+            uid_validity: 99,
+            exists: 1,
+            uid_next: 8,
+        }));
+        assert!(
+            super::super::drafts::delete_draft_handler(
+                Extension(session()),
+                Extension(config),
+                Extension(replaced_mailbox.clone()),
+                AxumPath(id.to_string())
+            )
+            .await
+            .is_err()
+        );
+        assert!(replaced_mailbox.draft_syncs.lock().unwrap().is_empty());
+        assert!(db::drafts::get_draft(&conn, id).unwrap().is_some());
     }
 
     #[tokio::test]

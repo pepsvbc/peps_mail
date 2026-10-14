@@ -179,8 +179,8 @@ export function ComposeDialog() {
 
   // Save draft function. When force=true, skip the hash guard (used for explicit save/close).
   const saveDraft = useCallback(
-    (force = false) => {
-      if (!isCurrentAccount()) return;
+    (force = false, onSaved?: () => void) => {
+      if (!isCurrentAccount() || deleteDraftMutation.isPending) return;
       const hash = computeHash();
       // Don't save if nothing changed (unless forced) or compose is empty
       if (!force && hash === lastSavedHashRef.current) return;
@@ -213,15 +213,21 @@ export function ComposeDialog() {
         },
         {
           onSuccess: () => {
+            const current = useComposeStore.getState();
+            if (current.draftId !== currentDraftId || !isCurrentAccount()) return;
             lastSavedHashRef.current = hash;
             setDraftSaved(true);
             setTimeout(() => setDraftSaved(false), 3000);
             toast.success(t("Draft saved"));
+            const currentHash = `${current.to}|${current.cc}|${current.bcc}|${current.subject}|${current.body}`;
+            if (currentHash === hash) onSaved?.();
           },
+          onError: (error) => toast.error(error.message),
         }
       );
     },
     [
+      deleteDraftMutation.isPending,
       computeHash,
       to,
       cc,
@@ -293,6 +299,9 @@ export function ComposeDialog() {
           } else {
             toast.success(t("Message sent"));
           }
+          if (result.draft_removed === false) {
+            toast.warning(t("Message sent, but the server draft could not be removed. Do not resend."), { duration: 10000 });
+          }
           reset();
         },
         onError: (error) => {
@@ -352,9 +361,13 @@ export function ComposeDialog() {
   const confirmDiscard = useCallback(() => {
     setShowDiscardAlert(false);
     if (draftId && isCurrentAccount()) {
-      deleteDraftMutation.mutate(draftId);
+      deleteDraftMutation.mutate(draftId, {
+        onSuccess: () => reset(),
+        onError: (error) => toast.error(error.message),
+      });
+    } else {
+      reset();
     }
-    reset();
   }, [draftId, deleteDraftMutation, reset, isCurrentAccount]);
 
   // Save draft and close the dialog without discarding.
@@ -364,9 +377,10 @@ export function ComposeDialog() {
       return;
     }
     if (hasContent()) {
-      saveDraft(true);
+      saveDraft(true, closeCompose);
+    } else {
+      closeCompose();
     }
-    closeCompose();
   }, [hasContent, saveDraft, closeCompose, isCurrentAccount]);
 
   const handleKeyDown = useCallback(

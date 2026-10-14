@@ -122,3 +122,20 @@ pub struct FolderStatusExtended {
     pub unseen: u32,
     pub highest_modseq: u64,
 }
+
+/// An exact server draft identity. `None` content means discard.
+#[derive(Debug, Clone)]
+pub struct DraftSyncRequest {
+    pub folder: String,
+    pub uid_validity: Option<u32>,
+    pub uid: Option<u32>,
+    pub message_id: String,
+    pub content: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DraftSyncResult {
+    pub uid_validity: u32,
+    pub uid: Option<u32>,
+    pub removed_uids: Vec<u32>,
+}

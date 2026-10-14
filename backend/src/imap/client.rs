@@ -8,7 +8,7 @@ use super::parse::{
 
 pub use super::error::ImapError;
 pub use super::types::{
-    EmailAddress, FolderStatus, FolderStatusExtended, ImapAttachment, ImapCredentials, ImapFolder,
+    DraftSyncRequest, DraftSyncResult, EmailAddress, FolderStatus, FolderStatusExtended, ImapAttachment, ImapCredentials, ImapFolder,
     ImapMessageBody, ImapMessageHeader, MailboxQuota,
 };
 
@@ -117,6 +117,9 @@ pub trait ImapClient: Send + Sync {
         message_bytes: &[u8],
         flags: &[&str],
     ) -> Result<(), ImapError>;
+
+    /// Save or remove a tracked draft, preserving unrelated mailbox contents.
+    async fn sync_draft(&self, creds: &ImapCredentials, request: &DraftSyncRequest) -> Result<DraftSyncResult, ImapError>;
 
     /// Create a new folder (mailbox) and subscribe to it.
     async fn create_folder(
@@ -829,6 +832,10 @@ impl ImapClient for RealImapClient {
 
         let _ = session.logout().await;
         Ok(())
+    }
+
+    async fn sync_draft(&self, creds: &ImapCredentials, request: &DraftSyncRequest) -> Result<DraftSyncResult, ImapError> {
+        super::drafts::sync(creds, request).await
     }
 
     async fn create_folder(

@@ -8,6 +8,7 @@ pub mod contacts;
 pub mod display_preferences;
 pub mod drafts;
 mod draft_import;
+mod draft_sync;
 pub mod folder_mgmt;
 pub mod folders;
 pub mod health;

@@ -46,7 +46,7 @@ vi.mock("framer-motion", async () => {
   };
 });
 
-const { mockUiState, mockUseMessages, mockOpenDraft } = vi.hoisted(() => ({
+const { mockUiState, mockUseMessages, mockOpenDraft, mockDrafts } = vi.hoisted(() => ({
   mockUiState: {
     activeFolder: "INBOX",
     unreadOnly: false,
@@ -67,6 +67,7 @@ const { mockUiState, mockUseMessages, mockOpenDraft } = vi.hoisted(() => ({
   },
   mockUseMessages: vi.fn(),
   mockOpenDraft: vi.fn(),
+  mockDrafts: { drafts: [] as Array<{ id: string; to: string; subject: string; updated_at: string; source_folder: string; source_uid: number }> },
 }));
 
 vi.mock("@tanstack/react-virtual", () => ({
@@ -99,7 +100,7 @@ vi.mock("@/hooks/useOpenDraft", () => ({ useOpenDraft: () => ({ openDraft: mockO
 vi.mock("@/hooks/useFolders", () => ({ useFolders: () => ({ data: { folders: [] } }) }));
 
 vi.mock("@/hooks/useCompose", () => ({
-  useListDrafts: () => ({ data: { drafts: [] } }),
+  useListDrafts: () => ({ data: mockDrafts }),
   useGetDraft: () => ({ data: null }),
   useDeleteDraft: () => ({ mutate: vi.fn() }),
 }));
@@ -348,4 +349,18 @@ it("never renders cached inbox rows under Drafts, including colliding UIDs", () 
   expect(screen.getByText("Unsent message")).toBeTruthy();
   expect(screen.getByText("Draft")).toBeTruthy();
   expect(screen.getByText("receiver@example.com")).toBeTruthy();
+});
+
+it("shows one editable row for an imported draft instead of both local and server copies", () => {
+  mockUiState.activeFolder = "Drafts";
+  mockUiState.effectiveAnimationMode = "off";
+  setMessages([7]);
+  mockUseMessages().data.pages[0].messages[0].folder = "Drafts";
+  mockDrafts.drafts = [{ id: "linked-draft", to: "team@example.com", subject: "Edited locally", updated_at: "2026-10-14T00:00:00Z", source_folder: "Drafts", source_uid: 7 }];
+  render(<MessageList />);
+  expect(screen.getByText("Edited locally")).toBeTruthy();
+  expect(screen.queryByText("Subject 7")).toBeNull();
+  fireEvent.click(screen.getByText("Edited locally"));
+  expect(mockOpenDraft).toHaveBeenCalledWith({ id: "linked-draft" });
+  mockDrafts.drafts = [];
 });
