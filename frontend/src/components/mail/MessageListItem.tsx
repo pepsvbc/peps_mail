@@ -118,7 +118,8 @@ export const MessageListItem = memo(function MessageListItem({
   useTranslation();
   const isUnread = !message.flags.includes("\\Seen");
   const isFlagged = message.flags.includes("\\Flagged");
-  const sender = message.from_name || message.from_address;
+  const isDraft = message.flags.split(",").includes("\\Draft");
+  const sender = isDraft ? (message.to_addresses || t("No recipient")) : (message.from_name || message.from_address);
   const formattedDate = formatDate(message.date);
   const formattedSize = formatSize(message.size);
   const updateFlags = useUpdateFlags();
@@ -246,6 +247,7 @@ export const MessageListItem = memo(function MessageListItem({
           )}
         </button>
 
+        {isDraft && <span className="shrink-0 text-xs font-medium text-primary">{t("Draft")}</span>}
         {/* Sender */}
         <span className={cn("w-32 shrink-0 truncate font-normal", isFlagged ? "text-primary" : "text-muted-foreground")}>{sender}</span>
 
@@ -323,6 +325,7 @@ export const MessageListItem = memo(function MessageListItem({
     >
       {/* Top row: sender + date + star */}
       <div className="flex items-center gap-2 pl-6">
+        {isDraft && <span className="shrink-0 text-xs font-medium text-primary">{t("Draft")}</span>}
         {/* Sender name */}
         <span className={cn("min-w-0 flex-1 truncate text-sm font-semibold", isFlagged ? "text-primary" : "text-foreground")}>{sender}</span>
 

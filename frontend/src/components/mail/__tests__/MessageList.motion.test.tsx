@@ -336,3 +336,16 @@ it("does not leave exiting inbox rows visible after switching to Drafts", () => 
   expect(screen.queryByText("Subject 1")).toBeNull();
   expect(screen.getByText("Subject 2")).toBeTruthy();
 });
+
+it("never renders cached inbox rows under Drafts, including colliding UIDs", () => {
+  mockUiState.activeFolder = "Drafts";
+  mockUiState.effectiveAnimationMode = "off";
+  setMessages([7]);
+  const page = mockUseMessages().data.pages[0];
+  page.messages.push({ ...buildMessage(7), folder: "Drafts", subject: "Unsent message", flags: "\\Draft,\\Seen" });
+  render(<MessageList />);
+  expect(screen.queryByText("Subject 7")).toBeNull();
+  expect(screen.getByText("Unsent message")).toBeTruthy();
+  expect(screen.getByText("Draft")).toBeTruthy();
+  expect(screen.getByText("receiver@example.com")).toBeTruthy();
+});

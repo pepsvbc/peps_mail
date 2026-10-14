@@ -1,5 +1,6 @@
 /** French translations for mail, composition, and message actions. */
 export const mailMessages: Record<string, string> = {
+  "Draft": "Brouillon",
   "Reading layout": "Disposition de lecture",
   "Hide the message list when opening an email, like Gmail": "Masquer la liste des messages à l’ouverture d’un e-mail, comme Gmail",
   "Split view": "Vue partagée",

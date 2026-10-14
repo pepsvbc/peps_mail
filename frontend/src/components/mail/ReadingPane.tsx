@@ -149,7 +149,7 @@ export function ReadingPane() {
       className="flex h-full w-full flex-col overflow-hidden"
     >
       {/* Header area */}
-      <div className="relative shrink-0 space-y-1 overflow-x-hidden border-b border-border p-4 pl-16">
+      <div className="relative shrink-0 space-y-1 overflow-x-hidden p-4 pb-6 pl-16">
         <div aria-hidden="true" className="absolute left-4 top-4 flex size-9 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
           {(data.from_name || data.from_address).split(/\s+/).map((word) => word[0]).slice(0, 2).join("").toUpperCase()}
         </div>
@@ -268,8 +268,10 @@ export function ReadingPane() {
         </div>
       </div>
 
-      <div className="shrink-0 border-b border-border px-4 py-1">
-        <MessageReplyActions />
+      <div className="relative z-10 mb-4 h-px shrink-0 bg-border">
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-background px-2">
+          <MessageReplyActions />
+        </div>
       </div>
 
       {/* Attachment bar */}
@@ -355,7 +357,7 @@ export function ReadingPane() {
           />
         )}
       </div>
-      <div className="shrink-0 border-t border-border px-4 py-3">
+      <div className="flex shrink-0 justify-center border-t border-border px-4 py-3">
         <MessageReplyActions labeled />
       </div>
     </div>

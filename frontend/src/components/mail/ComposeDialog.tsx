@@ -52,6 +52,7 @@ import {
   DiscardAlertDialog,
   AttachmentPreviewDialog,
 } from "./ComposeDialog/index";
+import { SelectField } from "@/components/ui/select";
 import { RecipientInput } from "./ComposeDialog/RecipientInput";
 import dynamic from "next/dynamic";
 
@@ -712,28 +713,26 @@ export function ComposeDialog() {
             <div className="flex flex-col border-b border-border">
               <div className="flex items-center border-b border-border/50 px-4">
                 <label htmlFor="compose-account" className="w-12 shrink-0 text-xs text-muted-foreground">{t("From")}</label>
-                <select
+                <SelectField
                   id="compose-account"
                   value={accountId ?? activeAccountId ?? ""}
                   disabled={switchingAccount || uploadMutation.isPending || saveDraftMutation.isPending || deleteMutation.isPending}
-                  onChange={(event) => composeAccount.mutate(event.target.value, {
+                  onValueChange={(value) => composeAccount.mutate(value, {
                     onError: () => toast.error(t("Could not switch sender account. Your message has been kept.")),
                   })}
-                  className="min-w-0 flex-1 bg-background py-2 text-sm text-foreground outline-none disabled:opacity-50"
-                >
-                  {accounts.map((account) => <option key={account.id} value={account.id}>{account.email}</option>)}
-                </select>
+                  options={accounts.map((account) => ({ value: account.id, label: account.email }))}
+                />
               </div>
               {identities && identities.length > 1 && (
                 <div className="flex items-center gap-2 border-b border-border/50 px-4">
                   <label htmlFor="compose-from" className="w-28 shrink-0 text-xs text-muted-foreground">
                     {t("Sender address")}
                   </label>
-                  <select
+                  <SelectField
                     id="compose-from"
-                    value={fromIdentityId ?? ""}
-                    onChange={(e) => {
-                      const newId = e.target.value ? Number(e.target.value) : null;
+                    value={fromIdentityId?.toString() ?? ""}
+                    onValueChange={(value) => {
+                      const newId = value ? Number(value) : null;
                       setFromIdentityId(newId);
                       // Swap signature when identity changes
                       if (identities && signatureEnabled) {
@@ -743,16 +742,11 @@ export function ComposeDialog() {
                         setField("body", replaceSignatureInBody(body, newSig));
                       }
                     }}
-                    className="min-w-0 flex-1 bg-background py-2 text-sm text-foreground outline-none disabled:opacity-100"
-                  >
-                    {identities?.map((identity) => (
-                      <option key={identity.id} value={identity.id}>
-                        {identity.display_name
-                          ? `${identity.display_name} <${identity.email}>`
-                          : identity.email}
-                      </option>
-                    ))}
-                  </select>
+                    options={identities.map((identity) => ({
+                      value: identity.id.toString(),
+                      label: identity.display_name ? `${identity.display_name} <${identity.email}>` : identity.email,
+                    }))}
+                  />
                 </div>
               )}
               <div className="flex items-center border-b border-border/50 px-4">

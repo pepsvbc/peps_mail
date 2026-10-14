@@ -64,6 +64,7 @@ describe("composer window controls", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    Element.prototype.scrollIntoView = vi.fn();
     identities.data = [];
     uploadAttachment.isPending = false;
     useUiStore.setState({ effectiveAnimationMode: "off" });
@@ -87,7 +88,7 @@ describe("composer window controls", () => {
 
   it("always shows the account address in From, including without saved identities", () => {
     render(<ComposeDialog />);
-    expect(screen.getByRole("combobox", { name: "From" })).toHaveDisplayValue("a@example.com");
+    expect(screen.getByRole("combobox", { name: "From" })).toHaveTextContent("a@example.com");
   });
 
   it("sends with the selected sender identity", () => {
@@ -96,7 +97,8 @@ describe("composer window controls", () => {
       { id: 2, email: "club@example.com", display_name: "Club", signature_html: "", is_default: false, created_at: "", updated_at: "" },
     ];
     render(<ComposeDialog />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Sender address" }), { target: { value: "2" } });
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Sender address" }), { key: "ArrowDown" });
+    fireEvent.click(screen.getByRole("option", { name: "Club <club@example.com>" }));
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     act(() => { vi.advanceTimersByTime(5000); });
     expect(sendMessage.mutate).toHaveBeenCalledWith(expect.objectContaining({ fromIdentityId: 2 }), expect.any(Object));
@@ -104,9 +106,10 @@ describe("composer window controls", () => {
 
   it("offers all logged-in accounts in From", () => {
     render(<ComposeDialog />);
-    fireEvent.change(screen.getByRole("combobox", { name: "From" }), { target: { value: "account-b" } });
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "From" }), { key: "ArrowDown" });
+    fireEvent.click(screen.getByRole("option", { name: "b@example.com" }));
     expect(switchAccount.mutate).toHaveBeenCalledWith("account-b", expect.any(Object));
-    expect(screen.getByRole("option", { name: "b@example.com" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "From" })).toBeInTheDocument();
   });
 
   it("opens the file picker and adds the uploaded attachment", () => {

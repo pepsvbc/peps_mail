@@ -118,6 +118,7 @@ function DraftItems() {
           {/* Top row: "Draft" label + date + delete */}
           <div className="flex items-center gap-2">
             <PenLine className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="shrink-0 text-xs font-medium text-primary">{t("Draft")}</span>
             <span className="min-w-0 flex-1 truncate text-xs font-normal text-muted-foreground">
               {draft.to || t("No recipient")}
             </span>
@@ -203,7 +204,8 @@ export function MessageList() {
   const isFetchingNextPage = isTagView ? false : folderQuery.isFetchingNextPage;
 
   // Flatten all pages into a single array of messages.
-  const folderMessages = data?.pages.flatMap((page) => page.messages) ?? [];
+  // Never render a row from another folder, even if a stale response is cached.
+  const folderMessages = data?.pages.flatMap((page) => page.messages).filter((message) => message.folder === activeFolder) ?? [];
   const tagMessages = isTagView ? (tagQuery.data?.messages ?? []) : [];
   const allMessages = isTagView ? tagMessages : folderMessages;
   const messages = unreadOnly && !showDrafts ? allMessages.filter((message) => !message.flags.includes("\\Seen")) : allMessages;

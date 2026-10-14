@@ -65,3 +65,10 @@ it("returns to the message list without clearing the current search or folder", 
   fireEvent.click(screen.getByRole("button", { name: "Back to messages" }));
   expect(useUiStore.getState()).toMatchObject({ selectedMessageUid: null, activeFolder: "INBOX", searchActive: true, searchQuery: "from:coach" });
 });
+
+it("keeps reply actions out of the top toolbar", () => {
+  render(<MessageActionBar showBack />);
+  expect(screen.queryByRole("button", { name: "Reply" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Reply all" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Forward" })).toBeNull();
+});

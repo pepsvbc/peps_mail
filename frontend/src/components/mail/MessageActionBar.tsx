@@ -28,7 +28,6 @@ import {
 import { MoveToFolderMenu } from "./MoveToFolderMenu";
 import { TagPicker } from "./TagPicker";
 import { Button } from "@/components/ui/button";
-import { MessageReplyActions } from "./MessageReplyActions";
 import { createFadeSlideVariants, createScaleFadeVariants } from "@/lib/motion/variants";
 import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
 
@@ -124,8 +123,6 @@ export function MessageActionBar({ showBack = false }: { showBack?: boolean }) {
         onClick={() => useUiStore.getState().selectMessage(null)}>
         <ArrowLeft className="size-4" />
       </Button>
-      <MessageReplyActions />
-      <div className="mx-0.5 h-5 w-px shrink-0 bg-border" />
 
       {/* Delete */}
       <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled={disabled} title={t("Delete")} onClick={handleDelete}>
