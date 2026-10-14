@@ -342,7 +342,7 @@ it("never renders cached inbox rows under Drafts, including colliding UIDs", () 
   mockUiState.effectiveAnimationMode = "off";
   setMessages([7]);
   const page = mockUseMessages().data.pages[0];
-  page.messages.push({ ...buildMessage(7), folder: "Drafts", subject: "Unsent message", flags: "\\Draft,\\Seen" });
+  page.messages.push({ ...buildMessage(7), folder: "Drafts", subject: "Unsent message", flags: "\\Draft,\\Seen", to_addresses: JSON.stringify([{ name: null, address: "receiver@example.com" }]) });
   render(<MessageList />);
   expect(screen.queryByText("Subject 7")).toBeNull();
   expect(screen.getByText("Unsent message")).toBeTruthy();

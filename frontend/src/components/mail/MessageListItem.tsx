@@ -12,7 +12,20 @@ import { useUpdateFlags } from "@/hooks/useMessages";
 import { createScaleFadeVariants } from "@/lib/motion/variants";
 import type { AnimationMode } from "@/lib/motion/config";
 import type { MessageTag } from "@/types/tag";
-import type { MessageHeader } from "@/types/message";
+import type { EmailAddress, MessageHeader } from "@/types/message";
+
+function formatDraftRecipients(value: string): string {
+  // Server headers store recipients as JSON; older cached rows may use plain text.
+  try {
+    const addresses: EmailAddress[] = JSON.parse(value);
+    if (Array.isArray(addresses)) {
+      return addresses.map((address) => address.name || address.address).filter(Boolean).join(", ") || t("No recipient");
+    }
+  } catch {
+    // Keep legacy address strings readable.
+  }
+  return value || t("No recipient");
+}
 
 function TagDots({ tags }: { tags: MessageTag[] | undefined }) {
   useTranslation();
@@ -119,7 +132,7 @@ export const MessageListItem = memo(function MessageListItem({
   const isUnread = !message.flags.includes("\\Seen");
   const isFlagged = message.flags.includes("\\Flagged");
   const isDraft = message.flags.split(",").includes("\\Draft");
-  const sender = isDraft ? (message.to_addresses || t("No recipient")) : (message.from_name || message.from_address);
+  const sender = isDraft ? formatDraftRecipients(message.to_addresses) : (message.from_name || message.from_address);
   const formattedDate = formatDate(message.date);
   const formattedSize = formatSize(message.size);
   const updateFlags = useUpdateFlags();
