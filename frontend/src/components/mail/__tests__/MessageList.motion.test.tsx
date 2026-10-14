@@ -2,6 +2,8 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Children, isValidElement, type Key, type ReactNode } from "react";
 
+vi.mock("@/hooks/useMessagePreviews", () => ({ useMessagePreviews: () => ({}) }));
+
 vi.mock("framer-motion", async () => {
   const React = await import("react");
   const { useRef, useEffect, useState } = React;
@@ -57,6 +59,7 @@ const { mockUiState, mockUseMessages, mockOpenDraft, mockDrafts } = vi.hoisted((
     bulkSelectMode: false,
     keyboardNav: false,
     readingPaneVisible: true,
+    hideMessageList: false,
     effectiveAnimationMode: "medium" as "rich" | "medium" | "subtle" | "off",
     selectMessage: vi.fn(),
     toggleBulkSelect: vi.fn(),
@@ -173,6 +176,7 @@ describe("MessageList and MessageListItem motion transitions", () => {
   beforeEach(() => {
     mockUiState.unreadOnly = false;
     mockUiState.density = "comfortable";
+    mockUiState.hideMessageList = false;
     mockUiState.activeFolder = "INBOX";
     mockOpenDraft.mockClear();
     mockUiState.selectMessage.mockClear();
@@ -197,6 +201,19 @@ describe("MessageList and MessageListItem motion transitions", () => {
     expect(screen.getByText("Sender 1")).toBeTruthy();
     expect(screen.getByText("Subject 1")).toBeTruthy();
     expect(screen.queryByText("Snippet")).toBeNull();
+  });
+
+  it.each(["compact", "standard", "comfortable"] as const)("shows sender, subject and preview in full-width mode with %s density", (density) => {
+    mockUiState.density = density;
+    mockUiState.hideMessageList = true;
+    mockUiState.effectiveAnimationMode = "off";
+    setMessages([1]);
+    render(<MessageList />);
+    expect(screen.getByText("Sender 1")).toBeTruthy();
+    expect(screen.getByText("Subject 1")).toBeTruthy();
+    expect(screen.getByText("Snippet")).toBeTruthy();
+    fireEvent.click(screen.getByText("Snippet"));
+    expect(mockUiState.selectMessage).toHaveBeenCalledWith(1);
   });
 
   it("filters read messages from the unread list", () => {

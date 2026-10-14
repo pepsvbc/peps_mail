@@ -57,6 +57,16 @@ pub trait ImapClient: Send + Sync {
         uid_range: &str,
     ) -> Result<Vec<ImapMessageHeader>, ImapError>;
 
+    /// Fetch bounded text previews without marking messages read.
+    async fn fetch_previews(
+        &self,
+        _creds: &ImapCredentials,
+        _folder: &str,
+        _uids: &[u32],
+    ) -> Result<Vec<(u32, String)>, ImapError> {
+        Ok(Vec::new())
+    }
+
     /// Fetch the full body of a single message by UID.
     async fn fetch_body(
         &self,
@@ -206,6 +216,14 @@ pub struct RealImapClient;
 
 #[async_trait]
 impl ImapClient for RealImapClient {
+    async fn fetch_previews(
+        &self,
+        creds: &ImapCredentials,
+        folder: &str,
+        uids: &[u32],
+    ) -> Result<Vec<(u32, String)>, ImapError> {
+        super::previews::fetch(creds, folder, uids).await
+    }
     async fn folder_unread_count(
         &self,
         creds: &ImapCredentials,

@@ -6,6 +6,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 
 pub mod types;
+pub mod previews;
 use types::*;
 
 use crate::auth::session::SessionState;

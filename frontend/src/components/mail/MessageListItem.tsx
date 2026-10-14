@@ -48,6 +48,8 @@ interface MessageListItemProps {
   message: MessageHeader;
   isSelected: boolean;
   density: MailDensity;
+  fullWidth?: boolean;
+  preview?: string;
   onClick: (e: React.MouseEvent) => void;
   bulkSelectMode: boolean;
   isBulkSelected: boolean;
@@ -121,6 +123,8 @@ export const MessageListItem = memo(function MessageListItem({
   message,
   isSelected,
   density,
+  fullWidth = false,
+  preview = message.snippet,
   onClick,
   bulkSelectMode,
   isBulkSelected,
@@ -185,7 +189,7 @@ export const MessageListItem = memo(function MessageListItem({
     setIsDragging(false);
   }, []);
 
-  if (density === "compact") {
+  if (density === "compact" || fullWidth) {
     const compactRow = (
       <div
         role="row"
@@ -204,7 +208,8 @@ export const MessageListItem = memo(function MessageListItem({
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         className={cn(
-          "flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-border px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors",
+          "flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors",
+          density === "compact" ? "h-9" : density === "standard" ? "h-16" : "h-[88px]",
           !suppressHover && "hover:bg-muted",
           isUnread ? "bg-background font-semibold" : "bg-transparent font-normal",
           isSelected && "border-primary/30 bg-muted hover:bg-muted",
@@ -262,13 +267,29 @@ export const MessageListItem = memo(function MessageListItem({
 
         {isDraft && <span className="shrink-0 text-xs font-medium text-primary">{t("Draft")}</span>}
         {/* Sender */}
-        <span className={cn("w-32 shrink-0 truncate font-normal", isFlagged ? "text-primary" : "text-muted-foreground")}>{sender}</span>
+        <span title={sender} className={cn(
+          "shrink-0 truncate",
+          fullWidth ? "w-24 sm:w-40 lg:w-52" : "w-32",
+          fullWidth && isUnread ? "font-semibold" : "font-normal",
+          isFlagged ? "text-primary" : fullWidth ? "text-foreground" : "text-muted-foreground",
+        )}>{sender}</span>
 
         {/* Dash separator */}
         <span className="shrink-0 text-muted-foreground">&mdash;</span>
 
         {/* Subject */}
-        <span className={cn("min-w-0 flex-1 truncate", isFlagged && "text-primary")}>{message.subject || t("(no subject)")}</span>
+        <span className="flex min-w-0 flex-1 items-baseline gap-2">
+          <span title={message.subject || t("(no subject)")} className={cn(
+            "min-w-0 truncate",
+            fullWidth && preview ? "max-w-[55%] shrink-0" : "flex-1",
+            isFlagged && "text-primary",
+          )}>{message.subject || t("(no subject)")}</span>
+          {fullWidth && preview && (
+            <span className="min-w-0 flex-1 truncate font-normal text-muted-foreground">
+              <span aria-hidden="true">— </span>{preview}
+            </span>
+          )}
+        </span>
 
         {/* Tag color dots */}
         <TagDots tags={message.tags} />

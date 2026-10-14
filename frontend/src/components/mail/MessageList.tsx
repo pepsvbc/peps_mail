@@ -12,6 +12,7 @@ import { AnimatePresence } from "framer-motion";
 import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
 import { PenLine, X, PanelRight, Inbox } from "lucide-react";
 import { useMessages } from "@/hooks/useMessages";
+import { useMessagePreviews } from "@/hooks/useMessagePreviews";
 import { useTagMessages } from "@/hooks/useTags";
 import { useListDrafts, useDeleteDraft } from "@/hooks/useCompose";
 import { createFadeSlideVariants, type MotionVariants } from "@/lib/motion/variants";
@@ -177,6 +178,7 @@ export function MessageList() {
   const unreadOnly = useUiStore((s) => s.unreadOnly);
   const activeTagId = useUiStore((s) => s.activeTagId);
   const density = useUiStore((s) => s.density);
+  const fullWidth = useUiStore((s) => s.hideMessageList);
   const selectedMessageUid = useUiStore((s) => s.selectedMessageUid);
   const selectMessage = useUiStore((s) => s.selectMessage);
   const { data: folders } = useFolders();
@@ -215,6 +217,7 @@ export function MessageList() {
   ) ?? [];
   const tagMessages = isTagView ? (tagQuery.data?.messages ?? []) : [];
   const allMessages = isTagView ? tagMessages : folderMessages;
+  const previews = useMessagePreviews(activeFolder, allMessages, fullWidth);
   const messages = unreadOnly && !showDrafts ? allMessages.filter((message) => !message.flags.includes("\\Seen")) : allMessages;
   const totalCount = isTagView
     ? (tagQuery.data?.total_count ?? 0)
@@ -489,6 +492,8 @@ export function MessageList() {
                         message={message}
                         isSelected={selectedMessageUid === message.uid}
                         density={density}
+                        fullWidth={fullWidth}
+                        preview={previews[message.uid] || message.snippet}
                         onClick={(e) => handleClick(message.uid, e)}
                         bulkSelectMode={bulkSelectMode}
                         isBulkSelected={selectedMessageUids.includes(message.uid)}

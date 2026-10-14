@@ -152,6 +152,7 @@ pub fn create_router(
             patch(folder_mgmt::subscribe_folder),
         )
         .route("/folders/{folder}/messages", get(messages::list_messages))
+        .route("/folders/{folder}/previews", get(messages::previews::get_previews))
         .route("/messages/{folder}/{uid}", get(messages::get_message))
         .route(
             "/messages/{folder}/{uid}/flags",
