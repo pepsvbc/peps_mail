@@ -92,6 +92,7 @@ describe("composer window controls", () => {
   it("keeps the editor open when saving on close fails", () => {
     saveDraft.mutate.mockImplementation((_data, callbacks) => callbacks?.onError?.(new Error("Offline")));
     render(<ComposeDialog />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Message body" }), { target: { value: "Edited" } });
     fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
     expect(useComposeStore.getState()).toMatchObject({ isOpen: true, draftId: "club-news-draft", subject: "Club news" });
   });
@@ -99,6 +100,7 @@ describe("composer window controls", () => {
   it("keeps edits made while a save-and-close is pending", () => {
     saveDraft.mutate.mockImplementation(() => {});
     render(<ComposeDialog />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Message body" }), { target: { value: "First edit" } });
     fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Message body" }), {
       target: { value: "New edits during save" },
@@ -339,7 +341,26 @@ describe("composer window controls", () => {
     expect(screen.getByRole("button", { name: "Minimize composer" })).toBeVisible();
   });
 
-  it("continues autosaving edits while minimized and explicitly saves on close", () => {
+  it("closes an unchanged existing draft without saving another server copy", () => {
+    render(<ComposeDialog />);
+    fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
+    expect(saveDraft.mutate).not.toHaveBeenCalled();
+    expect(useComposeStore.getState().isOpen).toBe(false);
+  });
+
+  it("still saves a new compose whose draft ID was allocated for attachments", () => {
+    useComposeStore.getState().reset();
+    useComposeStore.getState().openCompose();
+    useComposeStore.getState().setField("body", "New message");
+    render(<ComposeDialog />);
+    act(() => useComposeStore.getState().setDraftId("attachment-draft"));
+    fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
+    expect(saveDraft.mutate).toHaveBeenCalledWith(expect.objectContaining({
+      id: "attachment-draft", htmlBody: "New message",
+    }), expect.any(Object));
+  });
+
+  it("continues autosaving edits while minimized and does not save again on close", () => {
     render(<ComposeDialog />);
     fireEvent.change(screen.getByRole("textbox", { name: "Message body" }), {
       target: { value: "<p>Updated training time.</p>" },
@@ -353,7 +374,7 @@ describe("composer window controls", () => {
     expect(useComposeStore.getState().isOpen).toBe(true);
 
     fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
-    expect(saveDraft.mutate).toHaveBeenCalledTimes(2);
+    expect(saveDraft.mutate).toHaveBeenCalledTimes(1);
     expect(useComposeStore.getState().isOpen).toBe(false);
     expect(sendMessage.mutate).not.toHaveBeenCalled();
   });

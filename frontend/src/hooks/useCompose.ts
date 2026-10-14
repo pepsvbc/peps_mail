@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiPost, apiGet, apiPostFormData, apiDelete } from "@/lib/api";
+import { useComposeStore } from "@/stores/useComposeStore";
 
 interface SendParams {
   to: string;
@@ -200,7 +201,9 @@ export function useDeleteDraft() {
     scope: { id: "draft-lifecycle" },
     mutationFn: (id: string) =>
       apiDelete<{ status: string }>(`/drafts/${id}`),
-    onSuccess: () => {
+    onSuccess: (_result, id) => {
+      const compose = useComposeStore.getState();
+      if (compose.draftId === id) compose.reset();
       queryClient.invalidateQueries({ queryKey: ["drafts"] });
       queryClient.invalidateQueries({ queryKey: ["messages"] });
       queryClient.invalidateQueries({ queryKey: ["folders"] });

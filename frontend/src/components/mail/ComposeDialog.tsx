@@ -116,6 +116,7 @@ export function ComposeDialog() {
   const toInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastSavedHashRef = useRef<string>("");
+  const lastSavedDraftIdRef = useRef<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const restoreButtonRef = useRef<HTMLButtonElement>(null);
   const activeAccountId = useAuthStore((s) => s.activeAccountId);
@@ -216,6 +217,7 @@ export function ComposeDialog() {
             const current = useComposeStore.getState();
             if (current.draftId !== currentDraftId || !isCurrentAccount()) return;
             lastSavedHashRef.current = hash;
+            lastSavedDraftIdRef.current = currentDraftId;
             setDraftSaved(true);
             setTimeout(() => setDraftSaved(false), 3000);
             toast.success(t("Draft saved"));
@@ -257,6 +259,7 @@ export function ComposeDialog() {
   useEffect(() => {
     if (isOpen) {
       lastSavedHashRef.current = computeHash();
+      lastSavedDraftIdRef.current = draftId;
     }
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -376,12 +379,14 @@ export function ComposeDialog() {
       toast.error(t("Switch back to this draft's account before saving or closing it."));
       return;
     }
-    if (hasContent()) {
+    if (draftId && draftId === lastSavedDraftIdRef.current && computeHash() === lastSavedHashRef.current) {
+      closeCompose();
+    } else if (hasContent()) {
       saveDraft(true, closeCompose);
     } else {
       closeCompose();
     }
-  }, [hasContent, saveDraft, closeCompose, isCurrentAccount]);
+  }, [draftId, computeHash, hasContent, saveDraft, closeCompose, isCurrentAccount]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

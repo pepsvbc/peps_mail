@@ -1,4 +1,6 @@
+use async_imap::imap_proto::{Response, ResponseCode, Status, UidSetMember};
 use futures::StreamExt;
+use tokio::io::AsyncWriteExt;
 
 use super::{
     connection::{connect, map_imap_error},
@@ -47,16 +49,18 @@ pub(crate) async fn sync(
         ));
     }
     let uid = if let Some(content) = &request.content {
-        session
-            .append(&request.folder, Some("(\\Draft \\Seen)"), None, content)
-            .await
-            .map_err(map_imap_error)?;
-        let found = session.uid_search(&query).await.map_err(map_imap_error)?;
-        Some(found.difference(&old).copied().max().ok_or_else(|| {
-            ImapError::ProtocolError(
-                "Saved draft could not be located; original draft was retained".into(),
-            )
-        })?)
+        let appended = append_with_uid(&mut session, &request.folder, content, validity).await?;
+        Some(match appended {
+            Some(uid) => uid,
+            None => {
+                let found = session.uid_search(&query).await.map_err(map_imap_error)?;
+                found.difference(&old).copied().max().ok_or_else(|| {
+                    ImapError::ProtocolError(
+                        "Saved draft could not be located; original draft was retained".into(),
+                    )
+                })?
+            }
+        })
     } else {
         None
     };
@@ -87,6 +91,81 @@ pub(crate) async fn sync(
     })
 }
 
+/// async-imap's APPEND helper discards APPENDUID. Read the tagged completion
+/// ourselves so locating a successful save never depends on search indexing.
+async fn append_with_uid(
+    session: &mut async_imap::Session<super::connection::ImapStream>,
+    folder: &str,
+    content: &[u8],
+    validity: u32,
+) -> Result<Option<u32>, ImapError> {
+    if folder.contains(['\r', '\n', '\0']) {
+        return Err(ImapError::ProtocolError("Invalid draft folder".into()));
+    }
+    let folder = folder.replace('\\', "\\\\").replace('"', "\\\"");
+    let tag = session
+        .run_command(format!(
+            "APPEND \"{folder}\" (\\Draft \\Seen) {{{}}}",
+            content.len()
+        ))
+        .await
+        .map_err(map_imap_error)?;
+    let mut sent = false;
+    while let Some(response) = session.read_response().await {
+        let response = response.map_err(|e| ImapError::ConnectionFailed(e.to_string()))?;
+        match response.parsed() {
+            Response::Continue { .. } if !sent => {
+                let stream = session.as_mut();
+                stream
+                    .write_all(content)
+                    .await
+                    .map_err(|e| ImapError::ConnectionFailed(e.to_string()))?;
+                stream
+                    .write_all(b"\r\n")
+                    .await
+                    .map_err(|e| ImapError::ConnectionFailed(e.to_string()))?;
+                stream
+                    .flush()
+                    .await
+                    .map_err(|e| ImapError::ConnectionFailed(e.to_string()))?;
+                sent = true;
+            }
+            Response::Done {
+                tag: response_tag,
+                status,
+                code,
+                ..
+            } if response_tag == &tag => {
+                if *status != Status::Ok || !sent {
+                    return Err(ImapError::ProtocolError(
+                        "Server rejected draft APPEND".into(),
+                    ));
+                }
+                return match code {
+                    Some(ResponseCode::AppendUid(epoch, uids)) if *epoch == validity => {
+                        match uids.as_slice() {
+                            [UidSetMember::Uid(uid)] if *uid > 0 => Ok(Some(*uid)),
+                            _ => Err(ImapError::ProtocolError("Invalid draft APPENDUID".into())),
+                        }
+                    }
+                    Some(ResponseCode::AppendUid(..)) => Err(ImapError::ProtocolError(
+                        "Draft mailbox changed during APPEND; original retained".into(),
+                    )),
+                    _ => Ok(None),
+                };
+            }
+            Response::Data {
+                status: Status::Bye,
+                ..
+            } => break,
+            _ => {}
+        }
+    }
+    Err(ImapError::ConnectionFailed(
+        "Connection lost during draft APPEND".into(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,6 +183,7 @@ mod tests {
         drafts: HashSet<u32>,
         next_uid: u32,
         commands: Vec<String>,
+        search_empty: bool,
     }
 
     async fn server(
@@ -120,6 +200,7 @@ mod tests {
             drafts: HashSet::from([7]),
             next_uid: 8,
             commands: Vec::new(),
+            search_empty: false,
         }));
         let shared = state.clone();
         let task = tokio::spawn(async move {
@@ -151,11 +232,11 @@ mod tests {
                                 if uidplus { "UIDPLUS" } else { "" }
                             )
                         } else if command.starts_with("UID SEARCH ") {
-                            let ids = state
-                                .lock()
-                                .unwrap()
+                            let mailbox = state.lock().unwrap();
+                            let ids = mailbox
                                 .drafts
                                 .iter()
+                                .filter(|_| !mailbox.search_empty)
                                 .map(u32::to_string)
                                 .collect::<Vec<_>>()
                                 .join(" ");
@@ -180,7 +261,7 @@ mod tests {
                                 let uid = mailbox.next_uid;
                                 mailbox.next_uid += 1;
                                 mailbox.drafts.insert(uid);
-                                format!("{tag} OK [APPENDUID 42 {uid}] Appended\r\n")
+                                format!("* 3 EXISTS\r\n{tag} OK [APPENDUID 42 {uid}] Appended\r\n")
                             }
                         } else if command.starts_with("UID STORE ") {
                             format!("{tag} OK Stored\r\n")
@@ -248,6 +329,23 @@ mod tests {
         assert!(mailbox.commands.iter().any(|c| c == "UID EXPUNGE 7"));
         assert!(mailbox.commands.iter().any(|c| c == "UID EXPUNGE 8"));
         assert!(!mailbox.commands.iter().any(|c| c == "EXPUNGE"));
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn saves_and_deletes_using_appenduid_when_search_cannot_find_saved_messages() {
+        let (creds, state, task) = server(true, false).await;
+        state.lock().unwrap().search_empty = true;
+        let mut request = request(true);
+        for expected in [8, 9] {
+            let result = sync(&creds, &request).await.unwrap();
+            assert_eq!(result.uid, Some(expected));
+            assert_eq!(state.lock().unwrap().drafts, HashSet::from([expected]));
+            request.uid = result.uid;
+        }
+        request.content = None;
+        sync(&creds, &request).await.unwrap();
+        assert!(state.lock().unwrap().drafts.is_empty());
         task.abort();
     }
 

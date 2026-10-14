@@ -266,15 +266,15 @@ pub async fn delete_draft_handler(
 ) -> Result<Response, AppError> {
     validate_draft_id(&id)?;
     let _guard = super::draft_sync::lock(&session.user_hash, &id).await;
-    super::draft_sync::sync(&session, &config, imap.as_ref(), &id, None).await?;
-
     let conn = db::pool::open_user_db(&config.data_dir, &session.user_hash)
         .map_err(|e| AppError::InternalError(format!("Failed to open database: {e}")))?;
-
-    let deleted = db::drafts::delete_draft(&conn, &id).map_err(AppError::InternalError)?;
-
-    if !deleted {
-        return Err(AppError::NotFound("Draft not found".to_string()));
+    // A draft deleted from the list or another window is already discarded.
+    if db::drafts::get_draft(&conn, &id)
+        .map_err(AppError::InternalError)?
+        .is_some()
+    {
+        super::draft_sync::sync(&session, &config, imap.as_ref(), &id, None).await?;
+        db::drafts::delete_draft(&conn, &id).map_err(AppError::InternalError)?;
     }
 
     // Clean up attachment files from disk.

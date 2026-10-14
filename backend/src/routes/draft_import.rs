@@ -377,6 +377,15 @@ mod tests {
         );
         let conn = db::pool::open_user_db(&config.data_dir, "alice").unwrap();
         assert!(db::drafts::get_draft(&conn, id).unwrap().is_none());
+        // Discard from a stale open composer must also succeed after list deletion.
+        super::super::drafts::delete_draft_handler(
+            Extension(session()),
+            Extension(config.clone()),
+            Extension(imap.clone()),
+            AxumPath(id.to_string()),
+        )
+        .await
+        .unwrap();
         // A delayed save cannot resurrect the discarded draft.
         assert!(
             super::super::drafts::upsert_draft_handler(
