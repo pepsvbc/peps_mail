@@ -13,12 +13,14 @@ interface DiscardAlertDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
+  onKeep?: () => void;
 }
 
 export function DiscardAlertDialog({
   open,
   onOpenChange,
   onConfirm,
+  onKeep,
 }: DiscardAlertDialogProps) {
   useTranslation();
   const effectiveAnimationMode = useUiStore((s) => s.effectiveAnimationMode);
@@ -51,12 +53,12 @@ export function DiscardAlertDialog({
                   className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-background p-6 shadow-2xl"
                 >
                   <AlertDialog.Title className="text-base font-semibold">
-                    {t("Are you sure?")}
+                    {t(onKeep ? "Keep this message as a draft?" : "Are you sure?")}
                   </AlertDialog.Title>
                   <AlertDialog.Description className="mt-2 text-sm text-muted-foreground">
-                    {t("The message has not been sent and has unsaved changes. Do you want to discard your changes?")}
+                    {t(onKeep ? "Keep your message to finish later, or discard it." : "The message has not been sent and has unsaved changes. Do you want to discard your changes?")}
                   </AlertDialog.Description>
-                  <div className="mt-6 flex justify-end gap-3">
+                  <div className="mt-6 flex flex-wrap justify-end gap-3">
                     <AlertDialog.Cancel asChild>
                       <button className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
                         {t("Cancel")}
@@ -70,6 +72,13 @@ export function DiscardAlertDialog({
                         {t("Discard")}
                       </button>
                     </AlertDialog.Action>
+                    {onKeep && (
+                      <AlertDialog.Action asChild>
+                        <button onClick={onKeep} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+                          {t("Keep draft")}
+                        </button>
+                      </AlertDialog.Action>
+                    )}
                   </div>
                 </AnimatedDiv>
               </AlertDialog.Content>

@@ -210,6 +210,10 @@ describe("composer window controls", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
 
+    expect(screen.getByRole("alertdialog")).toBeVisible();
+    expect(saveDraft.mutate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Keep draft" }));
+
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(useComposeStore.getState().isOpen).toBe(false);
     expect(saveDraft.mutate).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
@@ -219,7 +223,7 @@ describe("composer window controls", () => {
     expect(sendMessage.mutate).not.toHaveBeenCalled();
   });
 
-  it("saves and closes a signature-only message without randomUUID", () => {
+  it("does not autosave or keep an untouched signature-only message", () => {
     vi.stubGlobal("crypto", {
       getRandomValues: crypto.getRandomValues.bind(crypto),
     });
@@ -227,7 +231,7 @@ describe("composer window controls", () => {
       id: 1,
       display_name: "Coach",
       email: "coach@example.com",
-      signature_html: "<p>Coach</p>",
+      signature_html: "<div>Coach</div><div>Club</div>",
       is_default: true,
       created_at: "2026-10-13T00:00:00Z",
       updated_at: "2026-10-13T00:00:00Z",
@@ -237,14 +241,13 @@ describe("composer window controls", () => {
     render(<ComposeDialog />);
     const signatureBody = useComposeStore.getState().body;
     expect(signatureBody).toContain(identities.data[0].signature_html);
+    act(() => { vi.advanceTimersByTime(30000); });
 
     fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
 
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(useComposeStore.getState().isOpen).toBe(false);
-    expect(saveDraft.mutate).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-      htmlBody: signatureBody,
-    }), expect.any(Object));
+    expect(saveDraft.mutate).not.toHaveBeenCalled();
   });
 
   it("does not add another signature when reopening a saved draft", () => {
@@ -361,13 +364,70 @@ describe("composer window controls", () => {
   it("still saves a new compose whose draft ID was allocated for attachments", () => {
     useComposeStore.getState().reset();
     useComposeStore.getState().openCompose();
-    useComposeStore.getState().setField("body", "New message");
     render(<ComposeDialog />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Message body" }), { target: { value: "New message" } });
     act(() => useComposeStore.getState().setDraftId("attachment-draft"));
     fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Keep draft" }));
     expect(saveDraft.mutate).toHaveBeenCalledWith(expect.objectContaining({
       id: "attachment-draft", htmlBody: "New message",
     }), expect.any(Object));
+  });
+
+  it("offers cancel and discard for a newly typed message", () => {
+    useComposeStore.getState().reset();
+    useComposeStore.getState().openCompose();
+    render(<ComposeDialog />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Message body" }), { target: { value: "My message" } });
+    fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(useComposeStore.getState()).toMatchObject({ isOpen: true, body: "My message" });
+    expect(saveDraft.mutate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(useComposeStore.getState()).toMatchObject({ isOpen: false, body: "", draftId: null });
+    expect(saveDraft.mutate).not.toHaveBeenCalled();
+  });
+
+  it("offers to keep an attachment-only new message", () => {
+    useComposeStore.getState().reset();
+    useComposeStore.getState().openCompose();
+    render(<ComposeDialog />);
+    act(() => {
+      useComposeStore.getState().setDraftId("attachment-only");
+      useComposeStore.getState().addAttachments([{ id: "file", filename: "notes.txt", contentType: "text/plain", size: 12 }]);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Keep draft" }));
+    expect(saveDraft.mutate).toHaveBeenCalledWith(expect.objectContaining({ id: "attachment-only" }), expect.any(Object));
+    expect(useComposeStore.getState().isOpen).toBe(false);
+  });
+
+  it("discards an already autosaved new message when requested on close", () => {
+    useComposeStore.getState().reset();
+    useComposeStore.getState().openCompose();
+    render(<ComposeDialog />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Message body" }), { target: { value: "Autosaved message" } });
+    act(() => { vi.advanceTimersByTime(30000); });
+    const id = useComposeStore.getState().draftId;
+    fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(deleteDraft.mutate).toHaveBeenCalledWith(id, expect.any(Object));
+    expect(useComposeStore.getState().isOpen).toBe(false);
+  });
+
+  it("does not save an untouched reply containing recipients and quoted text", () => {
+    useComposeStore.getState().reset();
+    useComposeStore.getState().openReply({
+      to: "sender@example.com", cc: "", subject: "Re: Hello",
+      body: "<p></p><blockquote>Original message</blockquote>", inReplyTo: "<original@example.com>", references: null,
+    });
+    render(<ComposeDialog />);
+    act(() => { vi.advanceTimersByTime(60000); });
+    fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
+    expect(saveDraft.mutate).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(useComposeStore.getState().isOpen).toBe(false);
   });
 
   it("continues autosaving edits while minimized and does not save again on close", () => {

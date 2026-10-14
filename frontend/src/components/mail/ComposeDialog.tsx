@@ -108,6 +108,7 @@ export function ComposeDialog() {
   const { data: identities } = useIdentities();
   const [draftSaved, setDraftSaved] = useState(false);
   const [showDiscardAlert, setShowDiscardAlert] = useState(false);
+  const [showCloseAlert, setShowCloseAlert] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [position, setPosition] = useState<"left" | "right">("right");
   const [previewAttId, setPreviewAttId] = useState<string | null>(null);
@@ -117,6 +118,8 @@ export function ComposeDialog() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastSavedHashRef = useRef<string>("");
   const lastSavedDraftIdRef = useRef<string | null>(null);
+  const openedExistingDraftRef = useRef(false);
+  const initialContentRef = useRef("");
   const contentRef = useRef<HTMLDivElement>(null);
   const restoreButtonRef = useRef<HTMLButtonElement>(null);
   const activeAccountId = useAuthStore((s) => s.activeAccountId);
@@ -178,10 +181,22 @@ export function ComposeDialog() {
     return `${to}|${cc}|${bcc}|${subject}|${body}`;
   }, [to, cc, bcc, subject, body]);
 
+  // Signatures and prefilled reply/forward content are not user edits.
+  const contentSnapshot = useCallback(() => {
+    const document = new DOMParser().parseFromString(body, "text/html");
+    document.querySelectorAll('[data-signature="true"], .email-signature').forEach((signature) => signature.remove());
+    return JSON.stringify([
+      to, cc, bcc, subject, (isHtml ? document.body.textContent ?? "" : body).trim(),
+      isHtml ? Array.from(document.images, (image) => image.getAttribute("src")) : [],
+      attachments.map((attachment) => attachment.id),
+    ]);
+  }, [to, cc, bcc, subject, body, isHtml, attachments]);
+
   // Save draft function. When force=true, skip the hash guard (used for explicit save/close).
   const saveDraft = useCallback(
     (force = false, onSaved?: () => void) => {
       if (!isCurrentAccount() || deleteDraftMutation.isPending) return;
+      if (!force && !openedExistingDraftRef.current && contentSnapshot() === initialContentRef.current) return;
       const hash = computeHash();
       // Don't save if nothing changed (unless forced) or compose is empty
       if (!force && hash === lastSavedHashRef.current) return;
@@ -190,7 +205,8 @@ export function ComposeDialog() {
         !cc.trim() &&
         !bcc.trim() &&
         !subject.trim() &&
-        !stripHtml(body).trim()
+        !stripHtml(body).trim() &&
+        attachments.length === 0
       )
         return;
 
@@ -230,6 +246,8 @@ export function ComposeDialog() {
     },
     [
       deleteDraftMutation.isPending,
+      contentSnapshot,
+      attachments.length,
       computeHash,
       to,
       cc,
@@ -260,6 +278,8 @@ export function ComposeDialog() {
     if (isOpen) {
       lastSavedHashRef.current = computeHash();
       lastSavedDraftIdRef.current = draftId;
+      openedExistingDraftRef.current = !!draftId;
+      initialContentRef.current = contentSnapshot();
     }
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -363,6 +383,7 @@ export function ComposeDialog() {
 
   const confirmDiscard = useCallback(() => {
     setShowDiscardAlert(false);
+    setShowCloseAlert(false);
     if (draftId && isCurrentAccount()) {
       deleteDraftMutation.mutate(draftId, {
         onSuccess: () => reset(),
@@ -387,6 +408,17 @@ export function ComposeDialog() {
       closeCompose();
     }
   }, [draftId, computeHash, hasContent, saveDraft, closeCompose, isCurrentAccount]);
+
+  const handleClose = useCallback(() => {
+    if (openedExistingDraftRef.current) {
+      handleSaveAndClose();
+    } else if (contentSnapshot() === initialContentRef.current) {
+      // Also remove an autosaved copy if all edits were cleared again.
+      confirmDiscard();
+    } else {
+      setShowCloseAlert(true);
+    }
+  }, [handleSaveAndClose, contentSnapshot, confirmDiscard]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -599,7 +631,7 @@ export function ComposeDialog() {
         modal={false}
         onOpenChange={(open) => {
           if (!open && !switchingAccount) {
-            handleSaveAndClose();
+            handleClose();
           }
         }}
       >
@@ -1043,6 +1075,13 @@ export function ComposeDialog() {
           </AnimatePresence>
         </Dialog.Portal>
       </Dialog.Root>
+
+      <DiscardAlertDialog
+        open={showCloseAlert}
+        onOpenChange={setShowCloseAlert}
+        onConfirm={confirmDiscard}
+        onKeep={() => { setShowCloseAlert(false); handleSaveAndClose(); }}
+      />
 
       <DiscardAlertDialog
         open={showDiscardAlert}
