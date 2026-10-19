@@ -7,8 +7,8 @@ import { useTranslation, useLanguageStore } from "@/lib/i18n";
 import { useCallback, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Mail,
-  PenSquare,
+  Inbox,
+  PenLine,
   Users,
   Calendar,
   Settings,
@@ -172,12 +172,12 @@ export function NavRail() {
         {/* Top actions */}
         <div className="flex flex-col items-center gap-1">
           <NavButton
-            icon={<PenSquare className="size-5" />}
+            icon={<PenLine className="size-5" />}
             label={t("Compose")}
             onClick={() => useComposeStore.getState().openCompose()}
           />
           <NavButton
-            icon={<Mail className="size-5" />}
+            icon={<Inbox className="size-5" />}
             label={mailLabel}
             badge={unreadBadge}
             active={viewMode === "mail"}

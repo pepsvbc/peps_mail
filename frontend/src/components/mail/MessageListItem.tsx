@@ -274,8 +274,8 @@ export const MessageListItem = memo(function MessageListItem({
           isFlagged ? "text-primary" : fullWidth ? "text-foreground" : "text-muted-foreground",
         )}>{sender}</span>
 
-        {/* Dash separator */}
-        <span className="shrink-0 text-muted-foreground">&mdash;</span>
+        {/* Compact rows use a separator; full-width rows have column spacing. */}
+        {!fullWidth && <span className="shrink-0 text-muted-foreground">&mdash;</span>}
 
         {/* Subject */}
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
