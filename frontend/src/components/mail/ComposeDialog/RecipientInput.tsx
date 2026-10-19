@@ -2,8 +2,10 @@
 
 import { translate as t, useTranslation } from "@/lib/i18n";
 
+import { splitRecipientTokens, formatRecipient } from "@/lib/recipients";
+import { X } from "lucide-react";
 import { useAutocomplete } from "@/hooks/useAutocomplete";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 interface RecipientInputProps {
   value: string;
@@ -55,6 +57,11 @@ function HighlightedText({ html }: { html: string }) {
   );
 }
 
+
+function isCompleteAddress(value: string) {
+  return /^.*<[^@<>\s]+@[^@<>\s]+>$/.test(value) || /^[^@<>\s]+@[^@<>\s]+\.[^@<>\s]+$/.test(value);
+}
+
 export function RecipientInput({
   value,
   onChange,
@@ -68,57 +75,52 @@ export function RecipientInput({
   const [dismissedQuery, setDismissedQuery] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Extract the text after the last comma as the autocomplete query
-  const query = value.split(",").pop()?.trim() ?? "";
+  // Keep the active token editable until the user confirms it. Prefilled
+  // complete addresses are chips immediately, leaving room for another address.
+  const [editingValue, setEditingValue] = useState<string | null>(null);
+  const parts = splitRecipientTokens(value);
+  const last = parts.pop() ?? "";
+  const committedLast = editingValue !== value && isCompleteAddress(last);
+  const recipients = [...parts.filter(Boolean), ...(committedLast ? [last] : [])];
+  const query = committedLast ? "" : last;
   const { results, isLoading } = useAutocomplete(query);
+  const showDropdown = results.length > 0 && query.length >= 2 && !isCompleteAddress(query) && dismissedQuery !== query;
 
-  const hasResults = results.length > 0 && query.length >= 2;
+  const update = (addresses: string[], text: string) => {
+    const next = [...addresses, text].join(", ");
+    setEditingValue(next);
+    onChange(next);
+    setSelectedIndex(0);
+  };
 
-  // A trailing token that already looks like a complete address (e.g. a
-  // prefilled reply recipient, or a finished "Name <email@host>") should not
-  // trigger the suggestion dropdown, since there is nothing left to complete.
-  const isCompleteAddress =
-    /^.*<[^@<>\s]+@[^@<>\s]+>$/.test(query) ||
-    /^[^@<>\s]+@[^@<>\s]+\.[^@<>\s]+$/.test(query);
+  const commit = () => {
+    if (isCompleteAddress(query)) update([...recipients, query], "");
+  };
 
-  // Dropdown shows when there are results and the user hasn't dismissed this exact query
-  const showDropdown = hasResults && !isCompleteAddress && dismissedQuery !== query;
+  const selectSuggestion = (suggestion: { email: string; name?: string }) => {
+    const formatted = formatRecipient(suggestion.email, suggestion.name);
+    update([...recipients, formatted], "");
+    setDismissedQuery(query);
+  };
 
-  const selectSuggestion = useCallback(
-    (suggestion: { email: string; name?: string }) => {
-      const parts = value.split(",");
-      parts.pop();
-      const formatted = suggestion.name
-        ? `${suggestion.name} <${suggestion.email}>`
-        : suggestion.email;
-      parts.push(formatted);
-      onChange(parts.join(", ") + ", ");
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing || e.ctrlKey || e.metaKey || (e.shiftKey && e.key === "Tab")) return;
+    if (showDropdown && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      setSelectedIndex((i) => Math.max(0, Math.min(i + (e.key === "ArrowDown" ? 1 : -1), results.length - 1)));
+    } else if (showDropdown && (e.key === "Enter" || e.key === "Tab")) {
+      e.preventDefault();
+      selectSuggestion(results[Math.min(selectedIndex, results.length - 1)].item);
+    } else if (["Enter", "Tab", ",", ";"].includes(e.key) && isCompleteAddress(query)) {
+      if (e.key !== "Tab") e.preventDefault();
+      commit();
+    } else if (e.key === "Backspace" && !query && recipients.length) {
+      e.preventDefault();
+      update(recipients.slice(0, -1), recipients[recipients.length - 1]);
+    } else if (e.key === "Escape") {
       setDismissedQuery(query);
-    },
-    [value, onChange, query],
-  );
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (!showDropdown || results.length === 0) return;
-
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSelectedIndex((i) => Math.min(i + 1, results.length - 1));
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSelectedIndex((i) => Math.max(i - 1, 0));
-      } else if (e.key === "Enter" || e.key === "Tab") {
-        if (showDropdown && results.length > 0) {
-          e.preventDefault();
-          selectSuggestion(results[selectedIndex].item);
-        }
-      } else if (e.key === "Escape") {
-        setDismissedQuery(query);
-      }
-    },
-    [showDropdown, results, selectedIndex, selectSuggestion, query],
-  );
+    }
+  };
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -132,22 +134,35 @@ export function RecipientInput({
   }, [query]);
 
   return (
-    <div ref={containerRef} className="relative flex-1">
+    <div ref={containerRef} className="relative flex min-w-0 flex-1 flex-wrap items-center gap-1 py-1">
+      {recipients.map((recipient, index) => (
+        <span key={`${index}-${recipient}`} className="inline-flex max-w-full items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs" title={recipient}>
+          <span className="truncate">{recipient}</span>
+          <button
+            type="button"
+            aria-label={`${t("Remove")} ${recipient}`}
+            className="shrink-0 rounded p-0.5 hover:bg-accent"
+            onClick={() => update(recipients.filter((_, i) => i !== index), query)}
+          >
+            <X className="size-3" />
+          </button>
+        </span>
+      ))}
       <input
         ref={inputRef}
         type="text"
-        value={value}
+        value={query}
         onChange={(e) => {
-          onChange(e.target.value);
-          setSelectedIndex(0);
+          update(recipients, e.target.value);
         }}
         onKeyDown={handleKeyDown}
         onFocus={() => setDismissedQuery(null)}
+        onBlur={commit}
         placeholder={placeholder}
-        className="w-full bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground/50"
+        className="min-w-24 flex-1 bg-transparent py-1 text-sm outline-none placeholder:text-muted-foreground/50"
       />
       {showDropdown && results.length > 0 && (
-        <div className="absolute left-0 top-full z-50 mt-1 max-h-64 w-72 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
+        <div className="absolute left-0 top-full z-50 mt-1 max-h-64 w-72 max-w-full overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
           {isLoading && (
             <div className="px-3 py-2 text-xs text-muted-foreground">
               {t("Searching...")}

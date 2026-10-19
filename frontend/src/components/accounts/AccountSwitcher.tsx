@@ -92,12 +92,9 @@ export function AccountSwitcher() {
     setIsSwitching(true);
     setIsOpen(false);
 
-    await new Promise((r) => setTimeout(r, 150));
-
-    setActiveAccount(accountId);
+    await queryClient.cancelQueries({ predicate: (query) => query.queryKey[0] !== "account-unread" });
     queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== "account-unread" });
-
-    await new Promise((r) => setTimeout(r, 100));
+    setActiveAccount(accountId);
     setIsSwitching(false);
   };
 

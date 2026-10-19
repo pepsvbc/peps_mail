@@ -31,6 +31,7 @@ interface WebSocketMessage {
  */
 export function useWebSocket(onEvent?: (event: MailEvent) => void) {
   const queryClient = useQueryClient();
+  const accountSetKey = useAuthStore((state) => state.accounts.map((account) => account.id).sort().join(","));
   const [status, setStatus] = useState<WsStatus>("disconnected");
   const [failCount, setFailCount] = useState(0);
   const onEventRef = useRef(onEvent);
@@ -53,7 +54,7 @@ export function useWebSocket(onEvent?: (event: MailEvent) => void) {
       if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
       flushTimerRef.current = setTimeout(() => {
         for (const key of pendingInvalidationsRef.current.values()) {
-          queryClient.invalidateQueries({ queryKey: key });
+          queryClient.invalidateQueries({ queryKey: key, ...(key[0] === "messages" ? { refetchType: "all" as const } : {}) });
         }
         pendingInvalidationsRef.current.clear();
         flushTimerRef.current = null;
@@ -82,6 +83,9 @@ export function useWebSocket(onEvent?: (event: MailEvent) => void) {
         setFailCount(0);
         backoffRef.current = 1000; // Reset backoff on successful connect
         queryClient.invalidateQueries({ queryKey: ["account-unread"] });
+        queryClient.invalidateQueries({ queryKey: ["messages"] });
+        queryClient.invalidateQueries({ queryKey: ["folders"] });
+        queryClient.invalidateQueries({ queryKey: ["search"] });
       };
 
       ws.onmessage = (event) => {
@@ -112,6 +116,7 @@ export function useWebSocket(onEvent?: (event: MailEvent) => void) {
               }
               break;
             case "NewMessages":
+              scheduleInvalidation(["search"]);
               if (mailEvent.data?.folder) {
                 scheduleInvalidation(["messages", mailEvent.data.folder]);
               }
@@ -124,6 +129,8 @@ export function useWebSocket(onEvent?: (event: MailEvent) => void) {
               scheduleInvalidation(["folders"]);
               break;
             case "FolderUpdated":
+              scheduleInvalidation(["messages"]);
+              scheduleInvalidation(["search"]);
               scheduleInvalidation(["folders"]);
               break;
           }
@@ -149,7 +156,7 @@ export function useWebSocket(onEvent?: (event: MailEvent) => void) {
       };
     };
 
-    connect();
+    if (accountSetKey) connect();
 
     return () => {
       disposed = true;
@@ -165,7 +172,7 @@ export function useWebSocket(onEvent?: (event: MailEvent) => void) {
         wsRef.current = null;
       }
     };
-  }, [queryClient, scheduleInvalidation]);
+  }, [queryClient, scheduleInvalidation, accountSetKey]);
 
   return { status, failCount };
 }

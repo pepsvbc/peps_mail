@@ -164,8 +164,10 @@ vi.mock("@/stores/useComposeStore", () => {
     openForward: vi.fn(),
   });
   useComposeStore.setState = vi.fn();
+  useComposeStore.subscribe = () => () => {};
   return {
     useComposeStore,
+    useComposeWindows: Object.assign((selector: (state: { windows: never[]; focusedStore: null }) => unknown) => selector({ windows: [], focusedStore: null }), { setState: vi.fn(), getState: () => ({ focusedStore: null }) }),
     replaceSignatureInBody: (body: string) => body,
     removeSignatureFromBody: (body: string) => body,
     injectSignature: (body: string) => body,

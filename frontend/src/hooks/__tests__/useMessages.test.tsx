@@ -94,3 +94,27 @@ describe("folder navigation", () => {
     client.clear();
   });
 });
+
+describe("inbox synchronization fallback", () => {
+  it("polls pending background sync and continues refreshing after it completes", async () => {
+    vi.useFakeTimers();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const response = { messages: [], page: 0, per_page: 50, total_count: 0 };
+    vi.mocked(apiGet).mockReset();
+    vi.mocked(apiGet).mockResolvedValueOnce({ ...response, syncing: true }).mockResolvedValue({ ...response, syncing: false });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const { unmount } = renderHook(() => useMessages("INBOX"), { wrapper });
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+      expect(apiGet).toHaveBeenCalledTimes(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+      expect(apiGet).toHaveBeenCalledTimes(2);
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+      expect(apiGet).toHaveBeenCalledTimes(3);
+    } finally {
+      unmount();
+      client.clear();
+      vi.useRealTimers();
+    }
+  });
+});

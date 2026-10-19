@@ -2,7 +2,7 @@
 
 import { translate as t, useTranslation } from "@/lib/i18n";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useId, useLayoutEffect } from "react";
 import { Dialog } from "radix-ui";
 import { AnimatePresence, motion } from "framer-motion";
 import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
@@ -26,7 +26,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  useComposeStore,
+  useComposeStore as defaultComposeStore,
+  useComposeWindows,
+  type ComposeStore,
   replaceSignatureInBody,
   removeSignatureFromBody,
   injectSignature,
@@ -41,6 +43,7 @@ import {
 import { useComposeAccount } from "@/hooks/useComposeAccount";
 import { useIdentities } from "@/hooks/useIdentities";
 import { cn } from "@/lib/utils";
+import { useInlineComposeHost } from "@/stores/useInlineComposeHost";
 import { useUiStore } from "@/stores/useUiStore";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { createFadeSlideVariants, createScaleFadeVariants } from "@/lib/motion/variants";
@@ -62,9 +65,63 @@ const RichTextEditor = dynamic(
 );
 
 export function ComposeDialog() {
+  const windows = useComposeWindows((state) => state.windows);
+  const [windowDock, setWindowDock] = useState<HTMLDivElement | null>(null);
+  const [rightTabDock, setRightTabDock] = useState<HTMLDivElement | null>(null);
+  const [leftTabDock, setLeftTabDock] = useState<HTMLDivElement | null>(null);
+  const inlineHost = useInlineComposeHost();
+
+  useEffect(() => {
+    const stores = [defaultComposeStore, ...windows.map((window) => window.store)];
+    const fitWindows = () => {
+      const capacity = Math.max(1, Math.floor((window.innerWidth - 96) / 360));
+      const floating = stores.filter((store) => {
+        const state = store.getState();
+        return state.isOpen && !state.isMinimized && !(state.sourceMessageKey && state.sourceMessageKey === inlineHost.messageKey && inlineHost.element);
+      });
+      const focusedStore = useComposeWindows.getState().focusedStore;
+      const oldestFirst = floating.filter((store) => store !== focusedStore);
+      for (const store of oldestFirst.slice(0, Math.max(0, floating.length - capacity))) {
+        store.getState().minimizeCompose();
+      }
+    };
+    const unsubscribe = stores.map((store) => store.subscribe((state, previous) => {
+      if (state.isOpen && (!previous.isOpen || (previous.isMinimized && !state.isMinimized))) {
+        useComposeWindows.setState({ focusedStore: store });
+      }
+      fitWindows();
+    }));
+    window.addEventListener("resize", fitWindows);
+    fitWindows();
+    return () => {
+      unsubscribe.forEach((stop) => stop());
+      window.removeEventListener("resize", fitWindows);
+    };
+  }, [windows, inlineHost.messageKey, inlineHost.element]);
+
+  return <>
+    <div className="pointer-events-none fixed inset-x-2 bottom-0 z-40 flex flex-col gap-1 sm:left-20 sm:right-4">
+      <div ref={setWindowDock} data-testid="compose-window-dock" className="flex min-w-0 items-end justify-end gap-3" />
+      <div data-testid="compose-tab-dock" className="flex min-w-0 items-end gap-2">
+        <div ref={setLeftTabDock} data-testid="compose-left-tabs" className="pointer-events-auto flex min-w-0 gap-2 overflow-x-auto empty:hidden" />
+        <div ref={setRightTabDock} data-testid="compose-right-tabs" className="pointer-events-auto ml-auto flex min-w-0 flex-row-reverse gap-2 overflow-x-auto empty:hidden" />
+      </div>
+    </div>
+    <ComposeWindow windowDock={windowDock} leftTabDock={leftTabDock} rightTabDock={rightTabDock} />
+    {windows.map(({ id, store }) => <ComposeWindow key={id} store={store} windowDock={windowDock} leftTabDock={leftTabDock} rightTabDock={rightTabDock} />)}
+  </>;
+}
+
+function ComposeWindow({ store = defaultComposeStore, windowDock, leftTabDock, rightTabDock }: { store?: ComposeStore; windowDock: HTMLDivElement | null; leftTabDock: HTMLDivElement | null; rightTabDock: HTMLDivElement | null }) {
+  const useComposeStore = store;
+  const undoToastId = useId();
+  const focused = useComposeWindows((state) => state.focusedStore === store);
+  const focusWindow = () => useComposeWindows.setState({ focusedStore: store });
   useTranslation();
   const {
     isOpen,
+    sourceMessageKey,
+    focusBodyOnOpen,
     isMinimized,
     accountId,
     to,
@@ -98,7 +155,7 @@ export function ComposeDialog() {
     reset,
   } = useComposeStore();
 
-  const composeAccount = useComposeAccount();
+  const composeAccount = useComposeAccount(store);
   const switchingAccount = composeAccount.isPending;
   const sendMutation = useSendMessage();
   const saveDraftMutation = useSaveDraft();
@@ -110,7 +167,30 @@ export function ComposeDialog() {
   const [showDiscardAlert, setShowDiscardAlert] = useState(false);
   const [showCloseAlert, setShowCloseAlert] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const inlineHost = useInlineComposeHost();
+  const inline = !!(sourceMessageKey && inlineHost.messageKey === sourceMessageKey && inlineHost.element && !expanded && !isMinimized);
+  useEffect(() => {
+    if (!isOpen || !inline || !sourceMessageKey) return;
+    useInlineComposeHost.setState({ visibleMessageKey: sourceMessageKey });
+    return () => {
+      if (useInlineComposeHost.getState().visibleMessageKey === sourceMessageKey) {
+        useInlineComposeHost.setState({ visibleMessageKey: null });
+      }
+    };
+  }, [isOpen, inline, sourceMessageKey]);
+  const [portalHost] = useState(() => {
+    if (typeof document === "undefined") return null;
+    const host = document.createElement("div");
+    host.style.display = "contents";
+    return host;
+  });
   const [position, setPosition] = useState<"left" | "right">("right");
+  const portalTarget = inline ? inlineHost.element : isMinimized ? (position === "left" ? leftTabDock : rightTabDock) : expanded ? null : windowDock;
+  useLayoutEffect(() => {
+    if (!portalHost || !isOpen) return;
+    (portalTarget ?? document.body).appendChild(portalHost);
+    return () => portalHost.remove();
+  }, [portalHost, portalTarget, isOpen]);
   const [previewAttId, setPreviewAttId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const dragCounterRef = useRef(0);
@@ -161,16 +241,40 @@ export function ComposeDialog() {
     }
   }, [isOpen, accountMismatch, fromIdentityId, identities, setFromIdentityId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-focus the To field when dialog opens
+  // Replies start above the quoted message. Wait for the lazy-loaded editor
+  // before focusing; otherwise Radix falls back to the recipient controls.
   useEffect(() => {
-    if (isOpen && !isMinimized && !accountMismatch) {
-      const focusInput = () => toInputRef.current?.focus();
-      const rafId = requestAnimationFrame(() => {
-        requestAnimationFrame(focusInput);
-      });
-      return () => cancelAnimationFrame(rafId);
-    }
-  }, [isOpen, isMinimized, accountMismatch]);
+    if (!isOpen || isMinimized || accountMismatch || !portalHost) return;
+    let focused = false;
+    const focusInput = () => {
+      if (focused) return;
+      const target = focusBodyOnOpen
+        ? portalHost.querySelector<HTMLElement>('[data-compose-body] [contenteditable="true"], textarea[data-compose-body]')
+        : toInputRef.current;
+      if (!target) return;
+      focused = true;
+      target.focus();
+      if (focusBodyOnOpen) {
+        if (target instanceof HTMLTextAreaElement) target.setSelectionRange(0, 0);
+        else {
+          const range = document.createRange();
+          range.selectNodeContents(target);
+          range.collapse(true);
+          const selection = window.getSelection();
+          selection?.removeAllRanges();
+          selection?.addRange(range);
+        }
+        if (inline) target.scrollIntoView({ block: "center", inline: "nearest" });
+      }
+    };
+    const observer = new MutationObserver(focusInput);
+    observer.observe(portalHost, { childList: true, subtree: true });
+    const rafId = requestAnimationFrame(focusInput);
+    return () => {
+      cancelAnimationFrame(rafId);
+      observer.disconnect();
+    };
+  }, [isOpen, isMinimized, accountMismatch, focusBodyOnOpen, portalHost, inline]);
 
   useEffect(() => {
     if (isMinimized) restoreButtonRef.current?.focus();
@@ -219,6 +323,7 @@ export function ComposeDialog() {
       saveDraftMutation.mutate(
         {
           id: currentDraftId,
+          accountId: accountId ?? activeAccountId ?? undefined,
           to,
           cc,
           bcc,
@@ -245,6 +350,9 @@ export function ComposeDialog() {
       );
     },
     [
+      useComposeStore,
+      accountId,
+      activeAccountId,
       deleteDraftMutation.isPending,
       contentSnapshot,
       attachments.length,
@@ -286,7 +394,7 @@ export function ComposeDialog() {
   const doSend = useCallback(() => {
     if (!isCurrentAccount()) {
       toast.error(t("Switch back to this draft's account before sending."));
-      useComposeStore.setState({ isOpen: true, isMinimized: false });
+      useComposeStore.setState({ isOpen: true, isMinimized: false, pendingSend: false });
       return;
     }
     let plainText: string;
@@ -304,6 +412,7 @@ export function ComposeDialog() {
     }
     sendMutation.mutate(
       {
+        accountId: accountId ?? activeAccountId ?? undefined,
         to,
         cc,
         bcc,
@@ -329,6 +438,7 @@ export function ComposeDialog() {
         },
         onError: (error) => {
           toast.error(t("Failed to send: {error}", { error: error.message }));
+          useComposeStore.setState({ isOpen: true, pendingSend: false });
         },
       }
     );
@@ -344,6 +454,9 @@ export function ComposeDialog() {
     draftId,
     fromIdentityId,
     sendMutation,
+    accountId,
+    activeAccountId,
+    useComposeStore,
     reset,
     isCurrentAccount,
   ]);
@@ -352,26 +465,27 @@ export function ComposeDialog() {
     if (uploadMutation.isPending) return;
     if (!isCurrentAccount()) return;
     if (!to.trim() && !cc.trim() && !bcc.trim()) return;
+    useComposeStore.setState({ pendingSend: true });
     closeCompose();
 
     // 5-second undo window via sonner
     const timer = setTimeout(() => {
-      toast.dismiss("undo-send");
+      toast.dismiss(undoToastId);
       doSend();
     }, 5000);
 
     toast(t("Sending message..."), {
-      id: "undo-send",
+      id: undoToastId,
       duration: 5500,
       action: {
         label: t("Undo"),
         onClick: () => {
           clearTimeout(timer);
-          useComposeStore.setState({ isOpen: true });
+          useComposeStore.setState({ isOpen: true, pendingSend: false });
         },
       },
     });
-  }, [to, cc, bcc, closeCompose, doSend, isCurrentAccount, uploadMutation.isPending]);
+  }, [to, cc, bcc, closeCompose, doSend, isCurrentAccount, uploadMutation.isPending, useComposeStore, undoToastId]);
 
   const handleDiscard = useCallback(() => {
     if (hasContent()) {
@@ -385,14 +499,14 @@ export function ComposeDialog() {
     setShowDiscardAlert(false);
     setShowCloseAlert(false);
     if (draftId && isCurrentAccount()) {
-      deleteDraftMutation.mutate(draftId, {
+      deleteDraftMutation.mutate({ id: draftId, accountId: accountId ?? activeAccountId ?? undefined }, {
         onSuccess: () => reset(),
         onError: (error) => toast.error(error.message),
       });
     } else {
       reset();
     }
-  }, [draftId, deleteDraftMutation, reset, isCurrentAccount]);
+  }, [draftId, deleteDraftMutation, reset, isCurrentAccount, accountId, activeAccountId]);
 
   // Save draft and close the dialog without discarding.
   const handleSaveAndClose = useCallback(() => {
@@ -620,6 +734,10 @@ export function ComposeDialog() {
     setIsHtml(!isHtml);
   }, [isHtml, body, setField, setIsHtml]);
 
+  useEffect(() => {
+    if (isOpen && inline) contentRef.current?.scrollIntoView({ block: "start" });
+  }, [isOpen, inline]);
+
   const previewAttachment = previewAttId
     ? attachments.find((a) => a.id === previewAttId)
     : null;
@@ -635,7 +753,7 @@ export function ComposeDialog() {
           }
         }}
       >
-        <Dialog.Portal>
+        <Dialog.Portal container={portalHost}>
           <AnimatePresence>
             {isOpen ? (
               <Fragment key="compose-dialog-open">
@@ -643,6 +761,7 @@ export function ComposeDialog() {
                   forceMount
                   asChild
                   aria-describedby={undefined}
+                  onOpenAutoFocus={(event) => { if (focusBodyOnOpen) event.preventDefault(); }}
                   onInteractOutside={(event) => event.preventDefault()}
                   onEscapeKeyDown={(event) => {
                     if (switchingAccount || !contentRef.current?.contains(document.activeElement)) {
@@ -658,15 +777,20 @@ export function ComposeDialog() {
                     animate="animate"
                     exit="exit"
                     className={cn(
-                      "fixed z-50 flex flex-col rounded-xl border border-border bg-background shadow-2xl",
-                      expanded && !isMinimized
-                        ? "inset-4 sm:left-20"
-                        : cn(
-                            "inset-x-4 bottom-4 max-h-[80dvh] sm:bottom-8",
-                            isMinimized ? "sm:w-80" : "h-[min(42rem,80dvh)] sm:w-[min(42rem,calc(100vw-6rem))]",
-                            position === "left" ? "sm:left-20 sm:right-auto" : "sm:left-auto sm:right-4",
-                          )
+                      "pointer-events-auto flex min-w-0 flex-col border border-border bg-background",
+                      inline
+                        ? "relative w-full rounded-xl shadow-sm"
+                        : expanded && !isMinimized
+                          ? "fixed inset-4 rounded-xl shadow-2xl sm:left-20"
+                          : cn(
+                              "relative rounded-t-xl shadow-2xl",
+                              isMinimized ? "w-56 shrink-0" : "h-[min(42rem,80dvh)] max-w-2xl flex-1 basis-0",
+                              !isMinimized && position === "left" && "order-first mr-auto",
+                            ),
                     )}
+                    style={inline ? undefined : { zIndex: focused ? 45 : 40 }}
+                    onPointerDownCapture={focusWindow}
+                    onFocusCapture={focusWindow}
                     onKeyDown={handleKeyDown}
                     onDragEnter={handleDragEnter}
                     onDragLeave={handleDragLeave}
@@ -693,7 +817,7 @@ export function ComposeDialog() {
 
             {/* Header */}
             <div inert={switchingAccount} className={cn("flex shrink-0 items-center justify-between gap-2 rounded-t-xl bg-muted px-4 py-2.5", !isMinimized && "border-b border-border")}>
-              <Dialog.Title className="min-w-0 flex-1 text-sm font-semibold">
+              <Dialog.Title className="min-w-0 flex-1 truncate text-sm font-semibold">
                 {isMinimized ? (
                   <button
                     ref={restoreButtonRef}
@@ -704,16 +828,16 @@ export function ComposeDialog() {
                   >
                     <ChevronUp className="size-4 shrink-0" /><span className="truncate">{subject.trim() || t("New Message")}</span>
                   </button>
-                ) : t("New Message")}
+                ) : sourceMessageKey ? subject : t("New Message")}
               </Dialog.Title>
               <div className="flex shrink-0 items-center gap-1">
-                <button type="button"
+                {!inline && <button type="button"
                   onClick={() => { setPosition(position === "right" ? "left" : "right"); setExpanded(false); }}
                   className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
                   aria-label={t(position === "right" ? "Move composer to left" : "Move composer to right")}
                   title={t(position === "right" ? "Move composer to left" : "Move composer to right")}>
                   {position === "right" ? <PanelLeft className="size-4" /> : <PanelRight className="size-4" />}
-                </button>
+                </button>}
                 {!isMinimized && (
                   <>
                     <button
@@ -758,14 +882,14 @@ export function ComposeDialog() {
             <div
               inert={switchingAccount}
               hidden={isMinimized || accountMismatch}
-              className={cn(!isMinimized && !accountMismatch && "flex min-h-0 flex-1 flex-col overflow-y-auto")}
+              className={cn(!isMinimized && !accountMismatch && "flex min-h-0 min-w-0 flex-col", !inline && "flex-1 overflow-y-auto")}
             >
             {/* Fields */}
-            <div className="flex flex-col border-b border-border">
+            <div className="flex shrink-0 flex-col border-b border-border">
               <div className="flex items-center border-b border-border/50 px-4">
-                <label htmlFor="compose-account" className="w-12 shrink-0 text-xs text-muted-foreground">{t("From")}</label>
+                <label htmlFor={`${undoToastId}-account`} className="w-12 shrink-0 text-xs text-muted-foreground">{t("From")}</label>
                 <SelectField
-                  id="compose-account"
+                  id={`${undoToastId}-account`}
                   value={accountId ?? activeAccountId ?? ""}
                   disabled={switchingAccount || uploadMutation.isPending || saveDraftMutation.isPending || deleteMutation.isPending}
                   onValueChange={(value) => composeAccount.mutate(value, {
@@ -776,11 +900,11 @@ export function ComposeDialog() {
               </div>
               {identities && identities.length > 1 && (
                 <div className="flex items-center gap-2 border-b border-border/50 px-4">
-                  <label htmlFor="compose-from" className="w-28 shrink-0 text-xs text-muted-foreground">
+                  <label htmlFor={`${undoToastId}-from`} className="w-28 shrink-0 text-xs text-muted-foreground">
                     {t("Sender address")}
                   </label>
                   <SelectField
-                    id="compose-from"
+                    id={`${undoToastId}-from`}
                     value={fromIdentityId?.toString() ?? ""}
                     onValueChange={(value) => {
                       const newId = value ? Number(value) : null;
@@ -860,6 +984,15 @@ export function ComposeDialog() {
                 <input
                   type="text"
                   value={subject}
+                  aria-label={t("Subject")}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Tab" || event.shiftKey || event.ctrlKey || event.metaKey) return;
+                    const editor = contentRef.current?.querySelector<HTMLElement>('[data-compose-body] [contenteditable="true"], textarea[data-compose-body]');
+                    if (editor) {
+                      event.preventDefault();
+                      editor.focus();
+                    }
+                  }}
                   onChange={(e) => setField("subject", e.target.value)}
                   className="flex-1 bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground/50"
                 />
@@ -919,20 +1052,24 @@ export function ComposeDialog() {
                 onChange={(html) => setField("body", html)}
                 onImageUpload={handleImageUpload}
                 placeholder={t("Write your message...")}
-                className="flex-1 overflow-auto"
+                compact={inline}
+                className={inline ? "min-w-0 max-h-[45dvh] overflow-auto" : "min-h-32 min-w-0 flex-1 overflow-auto"}
               />
             ) : (
               <textarea
+                data-compose-body
+                aria-label={t("Message body")}
                 value={body}
                 onChange={(e) => setField("body", e.target.value)}
                 placeholder={t("Write your message...")}
-                className="flex-1 resize-none overflow-auto bg-transparent px-4 py-3 text-sm outline-none placeholder:text-muted-foreground/50"
+                rows={inline ? 5 : undefined}
+                className={cn("min-w-0 resize-none overflow-auto bg-transparent px-4 py-3 text-sm outline-none placeholder:text-muted-foreground/50", inline ? "max-h-[45dvh]" : "min-h-32 flex-1")}
               />
             )}
 
             {/* Footer */}
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3">
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-1">
                 <button
                   onClick={handleSend}
                   disabled={
@@ -994,7 +1131,6 @@ export function ComposeDialog() {
                   ) : (
                     <Paperclip className="size-4" />
                   )}
-                  {t("Attach files")}
                 </button>
                 <button
                   onClick={() => saveDraft(true)}

@@ -219,7 +219,10 @@ export function ThreePanelLayout({
         </Dialog.Portal>
       </Dialog.Root>
 
-      {/* Center panel — search bar + message list or search results */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <SearchBar />
+        <div className="flex min-h-0 min-w-0 flex-1">
+      {/* Message list or search results */}
       <main
         className={cn(
           !singlePane
@@ -230,7 +233,6 @@ export function ThreePanelLayout({
         style={!singlePane ? { width: resolvedMessageListWidth ?? messageListWidth } : undefined}
       >
         <MailboxHeader />
-        <SearchBar />
         <AnimatePresence mode="wait" initial={false}>
           {showSearchResults ? (
             <AnimatedDiv
@@ -290,6 +292,8 @@ export function ThreePanelLayout({
           </AnimatedDiv>
         )}
       </AnimatePresence>
+        </div>
+      </div>
     </div>
   );
 }

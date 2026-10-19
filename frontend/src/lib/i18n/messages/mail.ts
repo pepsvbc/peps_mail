@@ -145,6 +145,7 @@ export const mailMessages: Record<string, string> = {
   "Mark as read": "Marquer comme lu",
   "Mark as unread": "Marquer comme non lu",
   "Star": "Ajouter aux favoris",
+  "Move to Inbox": "Déplacer vers la boîte de réception",
   "Move to folder": "Déplacer vers un dossier",
   "No other folders": "Aucun autre dossier",
   "Add tag": "Ajouter une étiquette",

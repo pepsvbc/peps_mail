@@ -12,14 +12,12 @@ import {
 } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
 import { apiGet, apiPatch, apiPost, apiDelete } from "@/lib/api";
-import { useWsStatus } from "@/lib/ws-context";
 import { useUiStore } from "@/stores/useUiStore";
 import type { MessagesResponse, MessageDetail, SearchResponse } from "@/types/message";
 
 const PER_PAGE = 50;
 
 export function useMessages(folder: string) {
-  const { status } = useWsStatus();
   return useInfiniteQuery({
     queryKey: ["messages", folder],
     queryFn: ({ pageParam = 0 }) =>
@@ -32,7 +30,9 @@ export function useMessages(folder: string) {
       return fetched < lastPage.total_count ? lastPage.page + 1 : undefined;
     },
     enabled: !!folder,
-    refetchInterval: status === "connected" ? false : 60_000,
+    // Recover from missed events even while the socket appears connected.
+    // Background IMAP sync can initially return cached rows; check again soon.
+    refetchInterval: (query) => query.state.data?.pages.some((page) => page.syncing) ? 2_000 : 60_000,
   });
 }
 

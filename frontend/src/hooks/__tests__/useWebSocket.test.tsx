@@ -62,7 +62,7 @@ describe("mail event unread updates", () => {
       vi.advanceTimersByTime(300);
     });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["drafts"] });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["messages"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["messages"], refetchType: "all" });
     if (!synced) expect(warning).toHaveBeenCalledWith(
       "Draft saved locally, but mail server sync failed. Reopen it and save to retry.",
     );
@@ -94,40 +94,59 @@ describe("mail event unread updates", () => {
     });
 
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["account-unread", "first"] });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["messages", "INBOX"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["messages", "INBOX"], refetchType: "all" });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["folders"] });
     expect(onEvent).toHaveBeenCalledOnce();
+  });
+
+  it("refreshes cached messages when background synchronization finishes", () => {
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    renderHook(() => useWebSocket(), { wrapper });
+    act(() => {
+      MockWebSocket.sockets[0].receive("first", "FolderUpdated");
+      vi.advanceTimersByTime(300);
+    });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["messages"], refetchType: "all" });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["search"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["account-unread", "first"] });
   });
 
   it("refreshes all counts after connecting and reconnecting", () => {
     const invalidate = vi.spyOn(client, "invalidateQueries");
     renderHook(() => useWebSocket(), { wrapper });
     act(() => MockWebSocket.sockets[0].onopen?.());
-    expect(invalidate).toHaveBeenCalledExactlyOnceWith({ queryKey: ["account-unread"] });
+    for (const key of ["account-unread", "messages", "folders", "search"]) {
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: [key] });
+    }
+    invalidate.mockClear();
     act(() => {
       MockWebSocket.sockets[0].onclose?.();
       vi.advanceTimersByTime(1000);
     });
     expect(MockWebSocket.sockets).toHaveLength(2);
     act(() => MockWebSocket.sockets[1].onopen?.());
-    expect(invalidate).toHaveBeenCalledTimes(2);
+    for (const key of ["account-unread", "messages", "folders", "search"]) {
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: [key] });
+    }
   });
 
-  it("keeps the existing connection when adding, switching or removing accounts", () => {
+  it("reconnects for added or removed accounts but not for switching or reordering", () => {
     useAuthStore.setState({ accounts: [accounts[0]], activeAccountId: "first" });
     renderHook(() => useWebSocket(), { wrapper });
     const original = MockWebSocket.sockets[0];
     act(() => useAuthStore.getState().addAccount(accounts[1]));
-
+    expect(original.close).toHaveBeenCalledOnce();
+    expect(MockWebSocket.sockets).toHaveLength(2);
+    const current = MockWebSocket.sockets[1];
     act(() => {
       useAuthStore.getState().setActiveAccount("second");
       useAuthStore.getState().setAccounts([...accounts].reverse());
-      vi.advanceTimersByTime(30_000);
     });
-
+    expect(current.close).not.toHaveBeenCalled();
+    expect(MockWebSocket.sockets).toHaveLength(2);
     act(() => useAuthStore.getState().removeAccount("first"));
-    expect(original.close).not.toHaveBeenCalled();
-    expect(MockWebSocket.sockets).toHaveLength(1);
+    expect(current.close).toHaveBeenCalledOnce();
+    expect(MockWebSocket.sockets).toHaveLength(3);
   });
 
   it("discards pending events and ignores late socket callbacks after unmounting", () => {

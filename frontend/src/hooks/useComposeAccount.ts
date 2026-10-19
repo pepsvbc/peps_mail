@@ -4,16 +4,16 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiDelete, apiGet, apiGetBlob, apiPost, apiPostFormData } from "@/lib/api";
 import { useUiStore } from "@/stores/useUiStore";
 import { useAuthStore } from "@/stores/useAuthStore";
-import { replaceSignatureInBody, useComposeStore, type ComposeAttachment } from "@/stores/useComposeStore";
+import { replaceSignatureInBody, useComposeStore, type ComposeAttachment, type ComposeStore } from "@/stores/useComposeStore";
 import { generateId, stripHtml } from "@/components/mail/ComposeDialog/utils";
 import type { Identity } from "@/types/identity";
 
 /** Move the editing copy before switching accounts; a failed copy leaves the composer intact. */
-export function useComposeAccount() {
+export function useComposeAccount(store: ComposeStore = useComposeStore) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (targetAccountId: string) => {
-      const source = useComposeStore.getState();
+      const source = store.getState();
       const auth = useAuthStore.getState();
       const sourceAccountId = source.accountId ?? auth.activeAccountId;
       const targetAccount = auth.accounts.find((a) => a.id === targetAccountId);
@@ -55,13 +55,13 @@ export function useComposeAccount() {
         }
         await queryClient.cancelQueries({ predicate: (q) => q.queryKey[0] !== "account-unread" });
         // The mailbox may have been switched elsewhere while files were copying.
-        const current = useComposeStore.getState();
+        const current = store.getState();
         if (useAuthStore.getState().activeAccountId !== sourceAccountId || !current.isOpen || current.draftId !== source.draftId) {
           throw new Error("The active draft changed");
         }
         queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "account-unread" });
         queryClient.setQueryData(["identities"], identities);
-        useComposeStore.setState({
+        store.setState({
           accountId: targetAccountId, draftId: hasContent ? targetDraftId : null, attachments, body,
           fromIdentityId: identity?.id ?? null, signatureHtml: signature,
         });

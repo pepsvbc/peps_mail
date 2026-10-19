@@ -30,7 +30,7 @@ const { mockAuthState, mockUiState, mockUnreadCounts, mockQueryClient } = vi.hoi
     effectiveAnimationMode: "medium" as "rich" | "medium" | "subtle" | "off",
   },
   mockUnreadCounts: {} as Record<string, { count: number | undefined; isLoading: boolean; isError: boolean }>,
-  mockQueryClient: { clear: vi.fn(), removeQueries: vi.fn() },
+  mockQueryClient: { clear: vi.fn(), cancelQueries: vi.fn().mockResolvedValue(undefined), removeQueries: vi.fn() },
 }));
 
 vi.mock("@/hooks/useAccountUnreadCounts", () => ({
@@ -151,17 +151,17 @@ describe("account Inbox counts", () => {
   });
 
   it("keeps unread caches when switching accounts while removing mailbox caches", async () => {
-    vi.useFakeTimers();
     render(<AccountSwitcher />);
     fireEvent.click(screen.getByRole("button", { name: /admin@example.com/i }));
-    fireEvent.click(screen.getByRole("button", { name: /ops@example.com/i }));
-    await act(async () => { vi.advanceTimersByTime(150); });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /ops@example.com/i }));
+    });
 
     expect(mockAuthState.setActiveAccount).toHaveBeenCalledWith("a2");
     const { predicate } = mockQueryClient.removeQueries.mock.calls[0][0];
     expect(predicate({ queryKey: ["account-unread", "a1"] })).toBe(false);
     expect(predicate({ queryKey: ["account-unread", "a2"] })).toBe(false);
     expect(predicate({ queryKey: ["messages", "INBOX"] })).toBe(true);
-    await act(async () => { vi.advanceTimersByTime(100); });
+    expect(mockQueryClient.cancelQueries).toHaveBeenCalled();
   });
 });

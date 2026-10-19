@@ -2,7 +2,7 @@
 
 import { translate as t, useTranslation } from "@/lib/i18n";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { AnimatePresence } from "framer-motion";
 import {
   Paperclip,
@@ -17,6 +17,7 @@ import {
   Monitor,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { composeMessageKey, useInlineComposeHost } from "@/stores/useInlineComposeHost";
 import { useUiStore } from "@/stores/useUiStore";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useMessage, useUpdateFlags } from "@/hooks/useMessages";
@@ -46,6 +47,12 @@ export function ReadingPane() {
   const selectedMessageUid = useUiStore((s) => s.selectedMessageUid);
   const effectiveAnimationMode = useUiStore((s) => s.effectiveAnimationMode);
   const activeAccountId = useAuthStore((s) => s.activeAccountId);
+  const expandedView = useUiStore((s) => s.hideMessageList || !s.readingPaneVisible);
+  const inlineKey = composeMessageKey(activeAccountId, activeFolder, selectedMessageUid);
+  const inlineComposerVisible = useInlineComposeHost((s) => s.visibleMessageKey === inlineKey);
+  const inlineHostRef = useCallback((element: HTMLDivElement | null) => {
+    useInlineComposeHost.getState().setHost(element, inlineKey);
+  }, [inlineKey]);
   const [headerMode, setHeaderMode] = useState<HeaderMode>("details");
   const [bodyModeOverride, setBodyModeOverride] = useState<{
     messageKey: string;
@@ -148,12 +155,14 @@ export function ReadingPane() {
     <div
       className="flex h-full w-full flex-col overflow-hidden"
     >
+      <div className="min-h-0 overflow-y-auto">
       {/* Header area */}
-      <div className="relative shrink-0 space-y-1 overflow-x-hidden p-4 pb-6 pl-16">
-        <div aria-hidden="true" className="absolute left-4 top-4 flex size-9 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
+      <div className="shrink-0 overflow-x-hidden px-4 pt-4 pb-2">
+        <h2 className="mb-3 text-2xl font-semibold leading-tight tracking-tight">{data.subject}</h2>
+        <div className="relative space-y-1 pl-14">
+        <div aria-hidden="true" className="absolute left-0 top-0 flex size-10 items-center justify-center rounded-full bg-muted text-sm font-semibold text-muted-foreground">
           {(data.from_name || data.from_address).split(/\s+/).map((word) => word[0]).slice(0, 2).join("").toUpperCase()}
         </div>
-        <h2 className="text-lg font-bold leading-tight">{data.subject}</h2>
 
         {headerMode === "summary" ? (
           <div className="text-sm text-foreground">
@@ -268,8 +277,10 @@ export function ReadingPane() {
         </div>
       </div>
 
-      <div className="relative z-10 mb-4 h-px shrink-0 bg-border">
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-background px-2">
+      </div>
+
+      <div className="relative z-10 my-2 h-px shrink-0 bg-border">
+        <div className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-background px-2">
           <MessageReplyActions />
         </div>
       </div>
@@ -337,18 +348,19 @@ export function ReadingPane() {
         </div>
       )}
 
-      {/* Body area — fills remaining space */}
-      <div className="min-h-0 flex-1" key={messageKey}>
+      {/* Natural-height content keeps the reply actions close to short messages. */}
+      <div key={messageKey}>
         {showHeaders ? (
-          <pre className="h-full overflow-auto whitespace-pre-wrap break-words p-4 text-xs leading-relaxed text-foreground">
+          <pre className="whitespace-pre-wrap break-words p-4 text-xs leading-relaxed text-foreground">
             {data.raw_headers || t("No headers available")}
           </pre>
         ) : bodyMode === "plain" ? (
-          <pre className="h-full overflow-auto whitespace-pre-wrap break-words p-4 text-sm leading-relaxed text-foreground">
+          <pre className="whitespace-pre-wrap break-words p-4 text-sm leading-relaxed text-foreground">
             {data.text || t("No plain text available")}
           </pre>
         ) : (
           <EmailRenderer
+            autoHeight
             html={data.html}
             text={data.text}
             blockRemoteResources={!remoteAllowed}
@@ -357,9 +369,13 @@ export function ReadingPane() {
           />
         )}
       </div>
-      <div className="flex shrink-0 justify-center border-t border-border px-4 py-3">
-        <MessageReplyActions labeled />
+      {expandedView && <div ref={inlineHostRef} className="shrink-0 px-4 pb-4 empty:hidden" />}
       </div>
+      {!(expandedView && inlineComposerVisible) && (
+        <div className="flex shrink-0 justify-start border-t border-border px-6 py-2">
+          <MessageReplyActions labeled />
+        </div>
+      )}
     </div>
   );
 

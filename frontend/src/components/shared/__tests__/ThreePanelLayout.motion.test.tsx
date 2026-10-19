@@ -195,6 +195,8 @@ describe("Gmail-style reading layout", () => {
     const layout = <ThreePanelLayout sidebar={<div />} messageList={<div data-testid="message-list" />} readingPane={<div data-testid="reading-pane" />} />;
     rerender(layout);
     expect(list.className).toContain("!hidden");
+    expect(list.contains(screen.getByTestId("search-bar"))).toBe(false);
+    expect(screen.getAllByTestId("search-bar")).toHaveLength(1);
     expect(screen.getByTestId("reading-pane")).toBeTruthy();
     expect(screen.getByTestId("message-action-bar").getAttribute("data-show-back")).toBe("true");
     mockUiState.selectedMessageUid = null;

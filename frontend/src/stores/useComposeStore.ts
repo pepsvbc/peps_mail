@@ -1,10 +1,11 @@
 "use client";
 
-import { create } from "zustand";
+import { create, type StoreApi, type UseBoundStore } from "zustand";
 import { useUiStore } from "@/stores/useUiStore";
 import { useAuthStore } from "@/stores/useAuthStore";
 
 export interface ReplyParams {
+  sourceMessageKey?: string;
   to: string;
   cc: string;
   subject: string;
@@ -16,6 +17,7 @@ export interface ReplyParams {
 }
 
 export interface ForwardParams {
+  sourceMessageKey?: string;
   subject: string;
   body: string;
   isHtml?: boolean;
@@ -41,7 +43,10 @@ export interface ComposeAttachment {
   size: number;
 }
 
-interface ComposeState {
+export interface ComposeState {
+  focusBodyOnOpen: boolean;
+  pendingSend: boolean;
+  sourceMessageKey: string | null;
   isOpen: boolean;
   isMinimized: boolean;
   accountId: string | null;
@@ -126,6 +131,9 @@ export function removeSignatureFromBody(body: string): string {
 }
 
 const initialState = {
+  focusBodyOnOpen: false,
+  pendingSend: false,
+  sourceMessageKey: null as string | null,
   isOpen: false,
   isMinimized: false,
   accountId: null as string | null,
@@ -146,24 +154,39 @@ const initialState = {
   signatureEnabled: true,
 };
 
-export const useComposeStore = create<ComposeState>((set) => ({
+export type ComposeStore = UseBoundStore<StoreApi<ComposeState>>;
+
+function createComposeStore(): ComposeStore {
+  return create<ComposeState>((set, get) => ({
   ...initialState,
 
-  openCompose: (to = "") => set((state) => state.isOpen ? { isMinimized: false } : {
+  openCompose: (to = "") => {
+    if (get().isOpen || get().pendingSend) {
+      openAdditionalComposer((state) => state.openCompose(to));
+      return;
+    }
+    set({
     ...initialState,
     isOpen: true,
     accountId: useAuthStore.getState().activeAccountId,
     to,
     isHtml: useUiStore.getState().composeFormat !== "text",
-  }),
+    });
+  },
 
-  openReply: (params) =>
+  openReply: (params) => {
+    if (get().pendingSend) {
+      openAdditionalComposer((state) => state.openReply(params));
+      return;
+    }
     set((state) => state.isOpen ? { isMinimized: false } : {
       ...initialState,
       isOpen: true,
+      focusBodyOnOpen: true,
       accountId: useAuthStore.getState().activeAccountId,
       to: params.to,
       cc: params.cc,
+      sourceMessageKey: params.sourceMessageKey ?? null,
       subject: params.subject,
       body: params.body,
       inReplyTo: params.inReplyTo,
@@ -171,19 +194,30 @@ export const useComposeStore = create<ComposeState>((set) => ({
       showCc: params.cc.length > 0,
       fromIdentityId: params.fromIdentityId ?? null,
       isHtml: params.isHtml ?? true,
-    }),
+    });
+  },
 
-  openForward: (params) =>
+  openForward: (params) => {
+    if (get().pendingSend) {
+      openAdditionalComposer((state) => state.openForward(params));
+      return;
+    }
     set((state) => state.isOpen ? { isMinimized: false } : {
       ...initialState,
       isOpen: true,
       accountId: useAuthStore.getState().activeAccountId,
+      sourceMessageKey: params.sourceMessageKey ?? null,
       subject: params.subject,
       body: params.body,
       isHtml: params.isHtml ?? true,
-    }),
+    });
+  },
 
-  openDraft: (params) =>
+  openDraft: (params) => {
+    if (get().pendingSend) {
+      openAdditionalComposer((state) => state.openDraft(params));
+      return;
+    }
     set((state) => state.isOpen ? { isMinimized: false } : {
       ...initialState,
       isOpen: true,
@@ -200,7 +234,8 @@ export const useComposeStore = create<ComposeState>((set) => ({
       showBcc: params.bcc.length > 0,
       attachments: params.attachments,
       isHtml: params.isHtml ?? true,
-    }),
+    });
+  },
 
   closeCompose: () => set({ isOpen: false, isMinimized: false }),
   minimizeCompose: () => set((state) => ({ isMinimized: state.isOpen })),
@@ -231,3 +266,20 @@ export const useComposeStore = create<ComposeState>((set) => ({
 
   reset: () => set(initialState),
 }));
+}
+
+let nextWindowId = 1;
+export const useComposeStore = createComposeStore();
+export const useComposeWindows = create<{
+  windows: { id: number; store: ComposeStore }[];
+  focusedStore: ComposeStore | null;
+}>(() => ({ windows: [], focusedStore: null }));
+
+function openAdditionalComposer(open: (state: ComposeState) => void) {
+  const store = createComposeStore();
+  open(store.getState());
+  useComposeWindows.setState((state) => ({
+    windows: [...state.windows.filter((window) => window.store.getState().isOpen || window.store.getState().pendingSend), { id: nextWindowId++, store }],
+    focusedStore: store,
+  }));
+}

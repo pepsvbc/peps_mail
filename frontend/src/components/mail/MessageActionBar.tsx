@@ -8,6 +8,7 @@ import { useFolders } from "@/hooks/useFolders";
 import { findJunkFolder } from "@/lib/mail-folders";
 import {
   FolderInput,
+  Inbox,
   ArrowLeft,
   Trash2,
   Archive,
@@ -118,10 +119,43 @@ export function MessageActionBar({ showBack = false }: { showBack?: boolean }) {
       exit="exit"
       className="flex min-h-14 shrink-0 flex-wrap items-center gap-0.5 border-b border-border px-2 py-2"
     >
-      <Button variant="ghost" size="icon" className={showBack ? "size-8 shrink-0" : "size-8 shrink-0 md:hidden"}
+      <Button variant="ghost" size="icon" className={showBack ? "mr-4 size-8 shrink-0" : "mr-4 size-8 shrink-0 md:hidden"}
         title={t("Back to messages")} aria-label={t("Back to messages")}
         onClick={() => useUiStore.getState().selectMessage(null)}>
         <ArrowLeft className="size-4" />
+      </Button>
+
+      {/* Archive */}
+      <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled={disabled || activeFolder === "Archive"} title={t("Archive")} onClick={handleArchive}>
+        {shouldAnimate ? (
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.span
+              key={actionFeedback === "archive" ? "archive-busy" : "archive-idle"}
+              data-testid="message-action-archive-feedback-transition"
+              data-motion-props={serializedFeedbackMotionProps}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              variants={feedbackMotionProps}
+              className="inline-flex"
+            >
+              {actionFeedback === "archive" ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Archive className="size-4" />
+              )}
+            </motion.span>
+          </AnimatePresence>
+        ) : (
+          <Archive className="size-4" />
+        )}
+        <span className="sr-only">{t("Archive")}</span>
+      </Button>
+
+      {/* Junk */}
+      <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled={disabled || moveMessage.isPending || activeFolder === findJunkFolder(folderData?.folders ?? [])} title={t("Junk")} onClick={handleJunk}>
+        <AlertCircle className="size-4" />
+        <span className="sr-only">{t("Junk")}</span>
       </Button>
 
       {/* Delete */}
@@ -151,13 +185,15 @@ export function MessageActionBar({ showBack = false }: { showBack?: boolean }) {
         <span className="sr-only">{activeFolder === "Trash" ? t("Delete") : t("Delete")}</span>
       </Button>
 
-      {/* Archive */}
-      <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled={disabled || activeFolder === "Archive"} title={t("Archive")} onClick={handleArchive}>
+      <div role="separator" aria-orientation="vertical" className="mx-2 h-6 w-px shrink-0 bg-border" />
+
+      {/* Mark read/unread */}
+      <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled={disabled} title={isSeen ? t("Unread") : t("Read")} onClick={handleToggleRead}>
         {shouldAnimate ? (
           <AnimatePresence mode="wait" initial={false}>
             <motion.span
-              key={actionFeedback === "archive" ? "archive-busy" : "archive-idle"}
-              data-testid="message-action-archive-feedback-transition"
+              key={isSeen ? "seen" : "unseen"}
+              data-testid="message-action-read-feedback-transition"
               data-motion-props={serializedFeedbackMotionProps}
               initial="initial"
               animate="animate"
@@ -165,17 +201,28 @@ export function MessageActionBar({ showBack = false }: { showBack?: boolean }) {
               variants={feedbackMotionProps}
               className="inline-flex"
             >
-              {actionFeedback === "archive" ? (
-                <Loader2 className="size-4 animate-spin" />
+              {isSeen ? (
+                <MailOpen className="size-4" />
               ) : (
-                <Archive className="size-4" />
+                <Mail className="size-4" />
               )}
             </motion.span>
           </AnimatePresence>
+        ) : isSeen ? (
+          <MailOpen className="size-4" />
         ) : (
-          <Archive className="size-4" />
+          <Mail className="size-4" />
         )}
-        <span className="sr-only">{t("Archive")}</span>
+        <span className="sr-only">{isSeen ? t("Unread") : t("Read")}</span>
+      </Button>
+
+      <Button variant="ghost" size="icon" className="size-8 shrink-0"
+        disabled={disabled || moveMessage.isPending || activeFolder.toUpperCase() === "INBOX"}
+        title={t("Move to Inbox")} onClick={() => {
+          if (data) moveMessage.mutate({ fromFolder: activeFolder, toFolder: "INBOX", uid: data.uid });
+        }}>
+        <Inbox className="size-4" />
+        <span className="sr-only">{t("Move to Inbox")}</span>
       </Button>
 
       {/* Move to */}
@@ -227,12 +274,6 @@ export function MessageActionBar({ showBack = false }: { showBack?: boolean }) {
         />
       )}
 
-      {/* Junk */}
-      <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled={disabled || moveMessage.isPending || activeFolder === findJunkFolder(folderData?.folders ?? [])} title={t("Junk")} onClick={handleJunk}>
-        <AlertCircle className="size-4" />
-        <span className="sr-only">{t("Junk")}</span>
-      </Button>
-
       {/* Star/Unstar */}
       <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled={disabled} title={isFlagged ? t("Unstar") : t("Star")} onClick={handleToggleStar}>
         {shouldAnimate ? (
@@ -260,35 +301,6 @@ export function MessageActionBar({ showBack = false }: { showBack?: boolean }) {
           <Star className="size-4" />
         )}
         <span className="sr-only">{isFlagged ? t("Unstar") : t("Star")}</span>
-      </Button>
-
-      {/* Mark read/unread */}
-      <Button variant="ghost" size="icon" className="size-8 shrink-0" disabled={disabled} title={isSeen ? t("Unread") : t("Read")} onClick={handleToggleRead}>
-        {shouldAnimate ? (
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.span
-              key={isSeen ? "seen" : "unseen"}
-              data-testid="message-action-read-feedback-transition"
-              data-motion-props={serializedFeedbackMotionProps}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              variants={feedbackMotionProps}
-              className="inline-flex"
-            >
-              {isSeen ? (
-                <MailOpen className="size-4" />
-              ) : (
-                <Mail className="size-4" />
-              )}
-            </motion.span>
-          </AnimatePresence>
-        ) : isSeen ? (
-          <MailOpen className="size-4" />
-        ) : (
-          <Mail className="size-4" />
-        )}
-        <span className="sr-only">{isSeen ? t("Unread") : t("Read")}</span>
       </Button>
 
       {/* Tags */}

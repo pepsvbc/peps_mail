@@ -1,14 +1,8 @@
+import { parseRecipients } from "@/lib/recipients";
+
 /** Count the total number of recipients across To, Cc, Bcc fields. */
 export function countRecipients(...fields: string[]): number {
-  return fields.reduce(
-    (count, field) =>
-      count +
-      field
-        .split(",")
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0).length,
-    0,
-  );
+  return fields.reduce((count, field) => count + parseRecipients(field).length, 0);
 }
 
 /** Format bytes as human-readable file size. */

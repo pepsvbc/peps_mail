@@ -1,7 +1,8 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useComposeStore } from "@/stores/useComposeStore";
+import { useInlineComposeHost } from "@/stores/useInlineComposeHost";
+import { useComposeStore, useComposeWindows } from "@/stores/useComposeStore";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useUiStore } from "@/stores/useUiStore";
 import type { Identity } from "@/types/identity";
@@ -40,7 +41,7 @@ vi.mock("next/dynamic", () => ({
     content: string;
     onChange: (content: string) => void;
   }) {
-    return <textarea aria-label="Message body" value={content} onChange={(event) => onChange(event.target.value)} />;
+    return <textarea data-compose-body aria-label="Message body" value={content} onChange={(event) => onChange(event.target.value)} />;
   },
 }));
 
@@ -79,14 +80,137 @@ describe("composer window controls", () => {
       ],
     });
     useComposeStore.getState().reset();
+    useComposeWindows.setState({ windows: [], focusedStore: null });
     openComposer();
   });
 
   afterEach(() => {
     cleanup();
+    useInlineComposeHost.setState({ element: null, messageKey: null });
     vi.restoreAllMocks();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it.each(["reply", "forward"] as const)("renders an inline %s and preserves edits when its reader disappears", (kind) => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    useInlineComposeHost.getState().setHost(host, "original-message");
+    useComposeStore.getState().reset();
+    const params = { sourceMessageKey: "original-message", subject: "Re: Training", body: "Quoted message" };
+    if (kind === "reply") {
+      useComposeStore.getState().openReply({ ...params, to: "coach@example.com", cc: "", inReplyTo: "message-id", references: null });
+    } else {
+      useComposeStore.getState().openForward(params);
+    }
+    render(<ComposeDialog />);
+    expect(host.contains(screen.getByRole("dialog"))).toBe(true);
+    fireEvent.change(screen.getByRole("textbox", { name: "Message body" }), { target: { value: "My inline response" } });
+    act(() => useInlineComposeHost.getState().setHost(null, "original-message"));
+    expect(host.contains(screen.getByRole("dialog"))).toBe(false);
+    expect(screen.getByRole("textbox", { name: "Message body" })).toHaveValue("My inline response");
+    act(() => useInlineComposeHost.getState().setHost(host, "different-message"));
+    expect(host.contains(screen.getByRole("dialog"))).toBe(false);
+    act(() => useInlineComposeHost.getState().setHost(host, "original-message"));
+    expect(host.contains(screen.getByRole("dialog"))).toBe(true);
+    expect(screen.getByRole("textbox", { name: "Message body" })).toHaveValue("My inline response");
+    host.remove();
+  });
+
+  it("keeps a new message floating even when an inline host is available", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    useInlineComposeHost.getState().setHost(host, "original-message");
+    useComposeStore.getState().reset();
+    useComposeStore.getState().openCompose();
+    render(<ComposeDialog />);
+    expect(host.contains(screen.getByRole("dialog"))).toBe(false);
+    host.remove();
+  });
+
+  it("keeps an inline reply editable while opening and closing independent new-message popups", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    useInlineComposeHost.getState().setHost(host, "original-message");
+    useComposeStore.setState({ sourceMessageKey: "original-message" });
+    render(<ComposeDialog />);
+    fireEvent.change(within(host).getByRole("textbox", { name: "Message body" }), { target: { value: "Inline reply" } });
+    act(() => useComposeStore.getState().openCompose());
+    act(() => useComposeStore.getState().openCompose());
+    const dialogs = screen.getAllByRole("dialog").filter((dialog) => !host.contains(dialog));
+    expect(dialogs).toHaveLength(2);
+    fireEvent.change(within(dialogs[0]).getByRole("textbox", { name: "Message body" }), { target: { value: "Separate popup" } });
+    fireEvent.click(within(dialogs[1]).getByRole("button", { name: "Close composer" }));
+    expect(screen.getAllByRole("dialog")).toHaveLength(2);
+    expect(within(host).getByRole("textbox", { name: "Message body" })).toHaveValue("Inline reply");
+    expect(within(dialogs[0]).getByRole("textbox", { name: "Message body" })).toHaveValue("Separate popup");
+    host.remove();
+  });
+
+  it("docks windows side by side and minimizes older windows when the viewport is full", () => {
+    vi.stubGlobal("innerWidth", 1280);
+    render(<ComposeDialog />);
+    act(() => useComposeStore.getState().openCompose());
+    act(() => useComposeStore.getState().openCompose());
+    expect(within(screen.getByTestId("compose-window-dock")).getAllByRole("dialog")).toHaveLength(3);
+    act(() => {
+      vi.stubGlobal("innerWidth", 800);
+      window.dispatchEvent(new Event("resize"));
+    });
+    expect(within(screen.getByTestId("compose-window-dock")).getAllByRole("dialog")).toHaveLength(1);
+    expect(within(screen.getByTestId("compose-tab-dock")).getAllByRole("button", { name: "Restore composer" })).toHaveLength(2);
+    fireEvent.click(within(screen.getByTestId("compose-tab-dock")).getAllByRole("button", { name: "Restore composer" })[0]);
+    expect(within(screen.getByTestId("compose-window-dock")).getAllByRole("dialog")).toHaveLength(1);
+    expect(useComposeStore.getState().body).toBe("<p>Training on Tuesday.</p>");
+  });
+
+  it("sending an earlier message cannot clear a newly opened popup", () => {
+    render(<ComposeDialog />);
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    act(() => useComposeStore.getState().openCompose());
+    fireEvent.change(screen.getByRole("textbox", { name: "Message body" }), { target: { value: "Next message" } });
+    act(() => vi.advanceTimersByTime(5000));
+    act(() => sendMessage.mutate.mock.calls[0][1].onSuccess({ status: "sent" }));
+    expect(screen.getByRole("textbox", { name: "Message body" })).toHaveValue("Next message");
+  });
+
+  it("scrolls the inline answer box into view when replying", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    useInlineComposeHost.getState().setHost(host, "original-message");
+    useComposeStore.getState().reset();
+    useComposeStore.getState().openReply({
+      sourceMessageKey: "original-message", to: "coach@example.com", cc: "team@example.com",
+      subject: "Re: Training", body: "Quoted message", inReplyTo: null, references: null,
+    });
+    render(<ComposeDialog />);
+    act(() => vi.advanceTimersByTime(32));
+    const body = screen.getByRole("textbox", { name: "Message body" });
+    expect(body).toHaveFocus();
+    expect(body.scrollIntoView).toHaveBeenCalledWith({ block: "center", inline: "nearest" });
+    host.remove();
+  });
+
+  it.each(["", "team@example.com"])("focuses the body when replying with CC %s", (cc) => {
+    useComposeStore.getState().reset();
+    useComposeStore.getState().openReply({
+      to: "coach@example.com", cc, subject: "Re: Training", body: "Quoted message",
+      inReplyTo: null, references: null,
+    });
+    render(<ComposeDialog />);
+    act(() => vi.advanceTimersByTime(32));
+    const body = screen.getByRole("textbox", { name: "Message body" });
+    expect(body).toHaveFocus();
+    expect((body as HTMLTextAreaElement).selectionStart).toBe(0);
+  });
+
+  it.each([true, false])("moves Tab from Subject directly to the message body (HTML=%s)", (isHtml) => {
+    useComposeStore.setState({ isHtml });
+    render(<ComposeDialog />);
+    const subject = screen.getByRole("textbox", { name: "Subject" });
+    subject.focus();
+    fireEvent.keyDown(subject, { key: "Tab" });
+    expect(screen.getByRole("textbox", { name: "Message body" })).toHaveFocus();
   });
 
   it("keeps the editor open when saving on close fails", () => {
@@ -124,7 +248,7 @@ describe("composer window controls", () => {
     render(<ComposeDialog />);
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     fireEvent.click(screen.getAllByRole("button", { name: "Discard" }).at(-1)!);
-    expect(deleteDraft.mutate).toHaveBeenCalledWith("club-news-draft", expect.any(Object));
+    expect(deleteDraft.mutate).toHaveBeenCalledWith({ id: "club-news-draft", accountId: "account-a" }, expect.any(Object));
     expect(useComposeStore.getState().isOpen).toBe(true);
     act(() => deleteDraft.mutate.mock.calls[0][1].onError(new Error("Offline")));
     expect(useComposeStore.getState().isOpen).toBe(true);
@@ -270,7 +394,7 @@ describe("composer window controls", () => {
     render(<ComposeDialog />);
     const editor = screen.getByRole("textbox", { name: "Message body" });
     const recipient = screen.getByPlaceholderText("Recipients");
-    fireEvent.change(recipient, { target: { value: "team@example.com, unfinished" } });
+    fireEvent.change(recipient, { target: { value: "unfinished" } });
     fireEvent.change(editor, { target: { value: "<p>Updated schedule.</p>" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Minimize composer" }));
@@ -290,7 +414,7 @@ describe("composer window controls", () => {
 
     expect(screen.getByRole("textbox", { name: "Message body" })).toBe(editor);
     expect(editor).toBeVisible();
-    expect(recipient).toHaveValue("team@example.com, unfinished");
+    expect(recipient).toHaveValue("unfinished");
     expect(screen.getByText("schedule.pdf")).toBeVisible();
   });
 
@@ -333,6 +457,7 @@ describe("composer window controls", () => {
     fireEvent.click(screen.getByRole("button", { name: "Minimize composer" }));
     expect(screen.getByRole("button", { name: "Restore composer" })).toBeVisible();
     expect(screen.queryByRole("textbox", { name: "Message body" })).toBeNull();
+    expect(screen.getByTestId("compose-left-tabs")).toContainElement(composer);
 
     fireEvent.click(screen.getByRole("button", { name: "Restore composer" }));
     const restoreSize = screen.queryByRole("button", { name: "Restore composer size" });
@@ -342,6 +467,8 @@ describe("composer window controls", () => {
     fireEvent.click(screen.getByRole("button", { name: "Move composer to right" }));
     expect(screen.getByRole("button", { name: "Move composer to left" })).toBeVisible();
     expect(composer.className).not.toBe(leftClasses);
+    fireEvent.click(screen.getByRole("button", { name: "Minimize composer" }));
+    expect(screen.getByTestId("compose-right-tabs")).toContainElement(composer);
   });
 
   it("keeps the chosen side for the next message within the same session", () => {
@@ -412,7 +539,7 @@ describe("composer window controls", () => {
     const id = useComposeStore.getState().draftId;
     fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
-    expect(deleteDraft.mutate).toHaveBeenCalledWith(id, expect.any(Object));
+    expect(deleteDraft.mutate).toHaveBeenCalledWith({ id, accountId: "account-a" }, expect.any(Object));
     expect(useComposeStore.getState().isOpen).toBe(false);
   });
 

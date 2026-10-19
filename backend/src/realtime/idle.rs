@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use dashmap::DashMap;
+use dashmap::{DashMap, mapref::entry::Entry};
 use futures::StreamExt;
 use tokio::task::JoinHandle;
 
@@ -14,10 +14,15 @@ use crate::{db, imap};
 /// Manages long-lived IMAP IDLE connections, one per (user, folder) pair.
 ///
 /// When a WebSocket client connects, the IdleManager starts IDLE for INBOX.
-/// When the client disconnects, all IDLE tasks for that user are stopped.
+/// Each socket holds a reference; only the last disconnect stops the watcher.
 pub struct IdleManager {
     /// Active IDLE tasks keyed by `(user_hash, folder_name)`.
-    tasks: DashMap<(String, String), JoinHandle<()>>,
+    tasks: DashMap<(String, String), SharedIdleTask>,
+}
+
+struct SharedIdleTask {
+    handle: JoinHandle<()>,
+    subscribers: usize,
 }
 
 impl IdleManager {
@@ -28,7 +33,7 @@ impl IdleManager {
     }
 
     /// Start an IDLE task for a specific user + folder.
-    /// If one is already running, this is a no-op.
+    /// Reuse an existing watcher and register this socket as a subscriber.
     pub async fn start_idle(
         &self,
         user_hash: String,
@@ -38,44 +43,32 @@ impl IdleManager {
         config: Arc<AppConfig>,
     ) {
         let key = (user_hash.clone(), folder.clone());
-        if self.tasks.contains_key(&key) {
-            return;
-        }
-
-        let task_user_hash = user_hash.clone();
-        let task_folder = folder.clone();
-
-        let handle = tokio::spawn(async move {
-            idle_loop(&task_user_hash, &task_folder, &creds, &event_bus, &config).await;
-        });
-
-        self.tasks.insert(key, handle);
+        self.acquire(key, move || tokio::spawn(async move {
+            idle_loop(&user_hash, &folder, &creds, &event_bus, &config).await;
+        }));
     }
 
-    /// Stop the IDLE task for a specific user + folder.
-    #[allow(dead_code)]
-    pub async fn stop_idle(&self, user_hash: &str, folder: &str) {
-        let key = (user_hash.to_string(), folder.to_string());
-        if let Some((_, handle)) = self.tasks.remove(&key) {
-            handle.abort();
-        }
-    }
-
-    /// Stop all IDLE tasks for a user (called on WebSocket disconnect).
-    pub async fn stop_all(&self, user_hash: &str) {
-        let keys_to_remove: Vec<_> = self
-            .tasks
-            .iter()
-            .filter(|entry| entry.key().0 == user_hash)
-            .map(|entry| entry.key().clone())
-            .collect();
-
-        for key in keys_to_remove {
-            if let Some((_, handle)) = self.tasks.remove(&key) {
-                handle.abort();
+    fn acquire(&self, key: (String, String), start: impl FnOnce() -> JoinHandle<()>) {
+        match self.tasks.entry(key) {
+            Entry::Occupied(mut entry) => entry.get_mut().subscribers += 1,
+            Entry::Vacant(entry) => {
+                entry.insert(SharedIdleTask { handle: start(), subscribers: 1 });
             }
         }
     }
+
+    /// Release one socket's subscription without interrupting other clients.
+    pub async fn stop_idle(&self, user_hash: &str, folder: &str) {
+        let key = (user_hash.to_string(), folder.to_string());
+        if let Entry::Occupied(mut entry) = self.tasks.entry(key) {
+            if entry.get().subscribers > 1 {
+                entry.get_mut().subscribers -= 1;
+            } else {
+                entry.remove().handle.abort();
+            }
+        }
+    }
+
 }
 
 impl Default for IdleManager {
@@ -140,10 +133,29 @@ async fn run_idle_session(
         .await
         .map_err(|e| format!("IDLE connect failed: {e}"))?;
 
+    {
+        let conn = db::pool::open_user_db(&config.data_dir, user_hash)
+            .map_err(|e| format!("IDLE database error: {e}"))?;
+        db::folders::insert_folder_if_new(&conn, folder, None, "")?;
+    }
+
     session
         .select_condstore(folder)
         .await
         .map_err(|e| format!("IDLE SELECT failed: {e}"))?;
+
+    // Catch up an existing Inbox cache immediately after reconnecting. IDLE
+    // only reports future changes, so mail received while disconnected would
+    // otherwise remain stale until the periodic scan or a folder visit.
+    let has_cached_messages = db::pool::open_user_db(&config.data_dir, user_hash)
+        .ok()
+        .and_then(|conn| db::messages::count_messages(&conn, folder).ok())
+        .is_some_and(|count| count > 0);
+    if has_cached_messages {
+        let changes;
+        (session, changes) = fetch_new_after_idle(session, user_hash, folder, config).await;
+        publish_reconciliation(event_bus, user_hash, folder, changes).await;
+    }
 
     tracing::info!(user_hash = %user_hash, folder = %folder, "IDLE session started");
 
@@ -197,29 +209,7 @@ async fn run_idle_session(
                         )
                         .await;
 
-                        // Publish the correct event based on what changed.
-                        if result.new_count > 0 {
-                            event_bus
-                                .publish(
-                                    user_hash,
-                                    MailEvent::NewMessages {
-                                        folder: folder.to_string(),
-                                        count: result.new_count,
-                                        latest_sender: result.latest_sender,
-                                        latest_subject: result.latest_subject,
-                                    },
-                                )
-                                .await;
-                        } else if result.flags_updated > 0 || result.deleted_count > 0 {
-                            event_bus
-                                .publish(
-                                    user_hash,
-                                    MailEvent::FlagsChanged {
-                                        folder: folder.to_string(),
-                                    },
-                                )
-                                .await;
-                        }
+                        publish_reconciliation(event_bus, user_hash, folder, result).await;
                     }
                     IdleResponse::Timeout => {
                         tracing::debug!(
@@ -250,6 +240,17 @@ async fn run_idle_session(
                 );
             }
         }
+    }
+}
+
+async fn publish_reconciliation(event_bus: &EventBus, user_hash: &str, folder: &str, result: ReconcileResult) {
+    if result.new_count > 0 {
+        event_bus.publish(user_hash, MailEvent::NewMessages {
+            folder: folder.to_string(), count: result.new_count,
+            latest_sender: result.latest_sender, latest_subject: result.latest_subject,
+        }).await;
+    } else if result.flags_updated > 0 || result.deleted_count > 0 {
+        event_bus.publish(user_hash, MailEvent::FlagsChanged { folder: folder.to_string() }).await;
     }
 }
 
@@ -829,4 +830,26 @@ async fn fetch_uids_and_remove_deleted(
     }
 
     deleted_count
+}
+
+
+#[cfg(test)]
+mod shared_idle_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn reconnecting_or_closing_one_tab_keeps_other_subscribers_alive() {
+        let manager = IdleManager::new();
+        let key = ("user".to_string(), "INBOX".to_string());
+        manager.acquire(key.clone(), || tokio::spawn(std::future::pending()));
+        let watcher = manager.tasks.get(&key).unwrap().handle.abort_handle();
+        manager.acquire(key.clone(), || panic!("must share the existing watcher"));
+        manager.stop_idle("user", "INBOX").await;
+        assert!(manager.tasks.contains_key(&key));
+        assert!(!watcher.is_finished());
+        manager.stop_idle("user", "INBOX").await;
+        assert!(!manager.tasks.contains_key(&key));
+        tokio::task::yield_now().await;
+        assert!(watcher.is_finished());
+    }
 }

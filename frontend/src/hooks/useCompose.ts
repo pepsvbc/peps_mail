@@ -1,10 +1,12 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { parseRecipients } from "@/lib/recipients";
 import { apiPost, apiGet, apiPostFormData, apiDelete } from "@/lib/api";
-import { useComposeStore } from "@/stores/useComposeStore";
+import { useComposeStore, useComposeWindows } from "@/stores/useComposeStore";
 
 interface SendParams {
+  accountId?: string;
   to: string;
   cc: string;
   bcc: string;
@@ -38,6 +40,7 @@ interface DeleteAttachmentResponse {
 }
 
 interface SaveDraftParams {
+  accountId?: string;
   id: string;
   to: string;
   cc: string;
@@ -87,12 +90,6 @@ export interface DraftDetail {
   }[];
 }
 
-function parseRecipients(raw: string): string[] {
-  return raw
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-}
 
 export function useSendMessage() {
   const queryClient = useQueryClient();
@@ -110,7 +107,7 @@ export function useSendMessage() {
         references: params.references,
         draft_id: params.draftId,
         from_identity_id: params.fromIdentityId,
-      }),
+      }, { accountId: params.accountId }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["drafts"] });
       queryClient.invalidateQueries({ queryKey: ["messages"] });
@@ -171,7 +168,7 @@ export function useSaveDraft() {
         in_reply_to: params.inReplyTo,
         references: params.references,
         defer_sync: true,
-      }),
+      }, { accountId: params.accountId }),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["drafts"] });
       queryClient.invalidateQueries({ queryKey: ["messages"] });
@@ -200,11 +197,14 @@ export function useDeleteDraft() {
   const queryClient = useQueryClient();
   return useMutation({
     scope: { id: "draft-lifecycle" },
-    mutationFn: (id: string) =>
-      apiDelete<{ status: string }>(`/drafts/${id}`),
-    onSuccess: (_result, id) => {
-      const compose = useComposeStore.getState();
-      if (compose.draftId === id) compose.reset();
+    mutationFn: (draft: string | { id: string; accountId?: string }) =>
+      apiDelete<{ status: string }>(`/drafts/${typeof draft === "string" ? draft : draft.id}`, typeof draft === "string" ? {} : { accountId: draft.accountId }),
+    onSuccess: (_result, draft) => {
+      const id = typeof draft === "string" ? draft : draft.id;
+      for (const store of [useComposeStore, ...useComposeWindows.getState().windows.map((window) => window.store)]) {
+        const compose = store.getState();
+        if (compose.draftId === id && (typeof draft === "string" || !draft.accountId || compose.accountId === draft.accountId)) compose.reset();
+      }
       queryClient.invalidateQueries({ queryKey: ["drafts"] });
       queryClient.invalidateQueries({ queryKey: ["messages"] });
       queryClient.invalidateQueries({ queryKey: ["folders"] });

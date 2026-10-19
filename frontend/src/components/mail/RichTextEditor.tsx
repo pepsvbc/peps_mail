@@ -158,9 +158,9 @@ export function RichTextEditor({
   if (!editor) return null;
 
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div data-compose-body className={cn("flex flex-col", className)}>
       {/* Toolbar */}
-      <div className={cn("flex items-center gap-0.5 border-b border-border/50 px-3", compact ? "py-1" : "py-1.5")}>
+      <div className={cn("flex shrink-0 flex-wrap items-center gap-0.5 border-b border-border/50 px-3", compact ? "py-1" : "py-1.5")}>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBold().run()}
           active={editor.isActive("bold")}
@@ -249,7 +249,7 @@ export function RichTextEditor({
       )}
 
       {/* Editor */}
-      <div className="flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto">
         <EditorContent editor={editor} />
       </div>
     </div>

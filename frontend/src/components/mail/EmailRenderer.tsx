@@ -6,6 +6,7 @@ import { useRef, useCallback, useEffect, useState, useMemo } from "react";
 import { useUiStore } from "@/stores/useUiStore";
 
 interface EmailRendererProps {
+  autoHeight?: boolean;
   html: string | null;
   text: string | null;
   blockRemoteResources?: boolean;
@@ -64,6 +65,7 @@ export function hasRemoteResources(html: string | null): boolean {
 export function EmailRenderer({
   html,
   text,
+  autoHeight = false,
   blockRemoteResources = false,
   theme = "auto",
   emailTheme
@@ -108,7 +110,7 @@ export function EmailRenderer({
   }, [emailTheme, resolvedTheme, isSystemDark]);
 
   // Compute a stable key for the iframe — when this changes, React remounts the iframe
-  const iframeKey = `${shouldInvert ? "inverted" : "normal"}-${isDark ? "dark" : "light"}-${blockRemoteResources}`;
+  const iframeKey = `${shouldInvert ? "inverted" : "normal"}-${isDark ? "dark" : "light"}-${blockRemoteResources}-${autoHeight}`;
 
   const handleIframeLoad = useCallback(() => {
     const iframe = iframeRef.current;
@@ -119,7 +121,7 @@ export function EmailRenderer({
       const body = doc?.body;
       if (body) {
         // Use the container height as a minimum so email bg fills the pane
-        const containerHeight = iframe.parentElement?.clientHeight ?? 0;
+        const containerHeight = autoHeight ? 0 : iframe.parentElement?.clientHeight ?? 0;
         let lastHeight = 0;
         const updateHeight = () => {
           const docEl = doc?.documentElement;
@@ -158,7 +160,7 @@ export function EmailRenderer({
     } catch {
       iframe.style.height = "600px";
     }
-  }, []);
+  }, [autoHeight]);
 
   // Memoize the heavy HTML processing — regex replacements, CSS generation, etc.
   // This only re-runs when the actual inputs change, not on every render.
@@ -368,7 +370,7 @@ export function EmailRenderer({
       overflow-x: auto;
     }
     body {
-      padding: 16px !important;
+      padding: 8px 16px 16px !important;
       background-color: ${iframeBg};
       color: ${iframeFg};
     }
@@ -430,7 +432,7 @@ export function EmailRenderer({
       overflow-y: hidden !important;
     }
     body {
-      padding: 16px !important;
+      padding: 8px 16px 16px !important;
     }
     ${transparentDarkCSS}
     ${adaptiveDarkCSS}
@@ -475,7 +477,7 @@ export function EmailRenderer({
 
   if (wrappedHtml) {
     return (
-      <div className="h-full w-full overflow-auto bg-background">
+      <div className={autoHeight ? "w-full bg-background" : "h-full w-full overflow-auto bg-background"}>
         {/*
          * SECURITY: iframe sandbox attribute rationale
          *
@@ -523,7 +525,7 @@ export function EmailRenderer({
           srcDoc={wrappedHtml}
           className="w-full border-none"
           style={{
-            minHeight: "100%",
+            minHeight: autoHeight ? undefined : "100%",
           }}
           title={t("Email content")}
           onLoad={handleIframeLoad}

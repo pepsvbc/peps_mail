@@ -1,10 +1,13 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
+import { composeMessageKey, useInlineComposeHost } from "@/stores/useInlineComposeHost";
 import { ReadingPane } from "../ReadingPane";
 
 const { ui, auth, useMessage } = vi.hoisted(() => ({
   ui: {
+    hideMessageList: false,
+    readingPaneVisible: true,
     activeFolder: "INBOX",
     selectedMessageUid: 7,
     effectiveAnimationMode: "off",
@@ -74,6 +77,8 @@ function setMessage(html: string | null = '<img src="https://example.com/pixel.g
 }
 
 beforeEach(() => {
+  ui.hideMessageList = false;
+  ui.readingPaneVisible = true;
   ui.activeFolder = "INBOX";
   ui.selectedMessageUid = 7;
   auth.activeAccountId = "first-account";
@@ -82,6 +87,23 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("ReadingPane message display choices", () => {
+  it("registers an inline composer host only in expanded view and clears it on unmount", () => {
+    const { rerender, unmount } = render(<ReadingPane />);
+    expect(useInlineComposeHost.getState().element).toBeNull();
+    ui.readingPaneVisible = false;
+    rerender(<ReadingPane />);
+    expect(useInlineComposeHost.getState().element?.isConnected).toBe(true);
+    expect(useInlineComposeHost.getState().messageKey).toBe(composeMessageKey("first-account", "INBOX", 7));
+    ui.readingPaneVisible = true;
+    rerender(<ReadingPane />);
+    expect(useInlineComposeHost.getState().element).toBeNull();
+    ui.hideMessageList = true;
+    rerender(<ReadingPane />);
+    expect(useInlineComposeHost.getState().element?.isConnected).toBe(true);
+    unmount();
+    expect(useInlineComposeHost.getState().element).toBeNull();
+  });
+
   it("defaults to plain text for messages without HTML", () => {
     setMessage(null);
     render(<ReadingPane />);

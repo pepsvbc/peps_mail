@@ -254,7 +254,7 @@ async fn handle_socket_multi_account(
 
     for account in &auth.accounts {
         let session = &account.session;
-        idle_manager.stop_all(&session.user_hash).await;
+        idle_manager.stop_idle(&session.user_hash, "INBOX").await;
         event_bus.cleanup(&session.user_hash).await;
     }
 }

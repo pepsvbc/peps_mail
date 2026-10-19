@@ -1,10 +1,12 @@
 "use client";
 
 import { useTranslation } from "@/lib/i18n";
+import { formatRecipient } from "@/lib/recipients";
 import { Reply, ReplyAll, Forward } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUiStore } from "@/stores/useUiStore";
 import { useMessage } from "@/hooks/useMessages";
+import { composeMessageKey } from "@/stores/useInlineComposeHost";
 import { useComposeStore } from "@/stores/useComposeStore";
 import { useAuthStore } from "@/stores/useAuthStore";
 import {
@@ -39,7 +41,7 @@ function findMatchingIdentity(
 
 function formatAddressList(addresses: EmailAddress[]): string {
   return addresses
-    .map((a) => (a.name ? `${a.name} <${a.address}>` : a.address))
+    .map((a) => formatRecipient(a.address, a.name))
     .join(", ");
 }
 
@@ -70,6 +72,7 @@ export function MessageReplyActions({ labeled = false }: { labeled?: boolean }) 
     useComposeStore.getState().openReply({
       to: data.from_address,
       cc: "",
+      sourceMessageKey: composeMessageKey(useAuthStore.getState().activeAccountId, activeFolder, selectedMessageUid),
       subject: buildReplySubject(data.subject),
       body: hasHtml
         ? buildReplyBodyHtml(data.html!, data.from_address, data.date)
@@ -101,6 +104,7 @@ export function MessageReplyActions({ labeled = false }: { labeled?: boolean }) 
     useComposeStore.getState().openReply({
       to: replyTo,
       cc: ccList,
+      sourceMessageKey: composeMessageKey(useAuthStore.getState().activeAccountId, activeFolder, selectedMessageUid),
       subject: buildReplySubject(data.subject),
       body: hasHtml
         ? buildReplyBodyHtml(data.html!, data.from_address, data.date)
@@ -117,6 +121,7 @@ export function MessageReplyActions({ labeled = false }: { labeled?: boolean }) 
     const toList = formatAddressList(data.to_addresses);
     const hasHtml = !!(data.html && data.html.trim());
     useComposeStore.getState().openForward({
+      sourceMessageKey: composeMessageKey(useAuthStore.getState().activeAccountId, activeFolder, selectedMessageUid),
       subject: buildForwardSubject(data.subject),
       body: hasHtml
         ? buildForwardBodyHtml(data.html!, data.from_address, data.date, data.subject, toList)
