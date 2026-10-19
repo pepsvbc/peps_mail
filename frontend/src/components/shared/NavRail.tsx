@@ -8,7 +8,6 @@ import { useCallback, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   Inbox,
-  PenLine,
   Users,
   Calendar,
   Settings,
@@ -23,7 +22,6 @@ import { apiPost } from "@/lib/api";
 import { brand } from "@/lib/brand";
 import { runThemeSpreadTransition } from "@/lib/motion/theme-spread";
 import { cn } from "@/lib/utils";
-import { useComposeStore } from "@/stores/useComposeStore";
 import { useUiStore } from "@/stores/useUiStore";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useAccountUnreadCounts } from "@/hooks/useAccountUnreadCounts";
@@ -171,11 +169,6 @@ export function NavRail() {
 
         {/* Top actions */}
         <div className="flex flex-col items-center gap-1">
-          <NavButton
-            icon={<PenLine className="size-5" />}
-            label={t("Compose")}
-            onClick={() => useComposeStore.getState().openCompose()}
-          />
           <NavButton
             icon={<Inbox className="size-5" />}
             label={mailLabel}
