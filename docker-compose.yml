@@ -19,13 +19,10 @@ services:
       - RUST_LOG=${RUST_LOG:-info,tantivy=warn,async_imap=warn}
       - SESSION_TIMEOUT_HOURS=${SESSION_TIMEOUT_HOURS:-24}
     volumes:
-      - peps-mail-data:/data
+      - ./data:/data
     healthcheck:
       test: ["CMD", "sh", "-c", "curl -f http://localhost:3001${BASE_PATH:-}/api/health"]
       interval: 30s
       timeout: 3s
       retries: 3
       start_period: 5s
-
-volumes:
-  peps-mail-data:

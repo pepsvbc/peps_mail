@@ -86,7 +86,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./peps-mail-data:/data
+      - ./data:/data
 ```
 
 Copy [`.env.example`](.env.example) to `.env` beside `compose.yaml` (download the example first if you are using the image without cloning this repository):
@@ -99,7 +99,7 @@ Edit `.env` to set your IMAP/SMTP hostnames, ports, and TLS settings, then run `
 
 Then open [http://localhost:3001](http://localhost:3001) and log in with your email credentials.
 
-The image example above stores data in `./peps-mail-data`. The included Compose file uses the named volume `<project>_peps-mail-data`; development uses `peps-mail-dev_peps-mail-data`.
+The image example and included Compose file store SQLite databases and search indexes in `./data` on the host, mounted at `/data` in the container. Development uses the same folder. This folder is excluded from Git and Docker builds.
 
 Our image and local builds include the PEPS VBC theme.
 

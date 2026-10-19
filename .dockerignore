@@ -41,3 +41,6 @@ Thumbs.db
 # Docker files (avoid recursive context)
 .docker/
 docker-compose.yml
+
+# Local runtime data
+data/
