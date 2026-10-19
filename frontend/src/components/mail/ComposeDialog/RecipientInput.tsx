@@ -2,8 +2,8 @@
 
 import { translate as t, useTranslation } from "@/lib/i18n";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAutocomplete } from "@/hooks/useAutocomplete";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 interface RecipientInputProps {
   value: string;
@@ -74,8 +74,15 @@ export function RecipientInput({
 
   const hasResults = results.length > 0 && query.length >= 2;
 
+  // A trailing token that already looks like a complete address (e.g. a
+  // prefilled reply recipient, or a finished "Name <email@host>") should not
+  // trigger the suggestion dropdown, since there is nothing left to complete.
+  const isCompleteAddress =
+    /^.*<[^@<>\s]+@[^@<>\s]+>$/.test(query) ||
+    /^[^@<>\s]+@[^@<>\s]+\.[^@<>\s]+$/.test(query);
+
   // Dropdown shows when there are results and the user hasn't dismissed this exact query
-  const showDropdown = hasResults && dismissedQuery !== query;
+  const showDropdown = hasResults && !isCompleteAddress && dismissedQuery !== query;
 
   const selectSuggestion = useCallback(
     (suggestion: { email: string; name?: string }) => {
@@ -150,11 +157,10 @@ export function RecipientInput({
             <button
               key={`${result.item.email}-${result.item.source}`}
               type="button"
-              className={`flex w-full flex-col px-3 py-2 text-left text-sm transition-colors ${
-                i === selectedIndex
-                  ? "bg-accent text-accent-foreground"
-                  : "text-popover-foreground hover:bg-accent/50"
-              }`}
+              className={`flex w-full flex-col px-3 py-2 text-left text-sm transition-colors ${i === selectedIndex
+                ? "bg-accent text-accent-foreground"
+                : "text-popover-foreground hover:bg-accent/50"
+                }`}
               onMouseEnter={() => setSelectedIndex(i)}
               onMouseDown={(e) => {
                 e.preventDefault(); // prevent input blur
