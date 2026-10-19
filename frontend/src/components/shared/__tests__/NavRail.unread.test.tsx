@@ -1,10 +1,11 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountUnreadCount } from "@/hooks/useAccountUnreadCounts";
 import { NavRail } from "../NavRail";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useUiStore } from "@/stores/useUiStore";
 import { useLanguageStore } from "@/lib/i18n";
+import { brand } from "@/lib/brand";
 
 const { counts } = vi.hoisted(() => ({ counts: {} as Record<string, AccountUnreadCount> }));
 vi.mock("@/hooks/useAccountUnreadCounts", () => ({ useAccountUnreadCounts: () => counts }));
@@ -29,6 +30,31 @@ afterEach(() => {
 });
 
 describe("Mail navigation unread total", () => {
+  it("keeps the brand mark separate from Inbox navigation", () => {
+    render(<NavRail />);
+    expect(screen.queryByRole("button", { name: "Go to inbox" })).toBeNull();
+    expect(screen.getByRole("img", { name: brand.appName })).toBeTruthy();
+  });
+
+  it("returns to the Inbox when Mail is selected", () => {
+    useUiStore.setState({
+      viewMode: "contacts",
+      activeFolder: "Sent",
+      searchActive: true,
+      searchQuery: "invoice",
+    });
+    render(<NavRail />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Mail — 10 unread messages in all inboxes" }));
+
+    expect(useUiStore.getState()).toMatchObject({
+      viewMode: "mail",
+      activeFolder: "INBOX",
+      searchActive: false,
+      searchQuery: "",
+    });
+  });
+
   it("includes the active Inbox and keeps the same total when switching accounts", () => {
     render(<NavRail />);
     expect(screen.getByRole("button", { name: "Mail — 10 unread messages in all inboxes" }).textContent).toBe("10");

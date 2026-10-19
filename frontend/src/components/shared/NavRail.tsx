@@ -157,22 +157,17 @@ export function NavRail() {
   return (
     <Tooltip.Provider delayDuration={400}>
       <nav aria-label={t("Main navigation")} className="relative flex h-full w-14 shrink-0 flex-col items-center border-r border-border bg-background py-2">
-        {/* Logo */}
-        <button
-          type="button"
-          className="mb-4 flex size-10 cursor-pointer items-center justify-center rounded-lg transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label={t("Go to inbox")}
-          title={`${brand.appName} — ${t("Inbox")}`}
-          onClick={() => {
-            clearSearch();
-            setActiveFolder("INBOX");
-            setViewMode("mail");
-          }}
+        {/* Brand */}
+        <div
+          className="mb-4 flex size-10 items-center justify-center"
+          role="img"
+          aria-label={brand.appName}
+          title={brand.appName}
         >
           <span aria-hidden="true" className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Volleyball className="size-6" />
           </span>
-        </button>
+        </div>
 
         {/* Top actions */}
         <div className="flex flex-col items-center gap-1">
@@ -186,7 +181,11 @@ export function NavRail() {
             label={mailLabel}
             badge={unreadBadge}
             active={viewMode === "mail"}
-            onClick={() => setViewMode("mail")}
+            onClick={() => {
+              clearSearch();
+              setActiveFolder("INBOX");
+              setViewMode("mail");
+            }}
           />
           <NavButton
             icon={<Users className="size-5" />}
@@ -199,12 +198,6 @@ export function NavRail() {
             label={t("Calendar")}
             active={viewMode === "calendar"}
             onClick={() => setViewMode(viewMode === "calendar" ? "mail" : "calendar")}
-          />
-          <NavButton
-            icon={<Settings className="size-5" />}
-            label={t("Settings")}
-            active={viewMode === "settings"}
-            onClick={() => setViewMode(viewMode === "settings" ? "mail" : "settings")}
           />
         </div>
 
@@ -221,6 +214,12 @@ export function NavRail() {
 
         {/* Bottom actions */}
         <div className="flex flex-col items-center gap-1">
+          <NavButton
+            icon={<Settings className="size-5" />}
+            label={t("Settings")}
+            active={viewMode === "settings"}
+            onClick={() => setViewMode(viewMode === "settings" ? "mail" : "settings")}
+          />
           <NavButton
             icon={
               resolvedTheme === "dark" ? (
