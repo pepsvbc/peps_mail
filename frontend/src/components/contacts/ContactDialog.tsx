@@ -1,0 +1,186 @@
+"use client";
+
+import { useTranslation } from "@/lib/i18n";
+
+import { useState, useCallback, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
+import { AnimatePresence } from "framer-motion";
+import { X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useUiStore } from "@/stores/useUiStore";
+import { createFadeSlideVariants, createScaleFadeVariants } from "@/lib/motion/variants";
+import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
+
+interface ContactDialogProps {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (data: {
+    name: string;
+    email: string;
+    company?: string;
+    notes?: string;
+  }) => void;
+  isPending: boolean;
+}
+
+export function ContactDialog({
+  open,
+  onClose,
+  onSubmit,
+  isPending,
+}: ContactDialogProps) {
+  const { t } = useTranslation();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [company, setCompany] = useState("");
+  const [notes, setNotes] = useState("");
+  const effectiveAnimationMode = useUiStore((s) => s.effectiveAnimationMode);
+  const overlayMotionProps = useMemo(() => createFadeSlideVariants(effectiveAnimationMode, "y"), [effectiveAnimationMode]);
+  const contentMotionProps = useMemo(() => createScaleFadeVariants(effectiveAnimationMode), [effectiveAnimationMode]);
+
+  // Reset form when dialog opens
+  useEffect(() => {
+    if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset on dialog open
+      setName("");
+      setEmail("");
+      setCompany("");
+      setNotes("");
+    }
+  }, [open]);
+
+  // Close on Escape
+  useEffect(() => {
+    if (!open) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open, onClose]);
+
+  const handleSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!email.trim()) return;
+      onSubmit({
+        name: name.trim(),
+        email: email.trim(),
+        company: company.trim() || undefined,
+        notes: notes.trim() || undefined,
+      });
+    },
+    [name, email, company, notes, onSubmit],
+  );
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <AnimatePresence>
+      {open ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Overlay */}
+          <AnimatedDiv
+            data-testid="contact-dialog-overlay-transition"
+            variants={overlayMotionProps}
+            initial={overlayMotionProps.initial}
+            animate={overlayMotionProps.animate}
+            exit={overlayMotionProps.exit}
+            className="absolute inset-0 bg-black/50"
+            onClick={onClose}
+          />
+
+          {/* Dialog */}
+          <AnimatedDiv
+            data-testid="contact-dialog-content-transition"
+            variants={contentMotionProps}
+            initial={contentMotionProps.initial}
+            animate={contentMotionProps.animate}
+            exit={contentMotionProps.exit}
+            className="relative z-10 w-full max-w-md rounded-lg border border-border bg-background p-6 shadow-xl"
+          >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-foreground">
+            {t("New Contact")}
+          </h2>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onClose}
+            aria-label={t("Close")}
+            className="text-muted-foreground"
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="contact-name">{t("Name")}</Label>
+            <Input
+              id="contact-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t("John Doe")}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="contact-email">
+              {t("Email")} <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="contact-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="john@example.com"
+              required
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="contact-company">{t("Company")}</Label>
+            <Input
+              id="contact-company"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+              placeholder={t("Acme Inc.")}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="contact-notes">{t("Notes")}</Label>
+            <textarea
+              id="contact-notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder={t("Add any notes...")}
+              rows={3}
+              className="w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none resize-none dark:bg-input/30"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={isPending}
+            >
+              {t("Cancel")}
+            </Button>
+            <Button type="submit" disabled={isPending || !email.trim()}>
+              {isPending ? t("Creating...") : t("Create Contact")}
+            </Button>
+          </div>
+        </form>
+          </AnimatedDiv>
+        </div>
+      ) : null}
+    </AnimatePresence>,
+    document.body,
+  );
+}

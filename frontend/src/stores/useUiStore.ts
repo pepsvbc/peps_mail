@@ -1,0 +1,191 @@
+"use client";
+
+import { DEFAULT_MAIL_DENSITY, type MailDensity } from "@/lib/mail-density";
+
+import { STORAGE_KEYS, readStoredPreference, writeStoredPreference } from "@/lib/browser-storage";
+
+import { create, type UseBoundStore, type StoreApi } from "zustand";
+
+import type { AnimationMode } from "@/lib/motion/config";
+
+const STORAGE_KEY = STORAGE_KEYS.uiSettings;
+
+interface PersistedSettings {
+  sidebarWidth: number;
+  messageListWidth: number;
+}
+
+function loadSettings(): PersistedSettings {
+  if (typeof window === "undefined") {
+    return { sidebarWidth: 200, messageListWidth: 420 };
+  }
+  try {
+    const raw = readStoredPreference(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        sidebarWidth: parsed.sidebarWidth ?? 200,
+        messageListWidth: parsed.messageListWidth ?? 420,
+      };
+    }
+  } catch {
+    // ignore
+  }
+  return { sidebarWidth: 200, messageListWidth: 420 };
+}
+
+function saveSettings(settings: Partial<PersistedSettings>) {
+  try {
+    const current = loadSettings();
+    writeStoredPreference(
+      STORAGE_KEY,
+      JSON.stringify({ ...current, ...settings }),
+    );
+  } catch {
+    // ignore
+  }
+}
+
+export type ThemeMode = "light" | "dark" | "system";
+
+const DEFAULT_EFFECTIVE_ANIMATION_MODE: AnimationMode = "medium";
+
+export interface AnimationModeState {
+  storedMode: AnimationMode | null;
+  effectiveMode: AnimationMode;
+}
+
+export interface UiState {
+  activeFolder: string;
+  unreadOnly: boolean;
+  folderDrawerOpen: boolean;
+  setUnreadOnly: (value: boolean) => void;
+  setFolderDrawerOpen: (open: boolean) => void;
+  selectedMessageUid: number | null;
+  sidebarWidth: number;
+  messageListWidth: number;
+  readingPaneVisible: boolean;
+  hideMessageList: boolean;
+  density: MailDensity;
+  theme: ThemeMode;
+  searchQuery: string;
+  searchActive: boolean;
+  viewMode: "mail" | "contacts" | "settings" | "calendar";
+  selectedMessageUids: number[];
+  bulkSelectMode: boolean;
+  activeTagId: string | null;
+  shortcutsOpen: boolean;
+  commandPaletteOpen: boolean;
+  keyboardNav: boolean;
+  composeFormat: "html" | "text";
+  storedAnimationMode: AnimationMode | null;
+  effectiveAnimationMode: AnimationMode;
+  searchSortOrder: "date_desc" | "date_asc";
+  searchResultCount: number | null;
+
+  setActiveTag: (tagId: string | null) => void;
+  setActiveFolder: (folder: string) => void;
+  selectMessage: (uid: number | null) => void;
+  setSidebarWidth: (width: number) => void;
+  setMessageListWidth: (width: number) => void;
+  setHideMessageList: (hide: boolean) => void;
+  setReadingPaneVisible: (visible: boolean) => void;
+  setDensity: (density: MailDensity) => void;
+  setTheme: (theme: ThemeMode) => void;
+  setSearchQuery: (query: string) => void;
+  setSearchActive: (active: boolean) => void;
+  clearSearch: () => void;
+  setViewMode: (mode: "mail" | "contacts" | "settings" | "calendar") => void;
+  toggleBulkSelect: (uid: number) => void;
+  selectAllMessages: (uids: number[]) => void;
+  clearBulkSelection: () => void;
+  setBulkSelectMode: (mode: boolean) => void;
+  setShortcutsOpen: (open: boolean) => void;
+  setCommandPaletteOpen: (open: boolean) => void;
+  setKeyboardNav: (active: boolean) => void;
+  setComposeFormat: (format: "html" | "text") => void;
+  setAnimationModeState: (state: AnimationModeState) => void;
+  isAnimationOff: () => boolean;
+  setSearchSortOrder: (order: "date_desc" | "date_asc") => void;
+  setSearchResultCount: (count: number | null) => void;
+}
+
+const initial = loadSettings();
+
+export const useUiStore: UseBoundStore<StoreApi<UiState>> = create<UiState>((set) => ({
+  activeFolder: "INBOX",
+  unreadOnly: false,
+  folderDrawerOpen: false,
+  setUnreadOnly: (unreadOnly) => set({ unreadOnly, selectedMessageUid: null, selectedMessageUids: [], bulkSelectMode: false }),
+  setFolderDrawerOpen: (folderDrawerOpen) => set({ folderDrawerOpen }),
+  selectedMessageUid: null,
+  sidebarWidth: initial.sidebarWidth,
+  messageListWidth: initial.messageListWidth,
+  readingPaneVisible: true,
+  hideMessageList: false,
+  density: DEFAULT_MAIL_DENSITY,
+  theme: "system",
+  searchQuery: "",
+  searchActive: false,
+  viewMode: "mail",
+  selectedMessageUids: [],
+  bulkSelectMode: false,
+  activeTagId: null,
+  shortcutsOpen: false,
+  commandPaletteOpen: false,
+  keyboardNav: false,
+  composeFormat: "html",
+  storedAnimationMode: null,
+  effectiveAnimationMode: DEFAULT_EFFECTIVE_ANIMATION_MODE,
+  searchSortOrder: "date_desc",
+  searchResultCount: null,
+
+  setActiveTag: (tagId) =>
+    set({ activeTagId: tagId, folderDrawerOpen: false, selectedMessageUid: null, selectedMessageUids: [], bulkSelectMode: false }),
+  setActiveFolder: (folder) =>
+    set({ activeFolder: folder, folderDrawerOpen: false, unreadOnly: false, activeTagId: null, selectedMessageUid: null, selectedMessageUids: [], bulkSelectMode: false }),
+  selectMessage: (uid) => set({ selectedMessageUid: uid }),
+  setSidebarWidth: (width) => {
+    saveSettings({ sidebarWidth: width });
+    set({ sidebarWidth: width });
+  },
+  setMessageListWidth: (width) => {
+    saveSettings({ messageListWidth: width });
+    set({ messageListWidth: width });
+  },
+  setHideMessageList: (hideMessageList) => set({ hideMessageList }),
+  setReadingPaneVisible: (visible) => set({ readingPaneVisible: visible }),
+  setDensity: (density) => set({ density }),
+  setTheme: (theme) => set({ theme }),
+  setSearchQuery: (query) => set({ searchQuery: query, selectedMessageUid: null }),
+  setSearchActive: (active) => set({ searchActive: active }),
+  clearSearch: () => set({ searchQuery: "", searchActive: false, searchResultCount: null }),
+  setViewMode: (mode) => set({ viewMode: mode }),
+  toggleBulkSelect: (uid) =>
+    set((state) => {
+      const exists = state.selectedMessageUids.includes(uid);
+      const next = exists
+        ? state.selectedMessageUids.filter((id) => id !== uid)
+        : [...state.selectedMessageUids, uid];
+      return {
+        selectedMessageUids: next,
+        bulkSelectMode: next.length > 0 ? true : state.bulkSelectMode,
+      };
+    }),
+  selectAllMessages: (uids) => set({ selectedMessageUids: uids, bulkSelectMode: true }),
+  clearBulkSelection: () => set({ selectedMessageUids: [], bulkSelectMode: false }),
+  setBulkSelectMode: (mode) =>
+    set({ bulkSelectMode: mode, selectedMessageUids: mode ? [] : [] }),
+  setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
+  setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
+  setKeyboardNav: (active) => set({ keyboardNav: active }),
+  setComposeFormat: (format) => set({ composeFormat: format }),
+  setAnimationModeState: ({ storedMode, effectiveMode }) =>
+    set({
+      storedAnimationMode: storedMode,
+      effectiveAnimationMode: effectiveMode,
+    }),
+  isAnimationOff: () => useUiStore.getState().effectiveAnimationMode === "off",
+  setSearchSortOrder: (order) => set({ searchSortOrder: order }),
+  setSearchResultCount: (count) => set({ searchResultCount: count }),
+}));

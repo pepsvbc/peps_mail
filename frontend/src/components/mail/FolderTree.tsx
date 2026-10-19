@@ -1,0 +1,445 @@
+"use client";
+
+import { translate as t, useTranslation } from "@/lib/i18n";
+
+import { useComposeStore } from "@/stores/useComposeStore";
+
+import { useState, useRef, useEffect, useCallback } from "react";
+import {
+  Inbox,
+  PenLine,
+  Send,
+  FileText,
+  Trash2,
+  AlertCircle,
+  Star,
+  Folder,
+  Loader2,
+  FolderPlus,
+  Check,
+  X,
+} from "lucide-react";
+import { useIsFetching } from "@tanstack/react-query";
+import { useFolders, useRenameFolder } from "@/hooks/useFolders";
+import { useQuota } from "@/hooks/useQuota";
+import { useMoveMessage, usePrefetchAllFolders } from "@/hooks/useMessages";
+import { useListDrafts } from "@/hooks/useCompose";
+import { useUiStore } from "@/stores/useUiStore";
+import { Button } from "@/components/ui/button";
+import { FolderContextMenu } from "@/components/mail/FolderContextMenu";
+import { CreateFolderDialog } from "@/components/mail/CreateFolderDialog";
+import { AccountSwitcher } from "@/components/accounts/AccountSwitcher";
+import { formatFolderName } from "@/lib/mail-folders";
+import { cn } from "@/lib/utils";
+import { TagSection } from "@/components/mail/TagSection";
+import type { Folder as FolderType } from "@/types/folder";
+
+export { formatFolderName } from "@/lib/mail-folders";
+
+/** Check whether a folder name refers to the Drafts folder. */
+export function isDraftsFolder(name: string, attributes: string[] = []): boolean {
+  const lower = name.toLowerCase();
+  return attributes.some((flag) => flag.toLowerCase() === "\\drafts") || ["drafts", "[gmail]/drafts", "brouillons"].includes(lower);
+}
+
+/** Sort priority for well-known folders.  Lower = higher in the list. */
+function folderSortOrder(name: string): number {
+  const lower = name.toLowerCase();
+  if (lower === "inbox") return 0;
+  if (lower === "drafts" || lower.includes("draft")) return 1;
+  if (lower === "sent" || lower.includes("sent")) return 2;
+  if (lower === "junk" || lower === "spam" || lower.includes("junk") || lower.includes("spam"))
+    return 3;
+  if (lower === "trash" || lower.includes("trash")) return 4;
+  if (lower === "archive" || lower.includes("archive")) return 5;
+  return 6; // everything else
+}
+
+function getFolderIcon(name: string) {
+  const lower = name.toLowerCase();
+
+  if (lower === "inbox") return <Inbox className="size-4" />;
+  if (lower === "sent" || lower.includes("sent")) return <Send className="size-4" />;
+  if (lower === "drafts" || lower.includes("draft")) return <FileText className="size-4" />;
+  if (lower === "trash" || lower.includes("trash")) return <Trash2 className="size-4" />;
+  if (lower === "junk" || lower === "spam" || lower.includes("junk") || lower.includes("spam"))
+    return <AlertCircle className="size-4" />;
+  if (lower === "starred" || lower === "flagged") return <Star className="size-4" />;
+
+  return <Folder className="size-4" />;
+}
+
+function SkeletonList() {
+  useTranslation();
+  return (
+    <div className="flex flex-col gap-1 p-2">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div
+          key={i}
+          className="h-9 animate-pulse rounded-md bg-sidebar-accent"
+        />
+      ))}
+    </div>
+  );
+}
+
+function InlineRenameInput({
+  currentName,
+  onDone,
+}: {
+  currentName: string;
+  onDone: () => void;
+}) {
+  useTranslation();
+  const [value, setValue] = useState(currentName);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const renameFolder = useRenameFolder();
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  const handleSubmit = useCallback(() => {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === currentName) {
+      onDone();
+      return;
+    }
+    renameFolder.mutate(
+      { name: currentName, newName: trimmed },
+      {
+        onSuccess: () => onDone(),
+        onError: () => {
+          // Keep input open on error so user can retry
+        },
+      },
+    );
+  }, [value, currentName, renameFolder, onDone]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleSubmit();
+      } else if (e.key === "Escape") {
+        onDone();
+      }
+    },
+    [handleSubmit, onDone],
+  );
+
+  return (
+    <div className="flex w-full items-center gap-1 px-3 py-1">
+      <input
+        ref={inputRef}
+        type="text"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={handleSubmit}
+        className={cn(
+          "flex-1 rounded border border-input bg-background px-2 py-1 text-sm text-foreground",
+          "outline-none focus:border-ring focus:ring-1 focus:ring-ring/50",
+        )}
+        disabled={renameFolder.isPending}
+        autoComplete="off"
+        spellCheck={false}
+      />
+      {renameFolder.isPending ? (
+        <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+      ) : (
+        <>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+            aria-label={t("Confirm rename")}
+          >
+            <Check className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={onDone}
+            className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+            aria-label={t("Cancel rename")}
+          >
+            <X className="size-3.5" />
+          </button>
+        </>
+      )}
+      {renameFolder.isError && (
+        <span className="text-xs text-destructive" title={renameFolder.error?.message}>
+          {t("Error")}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function FolderItem({
+  folder,
+  isRenaming,
+  onStartRename,
+  onEndRename,
+}: {
+  folder: FolderType;
+  isRenaming: boolean;
+  onStartRename: () => void;
+  onEndRename: () => void;
+}) {
+  useTranslation();
+  const activeFolder = useUiStore((s) => s.activeFolder);
+  const setActiveFolder = useUiStore((s) => s.setActiveFolder);
+  const clearSearch = useUiStore((s) => s.clearSearch);
+  const isActive = activeFolder === folder.name;
+  const isFetching = useIsFetching({ queryKey: ["messages", folder.name] });
+  const moveMessage = useMoveMessage();
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dragCounter = useRef(0);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  }, []);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounter.current += 1;
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    dragCounter.current -= 1;
+    if (dragCounter.current <= 0) {
+      dragCounter.current = 0;
+      setIsDragOver(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      dragCounter.current = 0;
+      setIsDragOver(false);
+      try {
+        const raw = e.dataTransfer.getData("application/json");
+        if (!raw) return;
+        const data = JSON.parse(raw) as {
+          uid: number;
+          folder: string;
+          subject: string;
+        };
+        if (data.folder === folder.name) return; // same folder, no-op
+        moveMessage.mutate({
+          fromFolder: data.folder,
+          toFolder: folder.name,
+          uid: data.uid,
+        });
+      } catch {
+        // ignore malformed drag data
+      }
+    },
+    [folder.name, moveMessage],
+  );
+
+  const isDrafts = isDraftsFolder(folder.name, folder.attributes);
+  const { data: draftsData } = useListDrafts(isDrafts);
+  const badgeCount = isDrafts ? (draftsData?.drafts.length ?? 0) : folder.unread_count;
+
+  if (isRenaming) {
+    return (
+      <div
+        className={cn(
+          "flex w-full items-center gap-3 rounded-md text-sm",
+          "bg-sidebar-accent",
+        )}
+      >
+        {getFolderIcon(folder.name)}
+        <InlineRenameInput currentName={folder.name} onDone={onEndRename} />
+      </div>
+    );
+  }
+
+  return (
+    <FolderContextMenu
+      folderName={folder.name}
+      onRename={onStartRename}
+      onDragOver={handleDragOver}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <button
+        onClick={() => {
+          clearSearch();
+          setActiveFolder(folder.name);
+        }}
+        aria-current={isActive ? "page" : undefined}
+        className={cn(
+          "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+          isDragOver
+            ? "bg-primary/10 font-semibold text-primary"
+            : isActive
+              ? "bg-foreground font-semibold text-background dark:bg-muted dark:text-foreground"
+              : "font-medium text-sidebar-foreground hover:bg-muted",
+        )}
+      >
+        {getFolderIcon(folder.name)}
+        <span className="flex-1 truncate text-left">{formatFolderName(folder.name)}</span>
+        {badgeCount > 0 ? (
+          <span
+            className={cn(
+              "min-w-[20px] rounded-full px-1.5 py-0.5 text-center text-xs font-semibold",
+              isDrafts
+                ? "bg-muted-foreground/20 text-muted-foreground"
+                : "bg-primary text-primary-foreground",
+            )}
+          >
+            {badgeCount}
+          </span>
+        ) : isFetching > 0 ? (
+          <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+        ) : null}
+      </button>
+    </FolderContextMenu>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function MailboxSpace({ usageBytes, limitBytes }: { usageBytes: number; limitBytes: number | null }) {
+  useTranslation();
+  const unlimited = !limitBytes || limitBytes <= 0;
+
+  if (unlimited) {
+    return (
+      <div className="mt-1 px-1">
+        <p className="text-[11px] leading-none text-muted-foreground">
+          {t("{usage} used", { usage: formatBytes(usageBytes) })}
+        </p>
+      </div>
+    );
+  }
+
+  const pct = Math.min((usageBytes / limitBytes) * 100, 100);
+  const isHigh = pct >= 90;
+  const isMedium = pct >= 75;
+
+  return (
+    <div className="mt-1 px-1">
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+        <div
+          className={cn(
+            "h-full rounded-full transition-all",
+            isHigh ? "bg-destructive" : isMedium ? "bg-yellow-500" : "bg-primary/60",
+          )}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <p className={cn(
+        "mt-1 text-[11px] leading-none",
+        isHigh ? "text-destructive" : "text-muted-foreground",
+      )}>
+        {t("{usage} of {limit} used", { usage: formatBytes(usageBytes), limit: formatBytes(limitBytes) })}
+      </p>
+    </div>
+  );
+}
+
+export function FolderTree() {
+  useTranslation();
+  const { data, isLoading, isError, refetch } = useFolders();
+  const { data: quota } = useQuota();
+  const activeFolder = useUiStore((s) => s.activeFolder);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
+
+  // Prefetch messages for all folders in the background after folder list loads.
+  const folderNames = data?.folders.map((f) => f.name) ?? [];
+  usePrefetchAllFolders(folderNames, activeFolder);
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Account switcher */}
+      <div className="flex min-h-14 items-center border-b border-sidebar-border p-2">
+        <AccountSwitcher />
+      </div>
+
+      <div className="p-3">
+        <Button className="w-full justify-center gap-2" onClick={() => { useUiStore.getState().setFolderDrawerOpen(false); useComposeStore.getState().openCompose(); }}>
+          <PenLine className="size-4" />{t("New Message")}
+        </Button>
+      </div>
+
+      {/* Folder list */}
+      <nav className="flex-1 overflow-y-auto px-2 pb-3">
+        {isLoading && <SkeletonList />}
+
+        {isError && (
+          <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">
+            <p className="text-sm text-muted-foreground">
+              {t("Failed to load folders")}
+            </p>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              {t("Retry")}
+            </Button>
+          </div>
+        )}
+
+        {data && (
+          <div className="flex flex-col gap-1">
+            {[...data.folders]
+              .sort(
+                (a, b) =>
+                  folderSortOrder(a.name) - folderSortOrder(b.name) ||
+                  a.name.localeCompare(b.name),
+              )
+              .map((folder) => (
+                <FolderItem
+                  key={folder.name}
+                  folder={folder}
+                  isRenaming={renamingFolder === folder.name}
+                  onStartRename={() => setRenamingFolder(folder.name)}
+                  onEndRename={() => setRenamingFolder(null)}
+                />
+              ))}
+          </div>
+        )}
+
+        {/* Tags section */}
+        <TagSection />
+      </nav>
+
+      {/* New folder button + mailbox space */}
+      <div className="border-t border-sidebar-border p-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
+          onClick={() => setCreateDialogOpen(true)}
+        >
+          <FolderPlus className="size-4" />
+          {t("New folder")}
+        </Button>
+        {quota?.usage_bytes != null && (
+          <>
+            <div className="my-1.5 border-t border-sidebar-border" />
+            <MailboxSpace usageBytes={quota.usage_bytes} limitBytes={quota.limit_bytes} />
+          </>
+        )}
+      </div>
+
+      {/* Create folder dialog */}
+      <CreateFolderDialog
+        open={createDialogOpen}
+        onClose={() => setCreateDialogOpen(false)}
+      />
+    </div>
+  );
+}

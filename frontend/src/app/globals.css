@@ -1,0 +1,232 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+}
+
+/* Neutral mail surfaces with PEPS VBC purple accents in both themes. */
+
+:root {
+  --radius: 0.375rem;
+  --background: hsl(0 0% 100%);
+  --foreground: #18181b;
+  --card: #ffffff;
+  --card-foreground: #18181b;
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: #18181b;
+  --primary: #731d7b;
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent: #eee0f1;
+  --accent-foreground: #49124f;
+  --destructive: hsl(0 84% 60%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #731d7b;
+  --chart-1: #731d7b;
+  --chart-2: #a241aa;
+  --chart-3: #6554a5;
+  --chart-4: #a94378;
+  --chart-5: #b97cbf;
+  --sidebar: #fafafa;
+  --sidebar-foreground: #18181b;
+  --sidebar-primary: #731d7b;
+  --sidebar-primary-foreground: hsl(0 0% 100%);
+  --sidebar-accent: #eee0f1;
+  --sidebar-accent-foreground: #49124f;
+  --sidebar-border: #e4e4e7;
+  --sidebar-ring: #731d7b;
+}
+
+.dark {
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #18181b;
+  --card-foreground: #fafafa;
+  --popover: #18181b;
+  --popover-foreground: #fafafa;
+  --primary: #d99bdf;
+  --primary-foreground: #09090b;
+  --secondary: #18181b;
+  --secondary-foreground: #fafafa;
+  --muted: #18181b;
+  --muted-foreground: #a1a1aa;
+  --accent: #27272a;
+  --accent-foreground: #fafafa;
+  --destructive: hsl(0 84% 60%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --border: #27272a;
+  --input: #27272a;
+  --ring: #d99bdf;
+  --chart-1: #d99bdf;
+  --chart-2: #b96fc2;
+  --chart-3: #aa9bde;
+  --chart-4: #de8cb6;
+  --chart-5: #c8aed6;
+  --sidebar: #18181b;
+  --sidebar-foreground: #fafafa;
+  --sidebar-primary: #d99bdf;
+  --sidebar-primary-foreground: #09090b;
+  --sidebar-accent: #27272a;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: #27272a;
+  --sidebar-ring: #d99bdf;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  .disable-transitions,
+  .disable-transitions * {
+    transition: none !important;
+  }
+
+  .theme-transitioning *:not([data-theme-transition]),
+  .theme-transitioning *:not([data-theme-transition])::before,
+  .theme-transitioning *:not([data-theme-transition])::after {
+    transition-duration: 0ms !important;
+    transition-delay: 0ms !important;
+  }
+}
+
+::view-transition-old(root) {
+  animation: none;
+  mix-blend-mode: normal;
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  mix-blend-mode: normal;
+  z-index: 9999;
+  animation: clip-reveal 0.5s ease-in-out forwards;
+}
+
+::view-transition-group(root) {
+  animation: none;
+}
+
+@keyframes clip-reveal {
+  from {
+    clip-path: circle(0px at var(--click-x) var(--click-y));
+  }
+  to {
+    clip-path: circle(150vmax at var(--click-x) var(--click-y));
+  }
+}
+
+@keyframes email-plaintext-line-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes email-plaintext-medium-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes email-plaintext-subtle-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes email-plaintext-container-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hdd-blink {
+  0%, 100% { background-color: oklch(0.72 0.19 142); }
+  50% { background-color: oklch(0.53 0.15 142); }
+}
+
+.animate-hdd-blink {
+  animation: hdd-blink 400ms ease-in-out infinite;
+}
+
+/* Single-pane navigation on phones; the folder drawer is available on tablets. */
+@media (max-width: 1023px) {
+  .mail-folder-panel, .mail-folder-resizer { display: none; }
+}
+@media (max-width: 767px) {
+  .mail-list-panel { flex: 1 1 100% !important; min-width: 0; width: 100% !important; }
+  .mail-reader-panel { display: none !important; }
+  .mail-workspace.has-message .mail-list-panel { display: none; }
+  .mail-workspace.has-message .mail-reader-panel { display: flex !important; width: 100%; }
+}
