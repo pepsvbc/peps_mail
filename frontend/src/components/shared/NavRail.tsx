@@ -7,7 +7,7 @@ import { useTranslation, useLanguageStore } from "@/lib/i18n";
 import { useCallback, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Inbox,
+  Mail,
   Users,
   Calendar,
   Settings,
@@ -170,7 +170,7 @@ export function NavRail() {
         {/* Top actions */}
         <div className="flex flex-col items-center gap-1">
           <NavButton
-            icon={<Inbox className="size-5" />}
+            icon={<Mail className="size-5" />}
             label={mailLabel}
             badge={unreadBadge}
             active={viewMode === "mail"}
