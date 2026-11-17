@@ -66,11 +66,13 @@ export interface UiState {
   messageListWidth: number;
   readingPaneVisible: boolean;
   hideMessageList: boolean;
+  /** Start the quoted history of replies collapsed (compose and reading pane). */
+  collapseQuotes: boolean;
   density: MailDensity;
   theme: ThemeMode;
   searchQuery: string;
   searchActive: boolean;
-  viewMode: "mail" | "settings";
+  viewMode: "mail" | "settings" | "lists";
   selectedMessageUids: number[];
   bulkSelectMode: boolean;
   activeTagId: string | null;
@@ -89,13 +91,14 @@ export interface UiState {
   setSidebarWidth: (width: number) => void;
   setMessageListWidth: (width: number) => void;
   setHideMessageList: (hide: boolean) => void;
+  setCollapseQuotes: (collapse: boolean) => void;
   setReadingPaneVisible: (visible: boolean) => void;
   setDensity: (density: MailDensity) => void;
   setTheme: (theme: ThemeMode) => void;
   setSearchQuery: (query: string) => void;
   setSearchActive: (active: boolean) => void;
   clearSearch: () => void;
-  setViewMode: (mode: "mail" | "settings") => void;
+  setViewMode: (mode: "mail" | "settings" | "lists") => void;
   toggleBulkSelect: (uid: number) => void;
   selectAllMessages: (uids: number[]) => void;
   clearBulkSelection: () => void;
@@ -123,6 +126,7 @@ export const useUiStore: UseBoundStore<StoreApi<UiState>> = create<UiState>((set
   messageListWidth: initial.messageListWidth,
   readingPaneVisible: true,
   hideMessageList: false,
+  collapseQuotes: false,
   density: DEFAULT_MAIL_DENSITY,
   theme: "system",
   searchQuery: "",
@@ -154,6 +158,7 @@ export const useUiStore: UseBoundStore<StoreApi<UiState>> = create<UiState>((set
     set({ messageListWidth: width });
   },
   setHideMessageList: (hideMessageList) => set({ hideMessageList }),
+  setCollapseQuotes: (collapseQuotes) => set({ collapseQuotes }),
   setReadingPaneVisible: (visible) => set({ readingPaneVisible: visible }),
   setDensity: (density) => set({ density }),
   setTheme: (theme) => set({ theme }),

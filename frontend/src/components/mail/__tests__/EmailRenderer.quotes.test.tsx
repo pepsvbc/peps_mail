@@ -5,6 +5,7 @@ const { mockUiState } = vi.hoisted(() => ({
   mockUiState: {
     theme: "light" as "light" | "dark" | "system",
     effectiveAnimationMode: "off" as "rich" | "medium" | "subtle" | "off",
+    collapseQuotes: true,
   },
 }));
 
@@ -23,6 +24,7 @@ const GMAIL = '<div dir="ltr">Latest reply</div><div class="gmail_quote"><div cl
 describe("EmailRenderer quoted history", () => {
   beforeEach(() => {
     mockUiState.effectiveAnimationMode = "off";
+    mockUiState.collapseQuotes = true;
     if (!window.matchMedia) {
       Object.defineProperty(window, "matchMedia", {
         writable: true,
@@ -67,6 +69,15 @@ describe("EmailRenderer quoted history", () => {
     rerender(<EmailRenderer html={GMAIL.replace("Latest reply", "Another reply")} text={null} collapseQuotes />);
     expect(srcdoc(container)).not.toContain("Earlier message");
     expect(screen.getByRole("button", { name: "Show previous messages" })).toBeTruthy();
+  });
+
+  it("starts expanded with a hide toggle when the preference keeps quotes open", () => {
+    mockUiState.collapseQuotes = false;
+    const { container } = render(<EmailRenderer html={GMAIL} text={null} collapseQuotes />);
+    expect(srcdoc(container)).toContain("Earlier message");
+    fireEvent.click(screen.getByRole("button", { name: "Hide previous messages" }));
+    expect(srcdoc(container)).not.toContain("Earlier message");
+    expect(srcdoc(container)).toContain("Latest reply");
   });
 
   it("collapses the quoted part of plain-text messages", () => {

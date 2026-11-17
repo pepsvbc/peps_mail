@@ -14,6 +14,7 @@ export interface DisplayPreferences {
   animation_mode?: AnimationMode | null;
   deep_index: boolean;
   hide_message_list?: boolean;
+  collapse_quotes?: boolean;
   updated_at: string;
 }
 
@@ -25,6 +26,7 @@ interface UpdateDisplayPreferences {
   animation_mode?: AnimationMode | null;
   deep_index?: boolean;
   hide_message_list?: boolean;
+  collapse_quotes?: boolean;
 }
 
 export function useDisplayPreferences() {

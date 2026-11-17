@@ -131,6 +131,7 @@ export function DisplaySettings() {
         animation_mode: null,
         deep_index: false,
         hide_message_list: false,
+        collapse_quotes: false,
       },
       { onError: (e) => toast.error(t("Failed to reset: {message}", { message: e.message })) },
     );
@@ -146,7 +147,7 @@ export function DisplaySettings() {
   if (!prefs) return null;
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="space-y-6">
       <div>
         <h2 className="text-base font-semibold">{t("Display")}</h2>
         <p className="mt-0.5 text-sm text-muted-foreground"> {t("Customize the appearance and layout of the app.")} </p>
@@ -163,6 +164,20 @@ export function DisplaySettings() {
           ]}
           onChange={(value) => updatePrefs.mutate(
             { hide_message_list: value === "full" },
+            { onError: (e) => toast.error(t("Failed to update: {message}", { message: e.message })) },
+          )}
+        />
+
+        <SegmentedControl
+          label={t("Previous messages")}
+          description={t("How the earlier messages of a conversation appear when you reply or read a reply")}
+          value={prefs.collapse_quotes ? "hidden" : "shown"}
+          options={[
+            { value: "shown", label: t("Shown") },
+            { value: "hidden", label: t("Hidden") },
+          ]}
+          onChange={(value) => updatePrefs.mutate(
+            { collapse_quotes: value === "hidden" },
             { onError: (e) => toast.error(t("Failed to update: {message}", { message: e.message })) },
           )}
         />

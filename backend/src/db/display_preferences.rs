@@ -9,6 +9,8 @@ pub struct DisplayPreferences {
     pub compose_format: String,
     pub deep_index: bool,
     pub hide_message_list: bool,
+    /// Start the quoted history of replies collapsed (compose and reading pane).
+    pub collapse_quotes: bool,
     pub animation_mode: Option<String>,
     pub updated_at: String,
 }
@@ -21,6 +23,7 @@ pub struct UpdateDisplayPreferences {
     pub compose_format: Option<String>,
     pub deep_index: Option<bool>,
     pub hide_message_list: Option<bool>,
+    pub collapse_quotes: Option<bool>,
     #[serde(default, deserialize_with = "deserialize_animation_mode_field")]
     pub animation_mode: Option<Option<String>>,
 }
@@ -39,7 +42,7 @@ where
 /// Returns sensible defaults if the row does not yet exist.
 pub fn get_preferences(conn: &Connection) -> Result<DisplayPreferences, String> {
     let result = conn.query_row(
-        "SELECT density, theme, language, compose_format, deep_index, animation_mode, updated_at, hide_message_list FROM display_preferences WHERE id = 1",
+        "SELECT density, theme, language, compose_format, deep_index, animation_mode, updated_at, hide_message_list, collapse_quotes FROM display_preferences WHERE id = 1",
         [],
         |row| {
             let deep_index_int: i32 = row.get(4)?;
@@ -52,6 +55,7 @@ pub fn get_preferences(conn: &Connection) -> Result<DisplayPreferences, String> 
                 animation_mode: row.get(5)?,
                 updated_at: row.get(6)?,
                 hide_message_list: row.get(7)?,
+                collapse_quotes: row.get(8)?,
             })
         },
     );
@@ -65,6 +69,7 @@ pub fn get_preferences(conn: &Connection) -> Result<DisplayPreferences, String> 
             compose_format: "html".to_string(),
             deep_index: false,
             hide_message_list: false,
+            collapse_quotes: false,
             animation_mode: None,
             updated_at: String::new(),
         }),
@@ -124,6 +129,11 @@ pub fn update_preferences(
     if let Some(hide_message_list) = data.hide_message_list {
         sets.push(format!("hide_message_list = ?{idx}"));
         values.push(Box::new(hide_message_list as i32));
+        idx += 1;
+    }
+    if let Some(collapse_quotes) = data.collapse_quotes {
+        sets.push(format!("collapse_quotes = ?{idx}"));
+        values.push(Box::new(collapse_quotes as i32));
         idx += 1;
     }
     if let Some(deep_index) = data.deep_index {
@@ -197,6 +207,21 @@ mod tests {
     }
 
     #[test]
+    fn collapse_quotes_defaults_off_and_persists() {
+        let conn = open_test_db();
+        assert!(!get_preferences(&conn).unwrap().collapse_quotes);
+        for collapse in [true, false] {
+            let data: UpdateDisplayPreferences =
+                serde_json::from_value(serde_json::json!({"collapse_quotes": collapse})).unwrap();
+            assert_eq!(
+                update_preferences(&conn, &data).unwrap().collapse_quotes,
+                collapse
+            );
+            assert_eq!(get_preferences(&conn).unwrap().collapse_quotes, collapse);
+        }
+    }
+
+    #[test]
     fn test_update_density() {
         let conn = open_test_db();
 
@@ -210,6 +235,7 @@ mod tests {
                     compose_format: None,
                     deep_index: None,
                     hide_message_list: None,
+                    collapse_quotes: None,
                     animation_mode: None,
                 },
             )
@@ -234,6 +260,7 @@ mod tests {
                 compose_format: None,
                 deep_index: None,
                 hide_message_list: None,
+                collapse_quotes: None,
                 animation_mode: None,
             },
         )
@@ -256,6 +283,7 @@ mod tests {
                 compose_format: None,
                 deep_index: None,
                 hide_message_list: None,
+                collapse_quotes: None,
                 animation_mode: None,
             },
         )
@@ -279,6 +307,7 @@ mod tests {
                 compose_format: None,
                 deep_index: None,
                 hide_message_list: None,
+                collapse_quotes: None,
                 animation_mode: None,
             },
         );
@@ -300,6 +329,7 @@ mod tests {
                 compose_format: None,
                 deep_index: None,
                 hide_message_list: None,
+                collapse_quotes: None,
                 animation_mode: None,
             },
         );
@@ -321,6 +351,7 @@ mod tests {
                 compose_format: Some("text".to_string()),
                 deep_index: None,
                 hide_message_list: None,
+                collapse_quotes: None,
                 animation_mode: None,
             },
         )
@@ -343,6 +374,7 @@ mod tests {
                 compose_format: Some("markdown".to_string()),
                 deep_index: None,
                 hide_message_list: None,
+                collapse_quotes: None,
                 animation_mode: None,
             },
         );
@@ -364,6 +396,7 @@ mod tests {
                 compose_format: None,
                 deep_index: None,
                 hide_message_list: None,
+                collapse_quotes: None,
                 animation_mode: None,
             },
         )
@@ -394,6 +427,7 @@ mod tests {
                 compose_format: None,
                 deep_index: None,
                 hide_message_list: None,
+                collapse_quotes: None,
                 animation_mode: Some(Some("medium".to_string())),
             },
         )
@@ -415,6 +449,7 @@ mod tests {
                 compose_format: None,
                 deep_index: None,
                 hide_message_list: None,
+                collapse_quotes: None,
                 animation_mode: Some(Some("ultra".to_string())),
             },
         );
@@ -436,6 +471,7 @@ mod tests {
                 compose_format: None,
                 deep_index: None,
                 hide_message_list: None,
+                collapse_quotes: None,
                 animation_mode: Some(Some("medium".to_string())),
             },
         )
@@ -451,6 +487,7 @@ mod tests {
                 compose_format: None,
                 deep_index: None,
                 hide_message_list: None,
+                collapse_quotes: None,
                 animation_mode: Some(None),
             },
         )
@@ -472,6 +509,7 @@ mod tests {
                 compose_format: None,
                 deep_index: None,
                 hide_message_list: None,
+                collapse_quotes: None,
                 animation_mode: Some(Some("subtle".to_string())),
             },
         )
@@ -487,6 +525,7 @@ mod tests {
                 compose_format: None,
                 deep_index: None,
                 hide_message_list: None,
+                collapse_quotes: None,
                 animation_mode: None,
             },
         )

@@ -20,7 +20,7 @@ vi.mock("../TagPicker", () => ({ TagPicker: () => null }));
 vi.mock("../MoveToFolderMenu", () => ({ MoveToFolderMenu: () => null }));
 
 beforeEach(() => {
-  useUiStore.setState({ activeFolder: "INBOX", selectedMessageUid: 7, effectiveAnimationMode: "off" });
+  useUiStore.setState({ activeFolder: "INBOX", selectedMessageUid: 7, effectiveAnimationMode: "off", collapseQuotes: false });
   useAuthStore.setState({ activeAccountId: "me", accounts: [{ id: "me", email: "me@example.com", imapHost: "", smtpHost: "" }] });
   useComposeStore.getState().reset();
   message.data = {
@@ -54,12 +54,29 @@ describe.each([false, true])("message actions (labeled=%s)", (labeled) => {
   });
 });
 
-it("opens a reply with an empty editor and the collapsed quote kept separately", () => {
+it.each([
+  [false, true],
+  [true, false],
+])("starts the reply quote expanded unless the preference collapses it (collapse=%s)", (collapseQuotes, showQuoted) => {
+  useUiStore.setState({ collapseQuotes });
+  render(<MessageReplyActions labeled />);
+  fireEvent.click(screen.getByRole("button", { name: "Reply" }));
+  expect(useComposeStore.getState()).toMatchObject({ quoteKind: "reply", showQuoted });
+});
+
+it("always shows the forwarded message, even when quotes are collapsed", () => {
+  useUiStore.setState({ collapseQuotes: true });
+  render(<MessageReplyActions labeled />);
+  fireEvent.click(screen.getByRole("button", { name: "Forward" }));
+  expect(useComposeStore.getState()).toMatchObject({ quoteKind: "forward", showQuoted: true });
+});
+
+it("opens a reply with an empty editor and the quote kept separately", () => {
   message.data!.html = '<div dir="ltr">Hi</div><div class="gmail_quote"><blockquote class="gmail_quote" style="border-left:1px solid #ccc"><div>Older</div></blockquote></div>';
   render(<MessageReplyActions labeled />);
   fireEvent.click(screen.getByRole("button", { name: "Reply" }));
   const state = useComposeStore.getState();
-  expect(state).toMatchObject({ body: "<p></p>", isHtml: true, quoteKind: "reply", showQuoted: false });
+  expect(state).toMatchObject({ body: "<p></p>", isHtml: true, quoteKind: "reply", showQuoted: true });
   expect(state.quotedHtml).toMatch(/^<div class="peps_quote_attr">On .+, Coach &lt;coach@example.com&gt; wrote:<\/div><blockquote type="cite"/);
   expect(state.quotedHtml).toContain(message.data!.html);
   expect(state.quotedText).toMatch(/^On .+, Coach <coach@example.com> wrote:\n> See you Tuesday$/);

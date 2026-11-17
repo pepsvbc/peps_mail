@@ -170,10 +170,14 @@ const initialState = {
   showQuoted: false,
 };
 
-/** Store fields for a quoted part; forwards start expanded (the forwarded content is the point). */
+/**
+ * Store fields for a quoted part. Replies follow the "previous messages" display
+ * preference; forwards always start expanded (the forwarded content is the point).
+ */
 function quoteState(quote: ComposeQuote | null | undefined) {
+  const showQuoted = quote?.kind === "forward" || !useUiStore.getState().collapseQuotes;
   return quote
-    ? { quoteKind: quote.kind, quotedHtml: quote.html, quotedText: quote.text, showQuoted: quote.kind === "forward" }
+    ? { quoteKind: quote.kind, quotedHtml: quote.html, quotedText: quote.text, showQuoted }
     : { quoteKind: null, quotedHtml: null, quotedText: null, showQuoted: false };
 }
 

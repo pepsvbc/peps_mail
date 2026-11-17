@@ -55,7 +55,7 @@ describe("reopening drafts", () => {
     const { result } = setup();
     await act(() => result.current.openDraft({ id: draft.id }));
     expect(useComposeStore.getState()).toMatchObject({
-      isHtml: true, body: "<p>My answer</p>", quoteKind: "reply", quotedHtml: quoteHtml, showQuoted: false,
+      isHtml: true, body: "<p>My answer</p>", quoteKind: "reply", quotedHtml: quoteHtml, showQuoted: true,
       quotedText: "On Mon, Bob wrote:\n> Older",
     });
   });

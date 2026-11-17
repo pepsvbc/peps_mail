@@ -76,7 +76,7 @@ describe("composer window controls", () => {
     Element.prototype.scrollIntoView = vi.fn();
     identities.data = [];
     uploadAttachment.isPending = false;
-    useUiStore.setState({ effectiveAnimationMode: "off" });
+    useUiStore.setState({ effectiveAnimationMode: "off", collapseQuotes: false });
     useAuthStore.setState({
       activeAccountId: "account-a",
       accounts: [
@@ -603,16 +603,23 @@ describe("composer window controls", () => {
       render(<ComposeDialog />);
     }
 
-    it("keeps the quote out of the editor, collapsed behind a toggle, and shows it read-only on demand", () => {
+    it("keeps the quote out of the editor and shows it read-only, expanded, with a hide toggle", () => {
       openQuotedReply();
       expect(screen.getByRole("textbox", { name: "Message body" })).toHaveValue("<p></p>");
-      expect(screen.queryByRole("region", { name: "Previous messages" })).toBeNull();
-      fireEvent.click(screen.getByRole("button", { name: "Show previous messages" }));
       const preview = screen.getByRole("region", { name: "Previous messages" });
       const frame = preview.querySelector("iframe");
       expect(frame?.getAttribute("sandbox")).not.toContain("allow-scripts");
       expect(frame?.getAttribute("srcdoc")).toContain("merci");
-      expect(screen.getByRole("button", { name: "Hide previous messages" })).toHaveAttribute("aria-expanded", "true");
+      fireEvent.click(screen.getByRole("button", { name: "Hide previous messages" }));
+      expect(screen.queryByRole("region", { name: "Previous messages" })).toBeNull();
+    });
+
+    it("starts collapsed when the display preference hides previous messages", () => {
+      useUiStore.setState({ collapseQuotes: true });
+      openQuotedReply();
+      expect(screen.queryByRole("region", { name: "Previous messages" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Show previous messages" }));
+      expect(screen.getByRole("region", { name: "Previous messages" })).toBeTruthy();
     });
 
     it("sends the editor content followed by the untouched quote in both HTML and text", () => {

@@ -257,10 +257,11 @@ export function EmailRenderer({
   useTranslation();
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Quoted history starts collapsed and resets whenever another message is shown.
+  // Quoted history starts as the display preference says and resets whenever another message is shown.
+  const quotesStartExpanded = !useUiStore((state) => state.collapseQuotes);
   const quoteSource = collapseQuotes ? (html ?? text) : null;
   const [quoteToggle, setQuoteToggle] = useState<{ source: string | null; expanded: boolean }>({ source: null, expanded: false });
-  const quoteExpanded = quoteToggle.source === quoteSource && quoteToggle.expanded;
+  const quoteExpanded = quoteToggle.source === quoteSource ? quoteToggle.expanded : quotesStartExpanded;
   const toggleQuote = () => setQuoteToggle({ source: quoteSource, expanded: !quoteExpanded });
   const quoteMode = !collapseQuotes ? "keep" : quoteExpanded ? "detect" : "collapse";
 

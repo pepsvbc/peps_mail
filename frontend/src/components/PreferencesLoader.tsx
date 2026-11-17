@@ -27,6 +27,7 @@ const THEME_STORAGE_KEY = STORAGE_KEYS.theme;
 export function PreferencesLoader() {
   const { data } = useDisplayPreferences();
   const setHideMessageList = useUiStore((s) => s.setHideMessageList);
+  const setCollapseQuotes = useUiStore((s) => s.setCollapseQuotes);
   const setDensity = useUiStore((s) => s.setDensity);
   const setTheme = useUiStore((s) => s.setTheme);
   const setComposeFormat = useUiStore((s) => s.setComposeFormat);
@@ -45,6 +46,7 @@ export function PreferencesLoader() {
   useEffect(() => {
     if (!data) return;
     setHideMessageList(data.hide_message_list ?? false);
+    setCollapseQuotes(data.collapse_quotes ?? false);
     setDensity(data.density);
     setTheme(data.theme);
     if (data.compose_format) setComposeFormat(data.compose_format);
@@ -58,7 +60,7 @@ export function PreferencesLoader() {
       effectiveMode: motionConfig.effectiveMode,
     });
     writeStoredPreference(THEME_STORAGE_KEY, data.theme);
-  }, [data, setHideMessageList, setDensity, setTheme, setComposeFormat, setAnimationModeState]);
+  }, [data, setHideMessageList, setCollapseQuotes, setDensity, setTheme, setComposeFormat, setAnimationModeState]);
 
   useEffect(() => {
     applyTheme(theme);
