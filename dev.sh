@@ -3,6 +3,9 @@ set -eu
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 dev_port=${FRONTEND_DEV_PORT:-3001}
+# Development mode sends non-Secure cookies, so keep it off the network by
+# default. Set DEV_BIND_ADDRESS=0.0.0.0 to test from another device.
+dev_bind=${DEV_BIND_ADDRESS:-127.0.0.1}
 
 if [ ! -f "$project_dir/.env" ]; then
   printf 'Create .env from .env.example and configure your mail servers first.\n' >&2
@@ -23,7 +26,7 @@ exec docker compose \
   -f "$project_dir/docker-compose.yml" \
   -f - \
   run --rm --build -T --interactive=false \
-  -p "0.0.0.0:${dev_port}:3001" \
+  -p "${dev_bind}:${dev_port}:3001" \
   app <<'COMPOSE'
 services:
   app:

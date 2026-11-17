@@ -131,7 +131,9 @@ The interface supports English and Swiss French (`fr-CH`). The first visit follo
 
 Translations live in `frontend/src/lib/i18n/messages/`, grouped by feature. English source phrases are the English catalog and fallback; the dictionaries contain French translations. Use `useTranslation()` in components, and `translate()` for event callbacks or utilities. Interpolate complete phrases with named placeholders and provide separate singular/plural phrases. Format dates using the selected locale, and keep protocol identifiers, user-created folder names, and email content unchanged. The iOS profile download accepts `?lang=fr` for French descriptions.
 
-For an HTTPS deployment, set `ENVIRONMENT=production` in your private `.env` to enable Secure cookies and disable development CORS. The reverse proxy must preserve the public `Host` header for WebSocket origin validation. Browser sessions use HttpOnly cookies; removing or expiring a session stops its live mail events. Sessions are held in memory and require signing in again after a server restart.
+`ENVIRONMENT` defaults to `production`, which enables Secure cookies and HSTS. Set `ENVIRONMENT=development` only for local plain-HTTP testing (`dev.sh` does this and binds to `127.0.0.1`). The reverse proxy must preserve the public `Host` header for WebSocket origin validation, and should set `X-Forwarded-For`. List the proxy's address in `TRUSTED_PROXIES` so login rate limiting applies per client rather than to the proxy as a whole. Docker Compose publishes port 3001 on `127.0.0.1` only. If the proxy runs on another machine, set `PUBLISH_ADDRESS`. The container drops root privileges at start and takes ownership of the data directory for its `app` user (UID 10001).
+
+Sender identities may only use the signed-in mailbox address. Set `ALLOW_ANY_SENDER=true` only if your SMTP server itself rejects From addresses that the login does not own. Browser sessions use HttpOnly cookies; removing or expiring a session stops its live mail events. Sessions are held in memory and require signing in again after a server restart.
 
 The following table lists backend defaults:
 
@@ -147,8 +149,10 @@ The following table lists backend defaults:
 | `DATA_DIR` | `/data` | Persistent data storage directory |
 | `SESSION_TIMEOUT_HOURS` | `24` | Session expiry in hours |
 | `STATIC_DIR` | `./static` | Frontend static files directory |
-| `ENVIRONMENT` | `development` | Runtime environment |
+| `ENVIRONMENT` | `production` | Runtime environment (`development` disables Secure cookies) |
 | `BASE_PATH` | — | Base path prefix for reverse proxy (e.g. `/mail`) |
+| `TRUSTED_PROXIES` | — | Comma-separated IPs/CIDRs whose `X-Forwarded-For` is trusted |
+| `ALLOW_ANY_SENDER` | `false` | Allow identities with any From address |
 | `RUST_LOG` | `info` | Log level filter |
 
 ## Architecture

@@ -7,17 +7,21 @@ services:
       args:
         - NEXT_PUBLIC_BASE_PATH=${BASE_PATH:-}
     ports:
-      - "3001:3001"
+      # Plain HTTP: only reachable from this host by default, for the TLS reverse proxy.
+      - "${PUBLISH_ADDRESS:-127.0.0.1}:3001:3001"
     environment:
       - BASE_PATH=${BASE_PATH:-}
-      - ENVIRONMENT=${ENVIRONMENT:-development}
-      - IMAP_HOST=${IMAP_HOST:-mail.example.com}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - IMAP_HOST=${IMAP_HOST:?Set IMAP_HOST in .env}
       - IMAP_PORT=${IMAP_PORT:-993}
-      - SMTP_HOST=${SMTP_HOST:-mail.example.com}
+      - SMTP_HOST=${SMTP_HOST:?Set SMTP_HOST in .env}
       - SMTP_PORT=${SMTP_PORT:-587}
       - TLS_ENABLED=${TLS_ENABLED:-true}
       - RUST_LOG=${RUST_LOG:-info,tantivy=warn,async_imap=warn}
       - SESSION_TIMEOUT_HOURS=${SESSION_TIMEOUT_HOURS:-24}
+      # Connections from the host's reverse proxy arrive via the Docker bridge.
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-172.16.0.0/12}
+      - ALLOW_ANY_SENDER=${ALLOW_ANY_SENDER:-false}
     volumes:
       - ./data:/data
     healthcheck:

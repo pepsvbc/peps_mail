@@ -59,7 +59,10 @@ FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 app \
+    && useradd --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app \
+    && mkdir -p /data && chown app:app /data
 
 WORKDIR /app
 
@@ -79,4 +82,7 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
     CMD curl -f http://localhost:3001${BASE_PATH}/api/health || exit 1
 
+# Start as root only to hand the (possibly root-owned) data volume to the
+# unprivileged app user, then drop privileges for the server itself.
+ENTRYPOINT ["/bin/sh", "-c", "if [ \"$(id -u)\" = 0 ]; then [ \"$(stat -c %u \"$DATA_DIR\")\" = 10001 ] || chown -R app:app \"$DATA_DIR\"; exec setpriv --reuid=app --regid=app --init-groups \"$@\"; fi; exec \"$@\"", "entrypoint"]
 CMD ["./peps-mail-server"]

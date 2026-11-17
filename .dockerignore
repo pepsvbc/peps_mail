@@ -30,9 +30,9 @@ assets/
 .claude/
 
 # Environment / Secrets (never bake into image)
-.env
-.env.local
-.env.*.local
+**/.env
+**/.env.local
+**/.env.*.local
 
 # OS files
 .DS_Store
