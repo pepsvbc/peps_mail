@@ -39,6 +39,13 @@ export interface Account {
   email: string;
   imapHost: string;
   smtpHost: string;
+  /** Listed in ADMIN_EMAILS on the server (may manage shared distribution lists). */
+  isAdmin?: boolean;
+}
+
+/** Whether the active account is a server admin. */
+export function selectActiveIsAdmin(state: { accounts: Account[]; activeAccountId: string | null }): boolean {
+  return state.accounts.find((a) => a.id === state.activeAccountId)?.isAdmin === true;
 }
 
 interface AuthState {

@@ -3,6 +3,7 @@
 import { useTranslation } from "@/lib/i18n";
 
 import { DisplaySettings } from "./DisplaySettings";
+import { DistributionListSettings } from "./DistributionListSettings";
 import { IdentitySettings } from "./IdentitySettings";
 import { NotificationSettings } from "./NotificationSettings";
 
@@ -17,6 +18,7 @@ export function SettingsPanel() {
         <DisplaySettings />
         <NotificationSettings />
         <IdentitySettings />
+        <DistributionListSettings />
       </div>
     </div>
   );

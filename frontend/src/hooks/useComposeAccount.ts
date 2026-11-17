@@ -7,6 +7,7 @@ import { useAuthStore } from "@/stores/useAuthStore";
 import { replaceSignatureInBody, useComposeStore, type ComposeAttachment, type ComposeStore } from "@/stores/useComposeStore";
 import { generateId, stripHtml } from "@/components/mail/ComposeDialog/utils";
 import type { Identity } from "@/types/identity";
+import { serializeRecipientField } from "@/lib/recipients";
 
 /** Move the editing copy before switching accounts; a failed copy leaves the composer intact. */
 export function useComposeAccount(store: ComposeStore = useComposeStore) {
@@ -48,7 +49,11 @@ export function useComposeAccount(store: ComposeStore = useComposeStore) {
         if (hasContent) {
           created = true;
           await apiPost("/drafts", {
-            id: targetDraftId, to: source.to, cc: source.cc, bcc: source.bcc, subject: source.subject,
+            id: targetDraftId,
+            to: serializeRecipientField(source.to),
+            cc: serializeRecipientField(source.cc),
+            bcc: serializeRecipientField(source.bcc),
+            subject: source.subject,
             text_body: source.isHtml ? stripHtml(body) : body, html_body: source.isHtml ? body : null,
             in_reply_to: source.inReplyTo, references: source.references,
           }, options);

@@ -1,8 +1,8 @@
-import { parseRecipients } from "@/lib/recipients";
+import { expandRecipients } from "@/lib/recipients";
 
-/** Count the total number of recipients across To, Cc, Bcc fields. */
+/** Count the total number of recipients across To, Cc, Bcc fields (list chips count each member). */
 export function countRecipients(...fields: string[]): number {
-  return fields.reduce((count, field) => count + parseRecipients(field).length, 0);
+  return fields.reduce((count, field) => count + expandRecipients(field).length, 0);
 }
 
 /** Format bytes as human-readable file size. */

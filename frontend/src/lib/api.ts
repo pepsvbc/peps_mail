@@ -22,6 +22,7 @@ interface AccountsResponse {
     email: string;
     imapHost: string;
     smtpHost: string;
+    isAdmin?: boolean;
   }>;
   browserSessionExpired?: boolean;
 }

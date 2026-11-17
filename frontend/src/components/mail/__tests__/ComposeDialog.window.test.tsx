@@ -8,6 +8,7 @@ import { useUiStore } from "@/stores/useUiStore";
 import type { Identity } from "@/types/identity";
 import { ComposeDialog } from "../ComposeDialog";
 import { toast } from "sonner";
+import { encodeListRecipient } from "@/lib/recipients";
 
 const { saveDraft, deleteDraft, sendMessage, uploadAttachment, switchAccount, identities } = vi.hoisted(() => ({
   saveDraft: { isPending: false, mutate: vi.fn() },
@@ -34,6 +35,10 @@ vi.mock("@/hooks/useIdentities", () => ({
 
 vi.mock("@/hooks/useAutocomplete", () => ({
   useAutocomplete: () => ({ results: [], isLoading: false }),
+}));
+
+vi.mock("@/hooks/useLists", () => ({
+  useLists: () => ({ data: [] }),
 }));
 
 vi.mock("next/dynamic", () => ({
@@ -272,6 +277,21 @@ describe("composer window controls", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     act(() => { vi.advanceTimersByTime(5000); });
     expect(sendMessage.mutate).toHaveBeenCalledWith(expect.objectContaining({ fromIdentityId: 2 }), expect.any(Object));
+  });
+
+  it("treats a distribution-list chip as recipients and counts its members", () => {
+    const members = Array.from({ length: 11 }, (_, i) => ({ email: `player${i}@example.com`, name: "" }));
+    const chip = encodeListRecipient({ id: "u13", name: "U13", members });
+    act(() => useComposeStore.setState({ to: `${chip}, `, cc: "", bcc: "" }));
+    render(<ComposeDialog />);
+    expect(screen.getByTestId("recipient-list-chip")).toHaveTextContent("U13 (11)");
+    expect(screen.getByText("You are sending to more than 10 recipients.")).toBeVisible();
+    const send = screen.getByRole("button", { name: "Send" });
+    expect(send).toBeEnabled();
+    fireEvent.click(send);
+    act(() => { vi.advanceTimersByTime(5000); });
+    // useSendMessage expands the chip into member addresses (see useCompose tests).
+    expect(sendMessage.mutate).toHaveBeenCalledWith(expect.objectContaining({ to: `${chip}, ` }), expect.any(Object));
   });
 
   it("offers all logged-in accounts in From", () => {

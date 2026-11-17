@@ -4,6 +4,7 @@ import { mailMessages } from "./messages/mail";
 import { organizerMessages } from "./messages/organizer";
 import { sharedMessages } from "./messages/shared";
 import { publicMessages } from "./messages/public";
+import { listMessages } from "./messages/lists";
 
 export { useLanguageStore, getLanguage, getLocale, normalizeLanguage, detectLanguage, LANGUAGE_STORAGE_KEY } from "./language-store";
 export type { Language, LanguagePreference } from "./language-store";
@@ -15,6 +16,7 @@ export const frenchMessages: Record<string, string> = {
   ...organizerMessages,
   ...sharedMessages,
   ...publicMessages,
+  ...listMessages,
 };
 
 export type TranslationValues = Record<string, string | number>;

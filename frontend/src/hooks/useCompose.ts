@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { parseRecipients } from "@/lib/recipients";
+import { expandRecipients, serializeRecipientField } from "@/lib/recipients";
 import { apiPost, apiGet, apiPostFormData, apiDelete } from "@/lib/api";
 import { useComposeStore, useComposeWindows } from "@/stores/useComposeStore";
 
@@ -97,9 +97,10 @@ export function useSendMessage() {
     scope: { id: "draft-lifecycle" },
     mutationFn: (params: SendParams) =>
       apiPost<SendResponse>("/messages/send", {
-        to: parseRecipients(params.to),
-        cc: parseRecipients(params.cc),
-        bcc: parseRecipients(params.bcc),
+        // Distribution-list chips are sent as their individual member addresses.
+        to: expandRecipients(params.to),
+        cc: expandRecipients(params.cc),
+        bcc: expandRecipients(params.bcc),
         subject: params.subject,
         text_body: params.body,
         html_body: params.htmlBody,
@@ -159,9 +160,9 @@ export function useSaveDraft() {
     mutationFn: (params: SaveDraftParams) =>
       apiPost<SaveDraftResponse>("/drafts", {
         id: params.id,
-        to: params.to,
-        cc: params.cc,
-        bcc: params.bcc,
+        to: serializeRecipientField(params.to),
+        cc: serializeRecipientField(params.cc),
+        bcc: serializeRecipientField(params.bcc),
         subject: params.subject,
         text_body: params.textBody,
         html_body: params.htmlBody,

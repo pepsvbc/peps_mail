@@ -6,6 +6,8 @@ import { apiDelete, apiPost } from "@/lib/api";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useComposeStore } from "@/stores/useComposeStore";
 import { useDeleteDraft, useSaveDraft, useSendMessage } from "../useCompose";
+import { encodeListRecipient } from "@/lib/recipients";
+import { countRecipients } from "@/components/mail/ComposeDialog/utils";
 
 vi.mock("@/lib/api", () => ({ apiDelete: vi.fn(), apiPost: vi.fn() }));
 
@@ -84,4 +86,52 @@ it("keeps queued saves and sends bound to their original account", async () => {
     unmount();
     client.clear();
   }
+});
+
+describe("distribution-list chips", () => {
+  const chip = encodeListRecipient({
+    id: "u13",
+    name: "Équipe U13",
+    members: [{ email: "lea@example.com", name: "Léa, capitaine" }, { email: "Coach@example.com", name: "" }],
+  });
+
+  function renderComposeHooks() {
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    return renderHook(() => ({ save: useSaveDraft(), send: useSendMessage() }), { wrapper });
+  }
+
+  it("sends member addresses instead of the list, deduplicated within each field", async () => {
+    vi.mocked(apiPost).mockResolvedValue({ status: "sent", message_id: "<1@example.com>" });
+    const { result } = renderComposeHooks();
+    await act(() => result.current.send.mutateAsync({
+      to: `coach@example.com, ${chip}, `, cc: chip, bcc: "", subject: "Training", body: "Hi", htmlBody: null,
+      inReplyTo: null, references: null, draftId: null, fromIdentityId: null,
+    }));
+    expect(apiPost).toHaveBeenCalledWith("/messages/send", expect.objectContaining({
+      to: ["coach@example.com", '"Léa, capitaine" <lea@example.com>'],
+      cc: ['"Léa, capitaine" <lea@example.com>', "Coach@example.com"],
+      bcc: [],
+    }), { accountId: undefined });
+    const body = JSON.stringify(vi.mocked(apiPost).mock.calls[0][1]);
+    expect(body).not.toContain("@list:");
+  });
+
+  it("saves drafts with the list expanded into plain addresses", async () => {
+    vi.mocked(apiPost).mockResolvedValue({ id: "draft-1", status: "saved" });
+    const { result } = renderComposeHooks();
+    await act(() => result.current.save.mutateAsync({
+      id: "draft-1", to: chip, cc: "", bcc: `${chip}, extra@example.com`, subject: "", textBody: "", htmlBody: null,
+      inReplyTo: null, references: null,
+    }));
+    expect(apiPost).toHaveBeenCalledWith("/drafts", expect.objectContaining({
+      to: '"Léa, capitaine" <lea@example.com>, Coach@example.com',
+      bcc: '"Léa, capitaine" <lea@example.com>, Coach@example.com, extra@example.com',
+    }), { accountId: undefined });
+  });
+
+  it("counts list members as recipients", () => {
+    expect(countRecipients(chip, "", "lea@example.com")).toBe(3);
+    expect(countRecipients(`${chip}, lea@example.com`)).toBe(2);
+  });
 });
