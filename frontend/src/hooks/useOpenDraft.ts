@@ -7,6 +7,7 @@ import { apiGet, apiPost } from "@/lib/api";
 import { translate as t } from "@/lib/i18n";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useComposeStore } from "@/stores/useComposeStore";
+import { splitQuotedBody } from "@/lib/compose-quote";
 import type { DraftDetail } from "./useCompose";
 
 type DraftSource = { id: string } | { folder: string; uid: number };
@@ -37,13 +38,16 @@ export function useOpenDraft() {
         : await apiPost<DraftDetail>("/drafts/from-message", source);
       if (accountId !== useAuthStore.getState().activeAccountId) return;
       if (restoreExisting(draft.id)) return;
+      // Saved replies/forwards keep their quote in a trailing .peps_quote block; split it back out of the editor body.
+      const split = draft.html_body !== null ? splitQuotedBody(draft.html_body) : null;
       useComposeStore.getState().openDraft({
         id: draft.id,
         to: draft.to,
         cc: draft.cc,
         bcc: draft.bcc,
         subject: draft.subject,
-        body: draft.html_body ?? draft.text_body,
+        body: split ? split.body : draft.text_body,
+        quote: split?.quote ?? null,
         isHtml: draft.html_body !== null,
         inReplyTo: draft.in_reply_to,
         references: draft.references,

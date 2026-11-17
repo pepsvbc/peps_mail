@@ -45,12 +45,24 @@ describe.each([false, true])("message actions (labeled=%s)", (labeled) => {
     expect(useComposeStore.getState()).toMatchObject({ to: "coach@example.com", cc: "team@example.com" });
   });
 
-  it("forwards with an empty recipient and the original content", () => {
+  it("forwards with an empty recipient and the original content shown below the editor", () => {
     render(<MessageReplyActions labeled={labeled} />);
     fireEvent.click(screen.getByRole("button", { name: "Forward" }));
-    expect(useComposeStore.getState()).toMatchObject({ isOpen: true, to: "", subject: "Fwd: Training" });
-    expect(useComposeStore.getState().body).toContain("See you Tuesday");
+    expect(useComposeStore.getState()).toMatchObject({ isOpen: true, to: "", subject: "Fwd: Training", body: "", quoteKind: "forward", showQuoted: true });
+    expect(useComposeStore.getState().quotedText).toContain("See you Tuesday");
+    expect(useComposeStore.getState().quotedHtml).toContain("See you Tuesday");
   });
+});
+
+it("opens a reply with an empty editor and the collapsed quote kept separately", () => {
+  message.data!.html = '<div dir="ltr">Hi</div><div class="gmail_quote"><blockquote class="gmail_quote" style="border-left:1px solid #ccc"><div>Older</div></blockquote></div>';
+  render(<MessageReplyActions labeled />);
+  fireEvent.click(screen.getByRole("button", { name: "Reply" }));
+  const state = useComposeStore.getState();
+  expect(state).toMatchObject({ body: "<p></p>", isHtml: true, quoteKind: "reply", showQuoted: false });
+  expect(state.quotedHtml).toMatch(/^<div class="peps_quote_attr">On .+, Coach &lt;coach@example.com&gt; wrote:<\/div><blockquote type="cite"/);
+  expect(state.quotedHtml).toContain(message.data!.html);
+  expect(state.quotedText).toMatch(/^On .+, Coach <coach@example.com> wrote:\n> See you Tuesday$/);
 });
 
 it("shows only Reply and Forward in the footer for direct conversations", () => {
@@ -77,7 +89,7 @@ it("drops remote images from the quoted HTML unless remote content was allowed",
   message.data!.html = '<p>Hello</p><img src="https://tracker.example/p.gif" alt="Logo"><img src="data:image/png;base64,AAAA">';
   const { unmount } = render(<MessageReplyActions labeled />);
   fireEvent.click(screen.getByRole("button", { name: "Reply" }));
-  const blocked = useComposeStore.getState().body;
+  const blocked = useComposeStore.getState().quotedHtml;
   expect(blocked).not.toContain("tracker.example");
   expect(blocked).toContain("Logo");
   expect(blocked).toContain("data:image/png;base64,AAAA");
@@ -86,5 +98,5 @@ it("drops remote images from the quoted HTML unless remote content was allowed",
   useComposeStore.getState().reset();
   render(<MessageReplyActions labeled remoteContentAllowed />);
   fireEvent.click(screen.getByRole("button", { name: "Forward" }));
-  expect(useComposeStore.getState().body).toContain("https://tracker.example/p.gif");
+  expect(useComposeStore.getState().quotedHtml).toContain("https://tracker.example/p.gif");
 });

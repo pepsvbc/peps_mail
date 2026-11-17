@@ -366,6 +366,7 @@ export function ReadingPane() {
             blockRemoteResources={!remoteAllowed}
             theme={emailTheme}
             emailTheme={data.email_theme}
+            collapseQuotes
           />
         )}
       </div>

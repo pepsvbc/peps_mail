@@ -58,12 +58,23 @@ import {
 } from "./ComposeDialog/index";
 import { SelectField } from "@/components/ui/select";
 import { RecipientInput } from "./ComposeDialog/RecipientInput";
+import { EmailRenderer } from "./EmailRenderer";
+import { QuoteToggle } from "./QuoteToggle";
+import { hasQuote, serializeComposeBody } from "@/lib/compose-quote";
 import dynamic from "next/dynamic";
 
 const RichTextEditor = dynamic(
   () => import("@/components/mail/RichTextEditor").then((mod) => mod.RichTextEditor),
   { ssr: false }
 );
+
+/**
+ * Dirty-tracking hash of the fields saved with a draft. The quoted history is
+ * read-only and can only be removed, so its presence is enough.
+ */
+function composeHash(state: { to: string; cc: string; bcc: string; subject: string; body: string; quotedHtml?: string | null; quotedText?: string | null }) {
+  return `${state.to}|${state.cc}|${state.bcc}|${state.subject}|${state.body}|${hasQuote(state) ? "quoted" : ""}`;
+}
 
 export function ComposeDialog() {
   const windows = useComposeWindows((state) => state.windows);
@@ -140,6 +151,12 @@ function ComposeWindow({ store = defaultComposeStore, windowDock, leftTabDock, r
     isHtml,
     signatureHtml,
     signatureEnabled,
+    quoteKind,
+    quotedHtml,
+    quotedText,
+    showQuoted,
+    setShowQuoted,
+    removeQuote,
     closeCompose,
     minimizeCompose,
     restoreCompose,
@@ -216,6 +233,8 @@ function ComposeWindow({ store = defaultComposeStore, windowDock, leftTabDock, r
   const sendFeedbackMotionProps = useMemo(() => createFadeSlideVariants(effectiveAnimationMode, "y"), [effectiveAnimationMode]);
   const serializedSendFeedbackMotionProps = useMemo(() => JSON.stringify(sendFeedbackMotionProps), [sendFeedbackMotionProps]);
 
+  const quoted = quotedHtml != null || quotedText != null;
+
   const hasContent = useCallback(() => {
     return !!(
       to.trim() ||
@@ -223,9 +242,10 @@ function ComposeWindow({ store = defaultComposeStore, windowDock, leftTabDock, r
       bcc.trim() ||
       subject.trim() ||
       stripHtml(body).trim() ||
+      quoted ||
       attachments.length > 0
     );
-  }, [to, cc, bcc, subject, body, attachments]);
+  }, [to, cc, bcc, subject, body, quoted, attachments]);
 
   // Auto-select the default identity when dialog opens and no identity is set,
   // and inject signature into body
@@ -283,10 +303,10 @@ function ComposeWindow({ store = defaultComposeStore, windowDock, leftTabDock, r
 
   // Compute a simple hash of compose fields for dirty tracking
   const computeHash = useCallback(() => {
-    return `${to}|${cc}|${bcc}|${subject}|${body}`;
-  }, [to, cc, bcc, subject, body]);
+    return composeHash({ to, cc, bcc, subject, body, quotedHtml, quotedText });
+  }, [to, cc, bcc, subject, body, quotedHtml, quotedText]);
 
-  // Signatures and prefilled reply/forward content are not user edits.
+  // Signatures and prefilled reply/forward content are not user edits; removing the quote is.
   const contentSnapshot = useCallback(() => {
     const document = new DOMParser().parseFromString(body, "text/html");
     document.querySelectorAll('[data-signature="true"], .email-signature').forEach((signature) => signature.remove());
@@ -294,8 +314,9 @@ function ComposeWindow({ store = defaultComposeStore, windowDock, leftTabDock, r
       to, cc, bcc, subject, (isHtml ? document.body.textContent ?? "" : body).trim(),
       isHtml ? Array.from(document.images, (image) => image.getAttribute("src")) : [],
       attachments.map((attachment) => attachment.id),
+      quoted,
     ]);
-  }, [to, cc, bcc, subject, body, isHtml, attachments]);
+  }, [to, cc, bcc, subject, body, isHtml, attachments, quoted]);
 
   // Save draft function. When force=true, skip the hash guard (used for explicit save/close).
   const saveDraft = useCallback(
@@ -311,6 +332,7 @@ function ComposeWindow({ store = defaultComposeStore, windowDock, leftTabDock, r
         !bcc.trim() &&
         !subject.trim() &&
         !stripHtml(body).trim() &&
+        !quoted &&
         attachments.length === 0
       )
         return;
@@ -321,6 +343,8 @@ function ComposeWindow({ store = defaultComposeStore, windowDock, leftTabDock, r
         setDraftId(currentDraftId);
       }
 
+      // The saved draft carries the quote in a trailing .peps_quote block (split again on reopen).
+      const outgoing = serializeComposeBody({ body, isHtml, quoteKind, quotedHtml, quotedText });
       saveDraftMutation.mutate(
         {
           id: currentDraftId,
@@ -329,8 +353,8 @@ function ComposeWindow({ store = defaultComposeStore, windowDock, leftTabDock, r
           cc,
           bcc,
           subject,
-          textBody: isHtml ? stripHtml(body) : body,
-          htmlBody: isHtml ? body : null,
+          textBody: outgoing.text,
+          htmlBody: outgoing.html,
           inReplyTo: inReplyTo,
           references: references,
         },
@@ -343,8 +367,7 @@ function ComposeWindow({ store = defaultComposeStore, windowDock, leftTabDock, r
             setDraftSaved(true);
             setTimeout(() => setDraftSaved(false), 3000);
             toast.success(t(result?.status === "saved_locally" ? "Draft saved locally" : "Draft saved"));
-            const currentHash = `${current.to}|${current.cc}|${current.bcc}|${current.subject}|${current.body}`;
-            if (currentHash === hash) onSaved?.();
+            if (composeHash(current) === hash) onSaved?.();
           },
           onError: (error) => toast.error(error.message),
         }
@@ -364,6 +387,10 @@ function ComposeWindow({ store = defaultComposeStore, windowDock, leftTabDock, r
       subject,
       body,
       isHtml,
+      quoted,
+      quoteKind,
+      quotedHtml,
+      quotedText,
       draftId,
       setDraftId,
       inReplyTo,
@@ -398,19 +425,14 @@ function ComposeWindow({ store = defaultComposeStore, windowDock, leftTabDock, r
       useComposeStore.setState({ isOpen: true, isMinimized: false, pendingSend: false });
       return;
     }
-    let plainText: string;
-    let sendHtml: string | null;
-    if (isHtml) {
-      plainText = stripHtml(body);
-      // Convert preview URLs back to cid: references for the email MIME body
-      sendHtml = body.replace(
-        /\/api\/drafts\/[^/]+\/attachments\/([^/]+)\/content/g,
-        (_match, attId) => `cid:${attId}`
-      );
-    } else {
-      plainText = body;
-      sendHtml = null;
-    }
+    // Editor content followed by the untouched quoted history (both HTML and text parts).
+    const outgoing = serializeComposeBody({ body, isHtml, quoteKind, quotedHtml, quotedText });
+    const plainText = outgoing.text;
+    // Convert preview URLs back to cid: references for the email MIME body
+    const sendHtml = outgoing.html?.replace(
+      /\/api\/drafts\/[^/]+\/attachments\/([^/]+)\/content/g,
+      (_match, attId) => `cid:${attId}`
+    ) ?? null;
     sendMutation.mutate(
       {
         accountId: accountId ?? activeAccountId ?? undefined,
@@ -450,6 +472,9 @@ function ComposeWindow({ store = defaultComposeStore, windowDock, leftTabDock, r
     subject,
     body,
     isHtml,
+    quoteKind,
+    quotedHtml,
+    quotedText,
     inReplyTo,
     references,
     draftId,
@@ -1066,6 +1091,33 @@ function ComposeWindow({ store = defaultComposeStore, windowDock, leftTabDock, r
                 rows={inline ? 5 : undefined}
                 className={cn("min-w-0 resize-none overflow-auto bg-transparent px-4 py-3 text-sm outline-none placeholder:text-muted-foreground/50", inline ? "max-h-[45dvh]" : "min-h-32 flex-1")}
               />
+            )}
+
+            {/* Quoted history: kept out of the editor so it is sent unchanged, shown read-only in the sandboxed renderer. */}
+            {quoted && (
+              <div data-testid="compose-quote" className="shrink-0 px-4 pb-2">
+                <div className="flex items-center gap-2">
+                  <QuoteToggle expanded={showQuoted} onToggle={() => setShowQuoted(!showQuoted)} />
+                  <button
+                    type="button"
+                    onClick={removeQuote}
+                    aria-label={t("Remove previous messages")}
+                    title={t("Remove previous messages")}
+                    className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+                {showQuoted && (
+                  <div role="region" aria-label={t("Previous messages")} className="mt-2 overflow-hidden rounded-md border border-border/60">
+                    {isHtml && quotedHtml != null ? (
+                      <EmailRenderer autoHeight html={quotedHtml} text={null} />
+                    ) : (
+                      <pre className="whitespace-pre-wrap break-words p-3 text-sm text-muted-foreground">{quotedText ?? ""}</pre>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Footer */}

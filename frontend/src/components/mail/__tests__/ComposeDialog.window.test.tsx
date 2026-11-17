@@ -577,6 +577,100 @@ describe("composer window controls", () => {
     expect(useComposeStore.getState().isOpen).toBe(false);
   });
 
+  describe("quoted history", () => {
+    const originalHtml = '<div dir="ltr">ok</div><div class="gmail_quote"><blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204)"><div>merci</div><div><br></div></blockquote></div>';
+    const quote = {
+      kind: "reply" as const,
+      html: `<div class="peps_quote_attr">On 19 Oct 2026, Bob &lt;bob@example.com&gt; wrote:</div><blockquote type="cite" style="margin:0 0 0 0.8ex;border-left:2px solid #ccc;padding-left:1ex">${originalHtml}</blockquote>`,
+      text: "On 19 Oct 2026, Bob <bob@example.com> wrote:\n> ok\n> merci",
+    };
+
+    beforeEach(() => {
+      if (!window.matchMedia) {
+        Object.defineProperty(window, "matchMedia", {
+          writable: true,
+          value: vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+        });
+      }
+    });
+
+    function openQuotedReply() {
+      useComposeStore.getState().reset();
+      useComposeStore.getState().openReply({
+        to: "bob@example.com", cc: "", subject: "Re: Hello", body: "<p></p>", quote,
+        inReplyTo: "<original@example.com>", references: null,
+      });
+      render(<ComposeDialog />);
+    }
+
+    it("keeps the quote out of the editor, collapsed behind a toggle, and shows it read-only on demand", () => {
+      openQuotedReply();
+      expect(screen.getByRole("textbox", { name: "Message body" })).toHaveValue("<p></p>");
+      expect(screen.queryByRole("region", { name: "Previous messages" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Show previous messages" }));
+      const preview = screen.getByRole("region", { name: "Previous messages" });
+      const frame = preview.querySelector("iframe");
+      expect(frame?.getAttribute("sandbox")).not.toContain("allow-scripts");
+      expect(frame?.getAttribute("srcdoc")).toContain("merci");
+      expect(screen.getByRole("button", { name: "Hide previous messages" })).toHaveAttribute("aria-expanded", "true");
+    });
+
+    it("sends the editor content followed by the untouched quote in both HTML and text", () => {
+      openQuotedReply();
+      fireEvent.change(screen.getByRole("textbox", { name: "Message body" }), { target: { value: "<p>My answer</p>" } });
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
+      act(() => { vi.advanceTimersByTime(5000); });
+      expect(sendMessage.mutate).toHaveBeenCalledWith(expect.objectContaining({
+        htmlBody: `<p>My answer</p><div class="peps_quote">${quote.html}</div>`,
+        body: `My answer\n\n${quote.text}`,
+      }), expect.any(Object));
+    });
+
+    it("saves drafts with the quote so it can be split out again", () => {
+      openQuotedReply();
+      fireEvent.change(screen.getByRole("textbox", { name: "Message body" }), { target: { value: "<p>Draft answer</p>" } });
+      fireEvent.click(screen.getByRole("button", { name: "Save draft (Ctrl+S)" }));
+      expect(saveDraft.mutate).toHaveBeenCalledWith(expect.objectContaining({
+        htmlBody: `<p>Draft answer</p><div class="peps_quote">${quote.html}</div>`,
+        textBody: `Draft answer\n\n${quote.text}`,
+      }), expect.any(Object));
+    });
+
+    it("drops the quote from the sent message after removing previous messages", () => {
+      openQuotedReply();
+      fireEvent.click(screen.getByRole("button", { name: "Remove previous messages" }));
+      expect(screen.queryByRole("button", { name: "Show previous messages" })).toBeNull();
+      fireEvent.change(screen.getByRole("textbox", { name: "Message body" }), { target: { value: "<p>Short answer</p>" } });
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
+      act(() => { vi.advanceTimersByTime(5000); });
+      expect(sendMessage.mutate).toHaveBeenCalledWith(expect.objectContaining({
+        htmlBody: "<p>Short answer</p>", body: "Short answer",
+      }), expect.any(Object));
+    });
+
+    it("counts removing the quote as a change when closing", () => {
+      openQuotedReply();
+      fireEvent.click(screen.getByRole("button", { name: "Remove previous messages" }));
+      fireEvent.click(screen.getByRole("button", { name: "Close composer" }));
+      expect(screen.getByRole("alertdialog")).toBeVisible();
+    });
+
+    it("shows a forward expanded and sends it as a forward", () => {
+      useComposeStore.getState().reset();
+      useComposeStore.getState().openForward({
+        subject: "Fwd: Hello", body: "<p></p>",
+        quote: { kind: "forward", html: `<div class="peps_forward_header">---------- Forwarded message ----------</div><hr>${originalHtml}`, text: "---------- Forwarded message ----------\n\nok" },
+      });
+      render(<ComposeDialog />);
+      expect(screen.getByRole("region", { name: "Previous messages" })).toBeInTheDocument();
+      act(() => useComposeStore.getState().setField("to", "carol@example.com"));
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
+      act(() => { vi.advanceTimersByTime(5000); });
+      expect(sendMessage.mutate.mock.calls[0][0].htmlBody).toContain(`<div class="peps_quote peps_forward"><div class="peps_forward_header">`);
+      expect(sendMessage.mutate.mock.calls[0][0].htmlBody).toContain(`<hr>${originalHtml}</div>`);
+    });
+  });
+
   it("continues autosaving edits while minimized and does not save again on close", () => {
     render(<ComposeDialog />);
     fireEvent.change(screen.getByRole("textbox", { name: "Message body" }), {

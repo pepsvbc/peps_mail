@@ -49,6 +49,16 @@ describe("reopening drafts", () => {
     expect(apiPost).toHaveBeenCalledWith("/drafts/from-message", { folder: "Brouillons", uid: 7 });
     expect(useComposeStore.getState()).toMatchObject({ isOpen: true, isHtml: true, body: "<p>Saved HTML</p>" });
   });
+  it("splits the saved quote of a reply draft back out of the editor body", async () => {
+    const quoteHtml = '<div class="peps_quote_attr">On Mon, Bob wrote:</div><blockquote type="cite" style="border-left:2px solid #ccc"><div class="gmail_quote">Older</div></blockquote>';
+    vi.mocked(apiGet).mockResolvedValue({ ...draft, html_body: `<p>My answer</p><div class="peps_quote">${quoteHtml}</div>` });
+    const { result } = setup();
+    await act(() => result.current.openDraft({ id: draft.id }));
+    expect(useComposeStore.getState()).toMatchObject({
+      isHtml: true, body: "<p>My answer</p>", quoteKind: "reply", quotedHtml: quoteHtml, showQuoted: false,
+      quotedText: "On Mon, Bob wrote:\n> Older",
+    });
+  });
   it("restores an already open draft without overwriting edits", async () => {
     const { result } = setup();
     await act(() => result.current.openDraft({ id: draft.id }));

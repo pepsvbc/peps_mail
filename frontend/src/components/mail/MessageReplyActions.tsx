@@ -13,14 +13,11 @@ import {
   extractHeader,
   buildReplySubject,
   buildForwardSubject,
-  buildReplyBody,
-  buildForwardBody,
-  buildReplyBodyHtml,
-  buildForwardBodyHtml,
   buildReferences,
 } from "@/lib/email-utils";
+import { buildForwardQuote, buildReplyQuote } from "@/lib/compose-quote";
 import { sanitizeQuotedHtml } from "@/lib/email-html";
-import type { EmailAddress } from "@/types/message";
+import type { EmailAddress, MessageDetail } from "@/types/message";
 import { useIdentities } from "@/hooks/useIdentities";
 import type { Identity } from "@/types/identity";
 
@@ -44,6 +41,29 @@ function formatAddressList(addresses: EmailAddress[]): string {
   return addresses
     .map((a) => formatRecipient(a.address, a.name))
     .join(", ");
+}
+
+/**
+ * The original message prepared for quoting. Its HTML is sanitized (remote
+ * images dropped unless allowed) and later shown read-only below the editor.
+ */
+function originalForQuote(data: MessageDetail, remoteContentAllowed: boolean) {
+  const hasHtml = !!(data.html && data.html.trim());
+  return {
+    hasHtml,
+    original: {
+      html: hasHtml ? sanitizeQuotedHtml(data.html!, remoteContentAllowed) : null,
+      text: data.text,
+      fromAddress: data.from_address,
+      fromName: data.from_name,
+      date: data.date,
+    },
+  };
+}
+
+/** Replies and forwards start with an empty editor; the quote is kept separately. */
+function emptyBody(isHtml: boolean): string {
+  return isHtml ? "<p></p>" : "";
 }
 
 export function MessageReplyActions({
@@ -76,15 +96,14 @@ export function MessageReplyActions({
     const messageId = extractHeader(data.raw_headers, "Message-ID");
     const refs = extractHeader(data.raw_headers, "References");
     const matchedId = findMatchingIdentity(identities, data.to_addresses, data.cc_addresses);
-    const hasHtml = !!(data.html && data.html.trim());
+    const { hasHtml, original } = originalForQuote(data, remoteContentAllowed);
     useComposeStore.getState().openReply({
       to: data.from_address,
       cc: "",
       sourceMessageKey: composeMessageKey(useAuthStore.getState().activeAccountId, activeFolder, selectedMessageUid),
       subject: buildReplySubject(data.subject),
-      body: hasHtml
-        ? buildReplyBodyHtml(sanitizeQuotedHtml(data.html!, remoteContentAllowed), data.from_address, data.date)
-        : buildReplyBody(data.text, data.from_address, data.date),
+      body: emptyBody(hasHtml),
+      quote: buildReplyQuote(original),
       inReplyTo: messageId,
       references: buildReferences(refs, messageId),
       fromIdentityId: matchedId,
@@ -108,15 +127,14 @@ export function MessageReplyActions({
     );
     const ccList = allRecipients.map((a) => a.address).join(", ");
     const matchedId = findMatchingIdentity(identities, data.to_addresses, data.cc_addresses);
-    const hasHtml = !!(data.html && data.html.trim());
+    const { hasHtml, original } = originalForQuote(data, remoteContentAllowed);
     useComposeStore.getState().openReply({
       to: replyTo,
       cc: ccList,
       sourceMessageKey: composeMessageKey(useAuthStore.getState().activeAccountId, activeFolder, selectedMessageUid),
       subject: buildReplySubject(data.subject),
-      body: hasHtml
-        ? buildReplyBodyHtml(sanitizeQuotedHtml(data.html!, remoteContentAllowed), data.from_address, data.date)
-        : buildReplyBody(data.text, data.from_address, data.date),
+      body: emptyBody(hasHtml),
+      quote: buildReplyQuote(original),
       inReplyTo: messageId,
       references: buildReferences(refs, messageId),
       fromIdentityId: matchedId,
@@ -127,13 +145,12 @@ export function MessageReplyActions({
   const handleForward = () => {
     if (!data) return;
     const toList = formatAddressList(data.to_addresses);
-    const hasHtml = !!(data.html && data.html.trim());
+    const { hasHtml, original } = originalForQuote(data, remoteContentAllowed);
     useComposeStore.getState().openForward({
       sourceMessageKey: composeMessageKey(useAuthStore.getState().activeAccountId, activeFolder, selectedMessageUid),
       subject: buildForwardSubject(data.subject),
-      body: hasHtml
-        ? buildForwardBodyHtml(sanitizeQuotedHtml(data.html!, remoteContentAllowed), data.from_address, data.date, data.subject, toList)
-        : buildForwardBody(data.text, data.from_address, data.date, data.subject, toList),
+      body: emptyBody(hasHtml),
+      quote: buildForwardQuote({ ...original, subject: data.subject, to: toList }),
       isHtml: hasHtml,
     });
   };

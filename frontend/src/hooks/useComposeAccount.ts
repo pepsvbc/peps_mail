@@ -8,6 +8,7 @@ import { replaceSignatureInBody, useComposeStore, type ComposeAttachment, type C
 import { generateId, stripHtml } from "@/components/mail/ComposeDialog/utils";
 import type { Identity } from "@/types/identity";
 import { serializeRecipientField } from "@/lib/recipients";
+import { hasQuote, serializeComposeBody } from "@/lib/compose-quote";
 
 /** Move the editing copy before switching accounts; a failed copy leaves the composer intact. */
 export function useComposeAccount(store: ComposeStore = useComposeStore) {
@@ -45,16 +46,19 @@ export function useComposeAccount(store: ComposeStore = useComposeStore) {
           attachments.push({ id: copy.id, filename: copy.filename, contentType: copy.content_type, size: copy.size });
           body = body.replaceAll(`/api/drafts/${source.draftId}/attachments/${attachment.id}/content`, `/api/drafts/${targetDraftId}/attachments/${copy.id}/content`);
         }
-        const hasContent = !!(source.to.trim() || source.cc.trim() || source.bcc.trim() || source.subject.trim() || (source.isHtml ? stripHtml(body) : body).trim() || attachments.length);
+        const hasContent = !!(source.to.trim() || source.cc.trim() || source.bcc.trim() || source.subject.trim()
+          || (source.isHtml ? stripHtml(body) : body).trim() || hasQuote(source) || attachments.length);
         if (hasContent) {
           created = true;
+          // The saved copy includes the quoted history; the composer keeps it separate.
+          const outgoing = serializeComposeBody({ ...source, body });
           await apiPost("/drafts", {
             id: targetDraftId,
             to: serializeRecipientField(source.to),
             cc: serializeRecipientField(source.cc),
             bcc: serializeRecipientField(source.bcc),
             subject: source.subject,
-            text_body: source.isHtml ? stripHtml(body) : body, html_body: source.isHtml ? body : null,
+            text_body: outgoing.text, html_body: outgoing.html,
             in_reply_to: source.inReplyTo, references: source.references,
           }, options);
         }

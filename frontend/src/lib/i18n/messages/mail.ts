@@ -238,4 +238,8 @@ export const mailMessages: Record<string, string> = {
   "Date: {date}": "Date : {date}",
   "To: {recipient}": "À : {recipient}",
   "{current} of {total}": "{current} sur {total}",
+  "Show previous messages": "Afficher les messages précédents",
+  "Hide previous messages": "Masquer les messages précédents",
+  "Remove previous messages": "Supprimer les messages précédents",
+  "Previous messages": "Messages précédents",
 };

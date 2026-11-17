@@ -37,22 +37,33 @@ export function buildForwardSubject(subject: string): string {
   return `Fwd: ${subject}`;
 }
 
+/** "Name <email>" when the sender has a display name, otherwise just the address. */
+export function formatQuoteSender(address: string, name?: string | null): string {
+  const displayName = name?.trim();
+  return displayName && displayName.toLowerCase() !== address.toLowerCase()
+    ? `${displayName} <${address}>`
+    : address;
+}
+
+/** The "On {date}, {sender} wrote:" line above a quoted reply (plain text, unescaped). */
+export function buildReplyAttribution(from: string, date: string): string {
+  return t("On {date}, {sender} wrote:", { date: formatQuoteDate(date), sender: from });
+}
+
 /**
- * Build a quoted reply body from the original message text.
+ * Build the quoted part of a plain-text reply: the attribution line followed by
+ * the original text with every line prefixed by "> ".
  */
 export function buildReplyBody(
   text: string | null,
   from: string,
   date: string,
 ): string {
-  const formattedDate = formatQuoteDate(date);
-  const header = `\n${t("On {date}, {sender} wrote:", { date: formattedDate, sender: from })}\n`;
-  const quoted = quoteText(text ?? "");
-  return `\n${header}${quoted}`;
+  return `${buildReplyAttribution(from, date)}\n${quoteText(text ?? "")}`;
 }
 
 /**
- * Build a forwarded message body with a preamble.
+ * Build the forwarded part of a plain-text message: a header block and the original text.
  */
 export function buildForwardBody(
   text: string | null,
@@ -63,7 +74,6 @@ export function buildForwardBody(
 ): string {
   const formattedDate = formatQuoteDate(date);
   const lines = [
-    "",
     t("---------- Forwarded message ----------"),
     t("From: {sender}", { sender: from }),
     t("Date: {date}", { date: formattedDate }),
@@ -88,45 +98,52 @@ export function buildReferences(
   return `${existingReferences} ${messageId}`;
 }
 
+/** Inline style of the reply quote, so the left border survives in every mail client. */
+export const QUOTE_BLOCKQUOTE_STYLE = "margin:0 0 0 0.8ex;border-left:2px solid #ccc;padding-left:1ex";
+
 /**
- * Build a quoted reply body in HTML from the original HTML content.
+ * Build the content of a reply's quoted part in HTML: the attribution line and
+ * the original message in a cite blockquote. The result goes inside the
+ * `.peps_quote` wrapper (see lib/compose-quote.ts), never into the editor.
  * `html` must already be sanitized (see sanitizeQuotedHtml); header fields are escaped here.
  */
-export function buildReplyBodyHtml(
+export function buildReplyQuoteHtml(
   html: string,
   from: string,
   date: string,
 ): string {
-  const formattedDate = escapeHtml(formatQuoteDate(date));
   return [
-    '<p><br></p>',
-    `<p>${t("On {date}, {sender} wrote:", { date: formattedDate, sender: escapeHtml(from) })}</p>`,
-    `<blockquote style="margin:0 0 0 0.8ex;border-left:1px solid #ccc;padding-left:1ex">${html}</blockquote>`,
+    `<div class="peps_quote_attr">${escapeHtml(buildReplyAttribution(from, date))}</div>`,
+    `<blockquote type="cite" style="${QUOTE_BLOCKQUOTE_STYLE}">${html}</blockquote>`,
   ].join("");
 }
 
 /**
- * Build a forwarded message body in HTML from the original HTML content.
+ * Build the content of a forward's quoted part in HTML: the forwarded-message
+ * header block, a rule and the original message.
  * `html` must already be sanitized (see sanitizeQuotedHtml); header fields are escaped here.
  */
-export function buildForwardBodyHtml(
+export function buildForwardQuoteHtml(
   html: string,
   from: string,
   date: string,
   subject: string,
   to: string,
 ): string {
-  const formattedDate = escapeHtml(formatQuoteDate(date));
-  return [
-    '<p><br></p>',
-    `<p>${t("---------- Forwarded message ----------")}</p>`,
-    `<p>${t("From: {sender}", { sender: escapeHtml(from) })}<br>`,
-    `${t("Date: {date}", { date: formattedDate })}<br>`,
-    `${t("Subject: {subject}", { subject: escapeHtml(subject) })}<br>`,
-    `${t("To: {recipient}", { recipient: escapeHtml(to) })}</p>`,
-    '<hr>',
-    html,
-  ].join("");
+  const formattedDate = formatQuoteDate(date);
+  const header = [
+    t("---------- Forwarded message ----------"),
+    t("From: {sender}", { sender: from }),
+    t("Date: {date}", { date: formattedDate }),
+    t("Subject: {subject}", { subject }),
+    t("To: {recipient}", { recipient: to }),
+  ].map(escapeHtml).join("<br>");
+  return `<div class="peps_forward_header">${header}</div><hr>${html}`;
+}
+
+/** Turn an original plain-text message into HTML for the quoted part (escaped, line breaks kept). */
+export function plainTextToQuoteHtml(text: string | null): string {
+  return (text ?? "").split(/\r?\n/).map(escapeHtml).join("<br>");
 }
 
 // --- Internal helpers ---

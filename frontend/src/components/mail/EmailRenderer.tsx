@@ -14,6 +14,9 @@ import {
   sanitizeEmailDocument,
   stripRemoteResources,
 } from "@/lib/email-html";
+import { findPlainTextQuote, findTrailingQuote } from "@/lib/quote-detection";
+import { QuoteToggle } from "./QuoteToggle";
+import type { AnimationMode } from "@/lib/motion/config";
 
 interface EmailRendererProps {
   autoHeight?: boolean;
@@ -22,6 +25,8 @@ interface EmailRendererProps {
   blockRemoteResources?: boolean;
   theme?: "light" | "dark" | "auto";
   emailTheme?: 'light' | 'dark' | 'transparent' | 'adaptive';
+  /** Hide trailing quoted history behind a "•••" toggle (reading pane). */
+  collapseQuotes?: boolean;
 }
 
 const WHITE_COLOR_RE = /^(#fff(fff)?|white)$/i;
@@ -105,10 +110,15 @@ function processEmailHtml(
   html: string,
   blockRemoteResources: boolean,
   adaptiveMode: "dark" | "light" | null,
-): { bodyHtml: string; emailBgColor: string | null; adaptiveDarkCSS: string } {
+  quoteMode: "keep" | "detect" | "collapse" = "keep",
+): { bodyHtml: string; emailBgColor: string | null; adaptiveDarkCSS: string; hasQuote: boolean } {
   const doc = parseEmailHtml(html);
   sanitizeEmailDocument(doc);
   if (blockRemoteResources) stripRemoteResources(doc);
+
+  // Trailing quoted history (detected by DOM traversal, see lib/quote-detection.ts).
+  const quoteNodes = quoteMode === "keep" ? null : findTrailingQuote(doc);
+  if (quoteMode === "collapse") quoteNodes?.forEach((node) => node.parentNode?.removeChild(node));
 
   // Strip email's own CSS color-scheme declarations — we set our own in the wrapper.
   // (The email's color-scheme <meta> tags are removed with all other <meta>s.)
@@ -193,7 +203,7 @@ function processEmailHtml(
   }
 
   // Keep the email's <head> content (mostly <style> blocks) ahead of its body.
-  return { bodyHtml: (doc.head?.innerHTML ?? "") + contentHtml, emailBgColor, adaptiveDarkCSS };
+  return { bodyHtml: (doc.head?.innerHTML ?? "") + contentHtml, emailBgColor, adaptiveDarkCSS, hasQuote: !!quoteNodes };
 }
 
 /**
@@ -241,10 +251,18 @@ export function EmailRenderer({
   autoHeight = false,
   blockRemoteResources = false,
   theme = "auto",
-  emailTheme
+  emailTheme,
+  collapseQuotes = false,
 }: EmailRendererProps) {
   useTranslation();
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // Quoted history starts collapsed and resets whenever another message is shown.
+  const quoteSource = collapseQuotes ? (html ?? text) : null;
+  const [quoteToggle, setQuoteToggle] = useState<{ source: string | null; expanded: boolean }>({ source: null, expanded: false });
+  const quoteExpanded = quoteToggle.source === quoteSource && quoteToggle.expanded;
+  const toggleQuote = () => setQuoteToggle({ source: quoteSource, expanded: !quoteExpanded });
+  const quoteMode = !collapseQuotes ? "keep" : quoteExpanded ? "detect" : "collapse";
 
   const appTheme = useUiStore((state) => state.theme);
   const effectiveAnimationMode = useUiStore((state) => state.effectiveAnimationMode);
@@ -283,7 +301,8 @@ export function EmailRenderer({
   }, [emailTheme, resolvedTheme, isSystemDark]);
 
   // Compute a stable key for the iframe — when this changes, React remounts the iframe
-  const iframeKey = `${shouldInvert ? "inverted" : "normal"}-${isDark ? "dark" : "light"}-${blockRemoteResources}-${autoHeight}`;
+  // (Toggling the quote remounts the iframe too, so its height can shrink again.)
+  const iframeKey = `${shouldInvert ? "inverted" : "normal"}-${isDark ? "dark" : "light"}-${blockRemoteResources}-${autoHeight}-${quoteMode}`;
 
   const handleIframeLoad = useCallback(() => {
     const iframe = iframeRef.current;
@@ -341,13 +360,14 @@ export function EmailRenderer({
 
   // Memoize the heavy HTML processing — DOM sanitization, CSS generation, etc.
   // This only re-runs when the actual inputs change, not on every render.
-  const wrappedHtml = useMemo(() => {
+  const rendered = useMemo(() => {
     if (!html) return null;
 
-    const { bodyHtml: cleanedHtml, emailBgColor, adaptiveDarkCSS } = processEmailHtml(
+    const { bodyHtml: cleanedHtml, emailBgColor, adaptiveDarkCSS, hasQuote } = processEmailHtml(
       html,
       blockRemoteResources,
       emailTheme === 'adaptive' ? (isDark ? 'dark' : 'light') : null,
+      quoteMode,
     );
 
     // App theme colors (must match globals.css --background / --foreground)
@@ -437,7 +457,7 @@ export function EmailRenderer({
     }
     ` : '';
 
-    return `<!DOCTYPE html>
+    const srcDoc = `<!DOCTYPE html>
 <html class="${shouldInvert ? 'invert' : ''}">
 <head>
   <meta http-equiv="Content-Security-Policy" content="${buildEmailCsp(!blockRemoteResources)}" />
@@ -533,7 +553,23 @@ export function EmailRenderer({
   </style>
 </body>
 </html>`;
-  }, [html, blockRemoteResources, emailTheme, shouldInvert, isDark]);
+    return { srcDoc, hasQuote };
+  }, [html, blockRemoteResources, emailTheme, shouldInvert, isDark, quoteMode]);
+  const wrappedHtml = rendered?.srcDoc ?? null;
+
+  // Plain-text messages: trailing "On … wrote:" + "> " lines (see lib/quote-detection.ts).
+  const textQuoteStart = useMemo(
+    () => (collapseQuotes && text && !wrappedHtml ? findPlainTextQuote(text) : null),
+    [collapseQuotes, text, wrappedHtml],
+  );
+  const displayText = text && textQuoteStart !== null && !quoteExpanded
+    ? text.split(/\r?\n/).slice(0, textQuoteStart).join("\n").trimEnd()
+    : text;
+  const quoteToggleButton = (rendered?.hasQuote || textQuoteStart !== null) ? (
+    <div className="px-4 pb-3">
+      <QuoteToggle expanded={quoteExpanded} onToggle={toggleQuote} />
+    </div>
+  ) : null;
 
   const surface: "html" | "text" | "empty" = wrappedHtml ? "html" : text ? "text" : "empty";
   const textSignature = text ? `${text.length}:${text}` : null;
@@ -627,92 +663,22 @@ export function EmailRenderer({
           title={t("Email content")}
           onLoad={handleIframeLoad}
         />
+        {quoteToggleButton}
       </div>
     );
   }
 
   if (text) {
-    if (effectiveAnimationMode === "off") {
-      return (
-        <pre
-          data-testid="email-renderer-plaintext-static"
-          className="whitespace-pre-wrap break-words p-4 text-sm leading-relaxed text-foreground"
-        >
-          {text}
-        </pre>
-      );
-    }
-
-    if (effectiveAnimationMode === "rich") {
-      const lines = text.split(/\r?\n/);
-      const isLargeBody = text.length > 6000 || lines.length > 180;
-      const shouldAnimateRich = shouldStartRichStream;
-
-      if (isLargeBody) {
-        return (
-          <pre
-            data-testid="email-renderer-plaintext-large-reveal"
-            data-stream-session={String(richStreamSession)}
-            className="whitespace-pre-wrap break-words p-4 text-sm leading-relaxed text-foreground transition-opacity duration-200"
-            style={{
-              animationName: shouldAnimateRich ? "email-plaintext-container-reveal" : "none",
-              animationDuration: shouldAnimateRich ? "220ms" : "0ms",
-              animationTimingFunction: "cubic-bezier(0.2, 0, 0, 1)",
-              animationFillMode: "both",
-            }}
-          >
-            {text}
-          </pre>
-        );
-      }
-
-      return (
-        <pre
-          data-testid="email-renderer-plaintext-rich-stream"
-          data-stream-session={String(richStreamSession)}
-          className="whitespace-pre-wrap break-words p-4 text-sm leading-relaxed text-foreground"
-        >
-          {lines.map((line, index) => (
-            <span
-              key={`${richStreamSession}-${index}`}
-              data-testid="email-renderer-plaintext-line"
-              style={{
-                display: "inline-block",
-                width: "100%",
-                animationName: shouldAnimateRich ? "email-plaintext-line-reveal" : "none",
-                animationDuration: shouldAnimateRich ? "260ms" : "0ms",
-                animationTimingFunction: "cubic-bezier(0.2, 0, 0, 1)",
-                animationFillMode: "both",
-                animationDelay: shouldAnimateRich ? `${Math.min(index * 18, 320)}ms` : "0ms",
-              }}
-            >
-              {line}
-              {index < lines.length - 1 ? "\n" : ""}
-            </span>
-          ))}
-        </pre>
-      );
-    }
-
-    const simpleAnimationName =
-      effectiveAnimationMode === "medium"
-        ? "email-plaintext-medium-reveal"
-        : "email-plaintext-subtle-reveal";
-    const simpleAnimationDuration = effectiveAnimationMode === "medium" ? "170ms" : "110ms";
-
     return (
-      <pre
-        data-testid="email-renderer-plaintext-simple-transition"
-        className="whitespace-pre-wrap break-words p-4 text-sm leading-relaxed text-foreground transition-opacity duration-150"
-        style={{
-          animationName: simpleAnimationName,
-          animationDuration: simpleAnimationDuration,
-          animationTimingFunction: "cubic-bezier(0.2, 0, 0, 1)",
-          animationFillMode: "both",
-        }}
-      >
-        {text}
-      </pre>
+      <>
+        <PlainTextBody
+          text={displayText ?? text}
+          animationMode={effectiveAnimationMode}
+          shouldAnimateRich={shouldStartRichStream}
+          richStreamSession={richStreamSession}
+        />
+        {quoteToggleButton}
+      </>
     );
   }
 
@@ -720,5 +686,100 @@ export function EmailRenderer({
     <p className="p-4 text-sm text-muted-foreground">
       {t("No content available for this message.")}
     </p>
+  );
+}
+
+/** Plain-text message body with the animation for the current animation mode. */
+function PlainTextBody({
+  text,
+  animationMode,
+  shouldAnimateRich,
+  richStreamSession,
+}: {
+  text: string;
+  animationMode: AnimationMode;
+  shouldAnimateRich: boolean;
+  richStreamSession: number;
+}) {
+  if (animationMode === "off") {
+    return (
+      <pre
+        data-testid="email-renderer-plaintext-static"
+        className="whitespace-pre-wrap break-words p-4 text-sm leading-relaxed text-foreground"
+      >
+        {text}
+      </pre>
+    );
+  }
+
+  if (animationMode === "rich") {
+    const lines = text.split(/\r?\n/);
+    const isLargeBody = text.length > 6000 || lines.length > 180;
+
+    if (isLargeBody) {
+      return (
+        <pre
+          data-testid="email-renderer-plaintext-large-reveal"
+          data-stream-session={String(richStreamSession)}
+          className="whitespace-pre-wrap break-words p-4 text-sm leading-relaxed text-foreground transition-opacity duration-200"
+          style={{
+            animationName: shouldAnimateRich ? "email-plaintext-container-reveal" : "none",
+            animationDuration: shouldAnimateRich ? "220ms" : "0ms",
+            animationTimingFunction: "cubic-bezier(0.2, 0, 0, 1)",
+            animationFillMode: "both",
+          }}
+        >
+          {text}
+        </pre>
+      );
+    }
+
+    return (
+      <pre
+        data-testid="email-renderer-plaintext-rich-stream"
+        data-stream-session={String(richStreamSession)}
+        className="whitespace-pre-wrap break-words p-4 text-sm leading-relaxed text-foreground"
+      >
+        {lines.map((line, index) => (
+          <span
+            key={`${richStreamSession}-${index}`}
+            data-testid="email-renderer-plaintext-line"
+            style={{
+              display: "inline-block",
+              width: "100%",
+              animationName: shouldAnimateRich ? "email-plaintext-line-reveal" : "none",
+              animationDuration: shouldAnimateRich ? "260ms" : "0ms",
+              animationTimingFunction: "cubic-bezier(0.2, 0, 0, 1)",
+              animationFillMode: "both",
+              animationDelay: shouldAnimateRich ? `${Math.min(index * 18, 320)}ms` : "0ms",
+            }}
+          >
+            {line}
+            {index < lines.length - 1 ? "\n" : ""}
+          </span>
+        ))}
+      </pre>
+    );
+  }
+
+  const simpleAnimationName =
+    animationMode === "medium"
+      ? "email-plaintext-medium-reveal"
+      : "email-plaintext-subtle-reveal";
+  const simpleAnimationDuration = animationMode === "medium" ? "170ms" : "110ms";
+
+  return (
+    <pre
+      data-testid="email-renderer-plaintext-simple-transition"
+      className="whitespace-pre-wrap break-words p-4 text-sm leading-relaxed text-foreground transition-opacity duration-150"
+      style={{
+        animationName: simpleAnimationName,
+        animationDuration: simpleAnimationDuration,
+        animationTimingFunction: "cubic-bezier(0.2, 0, 0, 1)",
+        animationFillMode: "both",
+      }}
+    >
+      {text}
+    </pre>
   );
 }

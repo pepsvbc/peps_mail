@@ -43,6 +43,18 @@ describe("switching the sending account", () => {
     expect(apiDelete).toHaveBeenCalledWith("/drafts/original", { accountId: "a" });
     expect(client.getQueryData(["message", "INBOX", 1])).toBeUndefined();
   });
+  it("copies the quoted history with the draft without moving it into the editor body", async () => {
+    useComposeStore.setState({ quoteKind: "reply", quotedHtml: '<blockquote type="cite">Older</blockquote>', quotedText: "> Older" });
+    const { result } = setup();
+    await act(() => result.current.mutateAsync("b"));
+    const draft = useComposeStore.getState();
+    expect(draft.body).not.toContain("peps_quote");
+    expect(draft.quotedHtml).toBe('<blockquote type="cite">Older</blockquote>');
+    expect(apiPost).toHaveBeenCalledWith("/drafts", expect.objectContaining({
+      html_body: `${draft.body}<div class="peps_quote"><blockquote type="cite">Older</blockquote></div>`,
+      text_body: expect.stringContaining("> Older"),
+    }), { accountId: "b" });
+  });
   it("keeps the original draft and account when an attachment transfer fails", async () => {
     vi.mocked(apiPostFormData).mockRejectedValue(new Error("Upload failed"));
     const before = useComposeStore.getState();

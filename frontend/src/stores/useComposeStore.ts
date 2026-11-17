@@ -3,6 +3,7 @@
 import { create, type StoreApi, type UseBoundStore } from "zustand";
 import { useUiStore } from "@/stores/useUiStore";
 import { useAuthStore } from "@/stores/useAuthStore";
+import type { ComposeQuote, QuoteKind } from "@/lib/compose-quote";
 
 export interface ReplyParams {
   sourceMessageKey?: string;
@@ -10,6 +11,8 @@ export interface ReplyParams {
   cc: string;
   subject: string;
   body: string;
+  /** Quoted original message, kept outside the editor (see lib/compose-quote.ts). */
+  quote?: ComposeQuote | null;
   inReplyTo: string | null;
   references: string | null;
   fromIdentityId?: number | null;
@@ -20,6 +23,8 @@ export interface ForwardParams {
   sourceMessageKey?: string;
   subject: string;
   body: string;
+  /** Forwarded original message, kept outside the editor (see lib/compose-quote.ts). */
+  quote?: ComposeQuote | null;
   isHtml?: boolean;
 }
 
@@ -30,6 +35,7 @@ export interface DraftResumeParams {
   bcc: string;
   subject: string;
   body: string;
+  quote?: ComposeQuote | null;
   inReplyTo: string | null;
   references: string | null;
   attachments: ComposeAttachment[];
@@ -65,6 +71,12 @@ export interface ComposeState {
   isHtml: boolean;
   signatureHtml: string;
   signatureEnabled: boolean;
+  /** Quoted history of a reply or forward; never part of `body` (the editor content). */
+  quoteKind: QuoteKind | null;
+  quotedHtml: string | null;
+  quotedText: string | null;
+  /** Whether the quoted history is expanded below the editor. */
+  showQuoted: boolean;
 
   openCompose: (to?: string) => void;
   openReply: (params: ReplyParams) => void;
@@ -81,6 +93,8 @@ export interface ComposeState {
   setIsHtml: (v: boolean) => void;
   setSignatureHtml: (html: string) => void;
   setSignatureEnabled: (enabled: boolean) => void;
+  setShowQuoted: (show: boolean) => void;
+  removeQuote: () => void;
   addAttachments: (atts: ComposeAttachment[]) => void;
   removeAttachment: (id: string) => void;
   reset: () => void;
@@ -92,16 +106,14 @@ export function wrapSignatureHtml(signatureHtml: string): string {
   return `<div class="email-signature" data-signature="true"><p>-- </p>${signatureHtml}</div>`;
 }
 
-/** Injects a signature block into body HTML, before any quoted content or at the end. */
+/**
+ * Appends a signature block to the editor body. Quoted reply/forward content is
+ * kept separately (see quotedHtml), so the signature always ends the editor
+ * body and lands above the quote when the message is serialized.
+ */
 export function injectSignature(body: string, signatureHtml: string): string {
   const sigBlock = wrapSignatureHtml(signatureHtml);
   if (!sigBlock) return body;
-
-  // Try to insert before blockquote (quoted reply/forward content)
-  const bqIndex = body.indexOf("<blockquote");
-  if (bqIndex !== -1) {
-    return body.slice(0, bqIndex) + sigBlock + body.slice(bqIndex);
-  }
   return body + sigBlock;
 }
 
@@ -152,7 +164,18 @@ const initialState = {
   isHtml: true,
   signatureHtml: "",
   signatureEnabled: true,
+  quoteKind: null as QuoteKind | null,
+  quotedHtml: null as string | null,
+  quotedText: null as string | null,
+  showQuoted: false,
 };
+
+/** Store fields for a quoted part; forwards start expanded (the forwarded content is the point). */
+function quoteState(quote: ComposeQuote | null | undefined) {
+  return quote
+    ? { quoteKind: quote.kind, quotedHtml: quote.html, quotedText: quote.text, showQuoted: quote.kind === "forward" }
+    : { quoteKind: null, quotedHtml: null, quotedText: null, showQuoted: false };
+}
 
 export type ComposeStore = UseBoundStore<StoreApi<ComposeState>>;
 
@@ -189,6 +212,7 @@ function createComposeStore(): ComposeStore {
       sourceMessageKey: params.sourceMessageKey ?? null,
       subject: params.subject,
       body: params.body,
+      ...quoteState(params.quote),
       inReplyTo: params.inReplyTo,
       references: params.references,
       showCc: params.cc.length > 0,
@@ -209,6 +233,7 @@ function createComposeStore(): ComposeStore {
       sourceMessageKey: params.sourceMessageKey ?? null,
       subject: params.subject,
       body: params.body,
+      ...quoteState(params.quote),
       isHtml: params.isHtml ?? true,
     });
   },
@@ -228,6 +253,7 @@ function createComposeStore(): ComposeStore {
       bcc: params.bcc,
       subject: params.subject,
       body: params.body,
+      ...quoteState(params.quote),
       inReplyTo: params.inReplyTo,
       references: params.references,
       showCc: params.cc.length > 0,
@@ -255,6 +281,10 @@ function createComposeStore(): ComposeStore {
   setSignatureHtml: (html) => set({ signatureHtml: html }),
 
   setSignatureEnabled: (enabled) => set({ signatureEnabled: enabled }),
+
+  setShowQuoted: (show) => set({ showQuoted: show }),
+
+  removeQuote: () => set(quoteState(null)),
 
   addAttachments: (atts) =>
     set((state) => ({ attachments: [...state.attachments, ...atts] })),
