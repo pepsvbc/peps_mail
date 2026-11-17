@@ -140,9 +140,11 @@ export function AccountSwitcher() {
         </div>
       )}
 
-      <div>
+      {/* Fill the sidebar width so the address truncates when the sidebar is narrowed. */}
+      <div className="w-full min-w-0">
         <button
           ref={buttonRef}
+          title={activeAccount?.email}
           type="button"
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
@@ -158,7 +160,7 @@ export function AccountSwitcher() {
             <div className="truncate">{activeAccount?.email}</div>
             {otherAccounts.length > 0 && (
               <div
-                className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"
+                className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
                 title={t("Unread messages in other inboxes")}
               >
                 {beforeCount}
