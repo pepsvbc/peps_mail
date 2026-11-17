@@ -41,6 +41,7 @@ Branding can be customized in these files:
 
 - **Mail** — Read, compose, reply, forward, and manage emails with a rich text editor (Tiptap)
 - **Address Autocomplete** — Recipient suggestions from addresses seen in your mail (calendar and contacts stay with your mail provider)
+- **Distribution Lists** — Personal recipient lists, plus shared lists that admins create and share with chosen members
 - **Full-Text Search** — Instant local search powered by Tantivy
 - **Real-Time Updates** — WebSocket-driven live mailbox sync
 - **Security** — IMAP credential auth, session tokens with configurable timeout, rate limiting
@@ -133,6 +134,8 @@ Translations live in `frontend/src/lib/i18n/messages/`, grouped by feature. Engl
 `ENVIRONMENT` defaults to `production`, which enables Secure cookies and HSTS. Set `ENVIRONMENT=development` only for local plain-HTTP testing (`dev.sh` does this and binds to `127.0.0.1`). The reverse proxy must preserve the public `Host` header for WebSocket origin validation, and should set `X-Forwarded-For`. List the proxy's address in `TRUSTED_PROXIES` so login rate limiting applies per client rather than to the proxy as a whole. Docker Compose publishes port 3001 on `127.0.0.1` only. If the proxy runs on another machine, set `PUBLISH_ADDRESS`. The container drops root privileges at start and takes ownership of the data directory for its `app` user (UID 10001).
 
 Sender identities may only use the signed-in mailbox address. Set `ALLOW_ANY_SENDER=true` only if your SMTP server itself rejects From addresses that the login does not own. Browser sessions use HttpOnly cookies; removing or expiring a session stops its live mail events. Sessions are held in memory and require signing in again after a server restart.
+
+Distribution lists are stored in `DATA_DIR/shared.sqlite`, which is shared by all users of the instance. Anyone can create personal lists, which only they can see. Only the addresses in `ADMIN_EMAILS` can create, delete, and manage access to shared lists. Admins choose who can use each shared list and who can also edit its members; the picker offers people who have signed in to this instance, and every address must be allowed by `ALLOWED_EMAIL_DOMAINS`. Admins see all shared lists, but not other people's personal lists.
 
 The following table lists backend defaults:
 

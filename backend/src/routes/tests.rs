@@ -2,6 +2,7 @@
     mod addresses;
     mod attachment_security;
     mod draft_paths;
+    mod lists;
     mod rate_limit_key;
     mod setup;
     mod sent_copy;

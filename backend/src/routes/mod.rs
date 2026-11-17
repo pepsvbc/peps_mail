@@ -11,6 +11,7 @@ pub mod folder_mgmt;
 pub mod folders;
 pub mod health;
 pub mod identities;
+pub mod lists;
 pub mod messages;
 pub mod notification_preferences;
 pub mod quota;
@@ -203,6 +204,11 @@ async fn security_headers(
 /// - `DELETE /api/messages/:folder/:uid`       — delete message (auth_guard + CSRF)
 /// - `GET  /api/addresses/autocomplete`        — search known addresses (auth_guard + CSRF)
 /// - `GET  /api/addresses/autocomplete/all`    — all known addresses (auth_guard + CSRF)
+/// - `GET  /api/lists`                         — distribution lists visible to the caller (auth_guard + CSRF)
+/// - `POST /api/lists`                         — create a distribution list (auth_guard + CSRF)
+/// - `PUT  /api/lists/:id`                     — update a distribution list (auth_guard + CSRF)
+/// - `DELETE /api/lists/:id`                   — delete a distribution list (auth_guard + CSRF)
+/// - `GET  /api/lists/users`                   — signed-in users for shared list access, admins only (auth_guard + CSRF)
 ///
 /// All other paths serve static files from `config.static_dir`.
 /// Non-matching static paths fall back to `index.html` (SPA routing).
@@ -352,6 +358,15 @@ pub fn create_router(
         .route(
             "/addresses/autocomplete",
             get(addresses::autocomplete_handler),
+        )
+        .route(
+            "/lists",
+            get(lists::list_lists_handler).post(lists::create_list_handler),
+        )
+        .route("/lists/users", get(lists::list_users_handler))
+        .route(
+            "/lists/{id}",
+            put(lists::update_list_handler).delete(lists::delete_list_handler),
         )
         .route(
             "/identities",

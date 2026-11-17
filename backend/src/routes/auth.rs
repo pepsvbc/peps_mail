@@ -308,6 +308,14 @@ pub async fn login(
                 }
             }
 
+            // Remember who signs in here so admins can grant shared list access.
+            let login_email = body.email.trim().to_ascii_lowercase();
+            if let Err(e) = db::shared_pool::open_shared_db(&config.data_dir)
+                .and_then(|conn| db::lists::record_login(&conn, &login_email))
+            {
+                tracing::warn!(error = %e, "Failed to record login in shared database");
+            }
+
             const REMEMBER_ME_HOURS: u64 = 30 * 24;
             let session_hours = if body.remember {
                 REMEMBER_ME_HOURS
@@ -768,6 +776,10 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::CREATED, "{json}");
         imap.await.unwrap();
+        let shared = db::shared_pool::open_shared_db(data_dir.path().to_str().unwrap()).unwrap();
+        let users = db::lists::list_users(&shared).unwrap();
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].email, "member@example.com");
         let browser_id = response_cookie(&headers, BROWSER_COOKIE);
         assert_ne!(browser_id, attacker_browser);
         assert!(store.get_browser_accounts(&attacker_browser).is_empty());
