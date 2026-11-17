@@ -49,6 +49,8 @@ mod tests {
             base_path: None,
             trusted_proxies: None,
             allow_any_sender: false,
+            allowed_email_domains: None,
+            admin_emails: None,
         });
         let store = Arc::new(SessionStore::new(Duration::from_secs(3600)));
         let imap_client: Arc<dyn ImapClient> = Arc::new(MockImapClient::new());

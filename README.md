@@ -122,7 +122,7 @@ STATIC_DIR=frontend/out DATA_DIR=./data ./backend/target/release/peps-mail-serve
 
 Keep actual mail-server settings in your local `.env`, which is ignored by Git. [`.env.example`](.env.example) is a generic, public template. Docker Compose reads `.env` for the variables referenced in `docker-compose.yml`; direct backend runs require environment variables exported into the shell.
 
-Set both `IMAP_HOST` and `SMTP_HOST`. Login and mailbox operations use the hosts, ports, and TLS settings configured on the server. Members enter their mailbox credentials; custom mail servers cannot be supplied by the browser. Multiple accounts on the configured provider remain supported.
+Set both `IMAP_HOST` and `SMTP_HOST`. On a shared mail provider, also set `ALLOWED_EMAIL_DOMAINS` (e.g. `pepsvbc.ch,pepsvolley.ch`). Otherwise any mailbox at that provider, including other customers', can sign in to your instance. Login and mailbox operations use the hosts, ports, and TLS settings configured on the server. Members enter their mailbox credentials; custom mail servers cannot be supplied by the browser. Multiple accounts on the configured provider remain supported.
 
 The sign-in page links to a public `/help/` guide for setting up phones and mail clients. The guide reads the configured hostnames, ports, and connection security from `GET /api/setup`; it requires no login. With mail servers configured and TLS enabled, `GET /api/setup/apple.mobileconfig` downloads an unsigned Apple Mail profile. iOS asks for the email address, usernames, and password during installation, so the download contains no credentials. Each download has unique profile identifiers to support separate mailboxes. Install from Safari, and remove unused profiles in iOS Settings.
 
@@ -152,6 +152,8 @@ The following table lists backend defaults:
 | `BASE_PATH` | — | Base path prefix for reverse proxy (e.g. `/mail`) |
 | `TRUSTED_PROXIES` | — | Comma-separated IPs/CIDRs whose `X-Forwarded-For` is trusted |
 | `ALLOW_ANY_SENDER` | `false` | Allow identities with any From address |
+| `ALLOWED_EMAIL_DOMAINS` | — | Comma-separated domains allowed to sign in (empty allows any mailbox the IMAP server accepts) |
+| `ADMIN_EMAILS` | — | Comma-separated admin addresses (manage shared distribution lists) |
 | `RUST_LOG` | `info` | Log level filter |
 
 ## Architecture

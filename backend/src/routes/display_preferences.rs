@@ -78,6 +78,8 @@ mod tests {
             base_path: None,
             trusted_proxies: None,
             allow_any_sender: false,
+            allowed_email_domains: None,
+            admin_emails: None,
         })
     }
 

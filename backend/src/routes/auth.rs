@@ -150,6 +150,23 @@ pub async fn login(
         )
             .into_response();
     }
+    // Checked before contacting the IMAP server, so other mailboxes on a shared
+    // provider can't use this instance (or probe passwords through it).
+    if !config.is_email_domain_allowed(&body.email) {
+        return (
+            StatusCode::FORBIDDEN,
+            [("content-type", "application/json")],
+            serde_json::json!({
+                "error": {
+                    "code": "DOMAIN_NOT_ALLOWED",
+                    "message": "This email address can't sign in here",
+                    "status": 403
+                }
+            })
+            .to_string(),
+        )
+            .into_response();
+    }
 
     // Mailbox caches are keyed by email address, so authentication must use the
     // same administrator-configured server as all subsequent mailbox requests.
@@ -388,11 +405,15 @@ pub async fn login(
 ///
 /// Returns the current user's session information. Requires authentication
 /// (the `auth_guard` middleware injects `SessionState` into extensions).
-pub async fn get_session(Extension(session): Extension<SessionState>) -> Response {
+pub async fn get_session(
+    Extension(session): Extension<SessionState>,
+    Extension(config): Extension<Arc<AppConfig>>,
+) -> Response {
+    let is_admin = config.is_admin(&session.email);
     (
         StatusCode::OK,
         [("content-type", "application/json")],
-        serde_json::json!({ "user": { "email": session.email } }).to_string(),
+        serde_json::json!({ "user": { "email": session.email, "is_admin": is_admin } }).to_string(),
     )
         .into_response()
 }
@@ -422,7 +443,8 @@ pub async fn list_accounts(
                 "id": session.account_id,
                 "email": session.email,
                 "imapHost": session.imap_host,
-                "smtpHost": session.smtp_host
+                "smtpHost": session.smtp_host,
+                "isAdmin": config.is_admin(&session.email)
             }));
         } else {
             clear_cookies.push(clearing_account_cookie(&account_id, secure));
@@ -794,6 +816,25 @@ mod tests {
         ).await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         peer.await.unwrap();
+        assert!(store.is_empty());
+    }
+
+    #[tokio::test]
+    async fn login_rejects_emails_outside_allowed_domains_before_imap() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut config = test_config(&data_dir);
+        config.allowed_email_domains = Some("pepsvbc.ch,pepsvolley.ch".to_string());
+        let store = test_store();
+        let (status, _, json) = request(
+            test_router(store.clone(), config),
+            "POST",
+            "/login",
+            "",
+            serde_json::json!({ "email": "someone@franklymail.com", "password": "password" }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(json["error"]["code"], "DOMAIN_NOT_ALLOWED");
         assert!(store.is_empty());
     }
 

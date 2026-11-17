@@ -68,6 +68,25 @@ pub struct AppConfig {
     /// the SMTP server itself rejects From addresses the login does not own.
     #[serde(default)]
     pub allow_any_sender: bool,
+
+    /// Comma-separated email domains allowed to sign in (e.g.
+    /// `pepsvbc.ch,pepsvolley.ch`). Empty allows any mailbox the IMAP server
+    /// accepts — on a shared provider that means other customers too.
+    #[serde(default)]
+    pub allowed_email_domains: Option<String>,
+
+    /// Comma-separated admin email addresses (e.g. may manage shared lists).
+    #[serde(default)]
+    pub admin_emails: Option<String>,
+}
+
+/// Split a comma-separated setting into trimmed, lower-cased, non-empty items.
+fn csv_items(value: Option<&str>) -> impl Iterator<Item = String> + '_ {
+    value
+        .unwrap_or_default()
+        .split(',')
+        .map(|item| item.trim().to_ascii_lowercase())
+        .filter(|item| !item.is_empty())
 }
 
 fn default_host() -> String {
@@ -117,6 +136,26 @@ impl AppConfig {
             .merge(Env::raw())
             .extract()
     }
+
+    /// Whether `email` may sign in under `ALLOWED_EMAIL_DOMAINS` (exact domain
+    /// match, case-insensitive; no restriction when the setting is empty).
+    pub fn is_email_domain_allowed(&self, email: &str) -> bool {
+        let mut domains = csv_items(self.allowed_email_domains.as_deref()).peekable();
+        if domains.peek().is_none() {
+            return true;
+        }
+        let Some((_, domain)) = email.trim().rsplit_once('@') else {
+            return false;
+        };
+        let domain = domain.to_ascii_lowercase();
+        domains.any(|allowed| allowed == domain)
+    }
+
+    /// Whether `email` is listed in `ADMIN_EMAILS` (case-insensitive).
+    pub fn is_admin(&self, email: &str) -> bool {
+        let email = email.trim().to_ascii_lowercase();
+        csv_items(self.admin_emails.as_deref()).any(|admin| admin == email)
+    }
 }
 
 #[cfg(test)]
@@ -142,6 +181,27 @@ mod tests {
         assert_eq!(config.environment, "production");
         assert!(config.trusted_proxies.is_none());
         assert!(!config.allow_any_sender);
+        assert!(config.is_email_domain_allowed("anyone@anywhere.example"));
+        assert!(!config.is_admin("anyone@anywhere.example"));
+    }
+
+    #[test]
+    fn email_domain_and_admin_checks() {
+        let config: AppConfig = Figment::new()
+            .merge(("allowed_email_domains", " PEPSvbc.ch, pepsvolley.ch ,"))
+            .merge(("admin_emails", "Coach@pepsvbc.ch"))
+            .extract()
+            .unwrap();
+
+        assert!(config.is_email_domain_allowed("anna@pepsvbc.ch"));
+        assert!(config.is_email_domain_allowed("Ben@PEPSVOLLEY.CH"));
+        assert!(!config.is_email_domain_allowed("eve@franklymail.com"));
+        assert!(!config.is_email_domain_allowed("eve@evil.pepsvbc.ch"));
+        assert!(!config.is_email_domain_allowed("eve@pepsvbc.ch.evil.com"));
+        assert!(!config.is_email_domain_allowed("no-at-sign"));
+
+        assert!(config.is_admin(" coach@PEPSVBC.ch "));
+        assert!(!config.is_admin("anna@pepsvbc.ch"));
     }
 
     #[test]

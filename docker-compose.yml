@@ -22,6 +22,8 @@ services:
       # Connections from the host's reverse proxy arrive via the Docker bridge.
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-172.16.0.0/12}
       - ALLOW_ANY_SENDER=${ALLOW_ANY_SENDER:-false}
+      - ALLOWED_EMAIL_DOMAINS=${ALLOWED_EMAIL_DOMAINS:-}
+      - ADMIN_EMAILS=${ADMIN_EMAILS:-}
     volumes:
       - ./data:/data
     healthcheck:
