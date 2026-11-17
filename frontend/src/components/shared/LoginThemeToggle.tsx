@@ -4,7 +4,7 @@ import { STORAGE_KEYS, readStoredPreference, writeStoredPreference } from "@/lib
 
 import { useTranslation } from "@/lib/i18n";
 
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { Moon, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUiStore, type ThemeMode } from "@/stores/useUiStore";
@@ -19,10 +19,20 @@ function applyTheme(theme: ThemeMode, prefersDark: boolean) {
   );
 }
 
+function subscribeToSystemTheme(onChange: () => void) {
+  const media = window.matchMedia?.(SYSTEM_THEME_QUERY);
+  media?.addEventListener("change", onChange);
+  return () => media?.removeEventListener("change", onChange);
+}
+
+function getSystemPrefersDark() {
+  return window.matchMedia?.(SYSTEM_THEME_QUERY).matches ?? false;
+}
+
 function useLoginTheme() {
   const theme = useUiStore((state) => state.theme);
   const setTheme = useUiStore((state) => state.setTheme);
-  const [prefersDark, setPrefersDark] = useState(false);
+  const prefersDark = useSyncExternalStore(subscribeToSystemTheme, getSystemPrefersDark, () => false);
 
   useEffect(() => {
     let initialTheme: ThemeMode = "system";
@@ -34,21 +44,12 @@ function useLoginTheme() {
     } catch {
       // Theme selection still works when browser storage is unavailable.
     }
-
-    const media = window.matchMedia?.(SYSTEM_THEME_QUERY);
     setTheme(initialTheme);
-    setPrefersDark(media?.matches ?? false);
-    applyTheme(initialTheme, media?.matches ?? false);
-
-    const onSystemThemeChange = (event: MediaQueryListEvent) => {
-      setPrefersDark(event.matches);
-      if (useUiStore.getState().theme === "system") {
-        applyTheme("system", event.matches);
-      }
-    };
-    media?.addEventListener("change", onSystemThemeChange);
-    return () => media?.removeEventListener("change", onSystemThemeChange);
   }, [setTheme]);
+
+  useEffect(() => {
+    applyTheme(theme, prefersDark);
+  }, [theme, prefersDark]);
 
   const resolvedTheme = theme === "system" ? (prefersDark ? "dark" : "light") : theme;
 
