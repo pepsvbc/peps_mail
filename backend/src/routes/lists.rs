@@ -174,6 +174,11 @@ fn to_response(list: DistributionList, perms: Permissions, caller: &Caller) -> L
 // Validation
 // ---------------------------------------------------------------------------
 
+/// The kind of a list that is (or is not) shared with someone.
+fn kind_for_access(shared: bool) -> &'static str {
+    if shared { "shared" } else { "personal" }
+}
+
 fn bad_request(message: &str) -> AppError {
     AppError::BadRequest(message.to_string())
 }
@@ -322,9 +327,13 @@ pub async fn create_list_handler(
 ) -> Result<Response, AppError> {
     let caller = Caller::new(&session, &config);
     let name = validate_name(data.name.as_deref())?;
-    let kind = validate_choice(data.kind.as_deref(), &KINDS)?;
-    let display_mode = validate_choice(data.display_mode.as_deref(), &DISPLAY_MODES)?;
     let access = data.access.unwrap_or_default();
+    // Without an explicit kind, a list is shared exactly when it is shared with someone.
+    let kind = match data.kind.as_deref() {
+        None => kind_for_access(!access.is_empty()).to_string(),
+        kind => validate_choice(kind, &KINDS)?,
+    };
+    let display_mode = validate_choice(data.display_mode.as_deref(), &DISPLAY_MODES)?;
     if kind == "shared" && !caller.is_admin {
         return Err(AppError::Forbidden(SHARED_ADMIN_ONLY.to_string()));
     }
@@ -368,22 +377,25 @@ pub async fn update_list_handler(
     if edits_content && !perms.can_edit {
         return Err(AppError::Forbidden(CANNOT_EDIT.to_string()));
     }
-    // An empty access list on a personal list changes nothing, as on create.
-    let access = match data.access {
-        Some(access) if list.kind == "personal" => {
-            if !access.is_empty() {
-                return Err(bad_request(ACCESS_ON_PERSONAL));
-            }
-            None
-        }
+    // Only admins share lists. Sharing a personal list with someone makes it
+    // shared; removing everyone makes it personal again for its owner (another
+    // admin's list stays shared so that it does not vanish from their view).
+    let (access, kind) = match data.access {
+        Some(access) if list.kind == "personal" && access.is_empty() => (None, None),
         Some(_) if !caller.is_admin => {
             return Err(AppError::Forbidden(ACCESS_ADMIN_ONLY.to_string()));
         }
-        access => access,
+        Some(access) => {
+            let shared = !access.is_empty() || list.owner_email != caller.email;
+            let kind = (kind_for_access(shared) != list.kind).then(|| kind_for_access(shared).to_string());
+            (Some(access), kind)
+        }
+        None => (None, None),
     };
 
     let changes = ListChanges {
         name: data.name.as_deref().map(|name| validate_name(Some(name))).transpose()?,
+        kind,
         display_mode: data
             .display_mode
             .as_deref()

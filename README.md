@@ -135,7 +135,7 @@ Translations live in `frontend/src/lib/i18n/messages/`, grouped by feature. Engl
 
 Sender identities may only use the signed-in mailbox address. Set `ALLOW_ANY_SENDER=true` only if your SMTP server itself rejects From addresses that the login does not own. Browser sessions use HttpOnly cookies; removing or expiring a session stops its live mail events. Sessions are held in memory and require signing in again after a server restart.
 
-Distribution lists are stored in `DATA_DIR/shared.sqlite`, which is shared by all users of the instance. Anyone can create personal lists, which only they can see. Only the addresses in `ADMIN_EMAILS` can create, delete, and manage access to shared lists. Admins choose who can use each shared list and who can also edit its members; the picker offers people who have signed in to this instance, and every address must be allowed by `ALLOWED_EMAIL_DOMAINS`. Admins see all shared lists, but not other people's personal lists.
+Distribution lists are stored in `DATA_DIR/shared.sqlite`, which is shared by all users of the instance. Anyone can create personal lists, which only they can see. Only the addresses in `ADMIN_EMAILS` can share lists: a list is shared as soon as an admin adds people under "Share with", and becomes personal again when its owner removes everyone. For each person, the admin chooses "Can use" or "Can use and edit". The picker offers people who have signed in to this instance, and every address must be allowed by `ALLOWED_EMAIL_DOMAINS`. Only admins can delete shared lists. Admins see all shared lists, but not other people's personal lists.
 
 The following table lists backend defaults:
 

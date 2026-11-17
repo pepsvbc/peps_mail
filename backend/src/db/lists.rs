@@ -54,6 +54,8 @@ pub struct NewList<'a> {
 #[derive(Default)]
 pub struct ListChanges {
     pub name: Option<String>,
+    /// `personal` or `shared`; follows whether the list is shared with anyone.
+    pub kind: Option<String>,
     pub display_mode: Option<String>,
     pub members: Option<Vec<ListMember>>,
     pub access: Option<Vec<ListAccess>>,
@@ -236,10 +238,11 @@ pub fn update_list(
             &format!(
                 "UPDATE lists SET name = COALESCE(?2, name),
                                   display_mode = COALESCE(?3, display_mode),
+                                  kind = COALESCE(?4, kind),
                                   updated_at = {NOW_SQL}
                  WHERE id = ?1"
             ),
-            params![id, changes.name, changes.display_mode],
+            params![id, changes.name, changes.display_mode, changes.kind],
         )
         .map_err(|e| format!("Failed to update list: {e}"))?;
     if updated == 0 {

@@ -32,7 +32,8 @@ export interface DistributionList {
 
 export interface CreateListRequest {
   name: string;
-  kind: ListKind;
+  /** Omit to derive it: shared when `access` has anyone. */
+  kind?: ListKind;
   display_mode: ListDisplayMode;
   members: ListMember[];
   access?: ListAccess[];

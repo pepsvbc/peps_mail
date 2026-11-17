@@ -68,9 +68,9 @@ describe("distribution list settings", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "New list" }));
     const dialog = await screen.findByRole("dialog");
-    // Non-admins always create personal lists and never see the access editor.
+    // Non-admins never see "Share with": their lists stay personal.
     expect(within(dialog).queryByRole("radio", { name: /^Shared/ })).toBeNull();
-    expect(within(dialog).queryByLabelText("Who can use this list")).toBeNull();
+    expect(within(dialog).queryByLabelText("Share with")).toBeNull();
 
     fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Équipe U13" } });
     addMember("lea@example.com");
@@ -92,13 +92,12 @@ describe("distribution list settings", () => {
 
     await waitFor(() => expect(apiPost).toHaveBeenCalledWith("/lists", {
       name: "Équipe U13",
-      kind: "personal",
       display_mode: "expanded",
       members: [{ email: "lea@example.com", name: "" }, { email: "jean@example.com", name: "Jean Dupont" }],
     }));
   });
 
-  it("lets admins create a shared list and choose who can use or edit it", async () => {
+  it("shares a list with the people an admin adds, each with a role, including one still being typed", async () => {
     setAdmin(true);
     mockServer([], ["coach@example.com", "parent@example.com"]);
     renderSettings();
@@ -106,32 +105,74 @@ describe("distribution list settings", () => {
     fireEvent.click(screen.getByRole("button", { name: "New list" }));
     const dialog = await screen.findByRole("dialog");
 
-    expect(within(dialog).getByRole("radio", { name: /^Personal/ })).toBeChecked();
-    expect(within(dialog).queryByLabelText("Who can use this list")).toBeNull();
-    fireEvent.click(within(dialog).getByRole("radio", { name: /^Shared/ }));
-
+    // No personal/shared choice: sharing depends only on the people added.
+    expect(within(dialog).queryByRole("radio", { name: /^Shared/ })).toBeNull();
     fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Coaches" } });
     addMember("coach@example.com");
 
-    const accessInput = within(dialog).getByLabelText("Who can use this list");
+    const accessInput = within(dialog).getByLabelText("Share with");
     fireEvent.focus(accessInput);
     fireEvent.change(accessInput, { target: { value: "coach" } });
     fireEvent.mouseDown(await within(dialog).findByRole("option", { name: "coach@example.com" }));
-    fireEvent.change(accessInput, { target: { value: "new.parent@example.com" } });
-    fireEvent.keyDown(accessInput, { key: "Enter" });
-    fireEvent.click(within(dialog).getByRole("switch", { name: "coach@example.com can edit" }));
 
+    const people = within(dialog).getByRole("list", { name: "People with access" });
+    const role = within(people).getByRole("combobox", { name: "Role of coach@example.com" });
+    expect(role).toHaveValue("use");
+    fireEvent.change(role, { target: { value: "edit" } });
+
+    fireEvent.change(accessInput, { target: { value: "parent@example.com" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    fireEvent.click(within(people).getByRole("button", { name: "Remove access for parent@example.com" }));
+    expect(within(people).queryByText("parent@example.com")).toBeNull();
+
+    // Typed but not added yet: still shared on save.
+    fireEvent.change(accessInput, { target: { value: "new.parent@example.com" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Create list" }));
     await waitFor(() => expect(apiPost).toHaveBeenCalledWith("/lists", {
       name: "Coaches",
-      kind: "shared",
       display_mode: "list",
       members: [{ email: "coach@example.com", name: "" }],
       access: [{ email: "coach@example.com", can_edit: true }, { email: "new.parent@example.com", can_edit: false }],
     }));
   });
 
-  it("shows shared lists read-only when the user cannot edit them", async () => {
+  it("does not save when the person being typed in Share with is not an address", async () => {
+    setAdmin(true);
+    mockServer([]);
+    renderSettings();
+    fireEvent.click(await screen.findByRole("button", { name: "New list" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Coaches" } });
+    fireEvent.change(within(dialog).getByLabelText("Share with"), { target: { value: "coach" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create list" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Not a valid email address: coach");
+    expect(apiPost).not.toHaveBeenCalled();
+  });
+
+  it("expands a list to show its members and who it is shared with", async () => {
+    setAdmin(true);
+    mockServer([makeList({
+      id: "shared-1", kind: "shared",
+      access: [{ email: "coach@example.com", can_edit: true }, { email: "parent@example.com", can_edit: false }],
+    })]);
+    renderSettings();
+    const row = await screen.findByTestId("distribution-list-row");
+    const toggle = within(row).getByRole("button", { name: /^Équipe U13/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(within(row).queryByRole("list", { name: "Members of Équipe U13" })).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(within(row).getByRole("list", { name: "Members of Équipe U13" })).toHaveTextContent("Léa Martin <lea@example.com>");
+    const access = within(row).getByRole("list", { name: "People with access to Équipe U13" });
+    expect(access).toHaveTextContent("coach@example.comCan use and edit");
+    expect(access).toHaveTextContent("parent@example.comCan use");
+
+    fireEvent.click(toggle);
+    expect(within(row).queryByRole("list", { name: "Members of Équipe U13" })).toBeNull();
+  });
+
+  it("shows shared lists read-only, with the user's own role, when they cannot edit them", async () => {
     mockServer([makeList({ id: "shared-1", kind: "shared", can_edit: false, can_manage: false })]);
     renderSettings();
     const row = await screen.findByTestId("distribution-list-row");
@@ -140,13 +181,10 @@ describe("distribution list settings", () => {
     expect(within(row).queryByRole("button", { name: "Edit Équipe U13" })).toBeNull();
     expect(within(row).queryByRole("button", { name: "Delete Équipe U13" })).toBeNull();
 
-    fireEvent.click(within(row).getByRole("button", { name: "View members of Équipe U13" }));
-    const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText("You can use this list but not change it.")).toBeVisible();
-    expect(within(dialog).getByRole("list", { name: "List members" })).toHaveTextContent("lea@example.com");
-    expect(within(dialog).queryByRole("textbox")).toBeNull();
-    expect(within(dialog).queryByRole("button", { name: "Remove lea@example.com" })).toBeNull();
-    expect(within(dialog).queryByRole("button", { name: "Save" })).toBeNull();
+    fireEvent.click(within(row).getByRole("button", { name: /^Équipe U13/ }));
+    expect(within(row).getByRole("list", { name: "Members of Équipe U13" })).toHaveTextContent("jean@example.com");
+    expect(row).toHaveTextContent("Shared with");
+    expect(row).toHaveTextContent("YouCan use");
   });
 
   it("lets non-admin editors of a shared list change it without touching access", async () => {
@@ -154,7 +192,7 @@ describe("distribution list settings", () => {
     renderSettings();
     fireEvent.click(await screen.findByRole("button", { name: "Edit Équipe U13" }));
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).queryByLabelText("Who can use this list")).toBeNull();
+    expect(within(dialog).queryByLabelText("Share with")).toBeNull();
     fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "U13 squad" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(apiPut).toHaveBeenCalledWith("/lists/shared-1", {

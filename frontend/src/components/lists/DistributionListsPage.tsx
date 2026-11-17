@@ -2,78 +2,143 @@
 
 import { useTranslation } from "@/lib/i18n";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { AlertDialog } from "radix-ui";
-import { Eye, List, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronRight, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useDeleteList, useLists } from "@/hooks/useLists";
+import { cn } from "@/lib/utils";
 import type { DistributionList } from "@/types/list";
 import { DistributionListDialog } from "./DistributionListDialog";
 
+function RoleBadge({ canEdit }: { canEdit: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+      {canEdit ? t("Can use and edit") : t("Can use")}
+    </span>
+  );
+}
+
+/** Members and sharing of an expanded list. */
+function ListDetails({ list, id }: { list: DistributionList; id: string }) {
+  const { t } = useTranslation();
+  return (
+    <div id={id} className="space-y-4 border-t border-border px-4 py-3">
+      <div className="space-y-1.5">
+        <h4 className="text-xs font-medium text-muted-foreground">{t("Members")}</h4>
+        {list.members.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{t("No members yet.")}</p>
+        ) : (
+          <ul aria-label={t("Members of {name}", { name: list.name })} className="max-h-64 space-y-1 overflow-y-auto text-sm">
+            {list.members.map((member) => (
+              <li key={member.email.toLowerCase()} className="min-w-0 truncate">
+                {member.name ? (
+                  <>{member.name} <span className="text-muted-foreground">&lt;{member.email}&gt;</span></>
+                ) : member.email}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {list.kind === "shared" && (
+        <div className="space-y-1.5">
+          <h4 className="text-xs font-medium text-muted-foreground">{t("Shared with")}</h4>
+          {list.access ? (
+            list.access.length === 0 ? (
+              <p className="text-xs text-muted-foreground">{t("Nobody yet.")}</p>
+            ) : (
+              <ul aria-label={t("People with access to {name}", { name: list.name })} className="space-y-1 text-sm">
+                {list.access.map((entry) => (
+                  <li key={entry.email} className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate">{entry.email}</span>
+                    <RoleBadge canEdit={entry.can_edit} />
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : (
+            // Non-admins only learn their own role.
+            <div className="flex items-center justify-between gap-2 text-sm">
+              <span className="min-w-0 truncate">{t("You")}</span>
+              <RoleBadge canEdit={list.can_edit} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ListRow({
   list,
+  expanded,
+  onToggle,
   onOpen,
   onDelete,
 }: {
   list: DistributionList;
+  expanded: boolean;
+  onToggle: () => void;
   onOpen: () => void;
   onDelete: () => void;
 }) {
   const { t } = useTranslation();
+  const detailsId = useId();
   return (
-    <li className="flex items-center justify-between gap-3 rounded-lg border border-border p-4" data-testid="distribution-list-row">
-      <div className="flex min-w-0 items-center gap-3">
-        <List className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-medium">{list.name}</span>
-            {list.kind === "shared" && (
-              <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-                {t("Shared")}
-              </span>
-            )}
-          </div>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {t(list.members.length === 1 ? "{count} member" : "{count} members", { count: list.members.length })}
-            {" · "}
-            {list.display_mode === "list" ? t("Shown as one list") : t("Shows every address")}
-          </p>
+    <li className="overflow-hidden rounded-lg border border-border" data-testid="distribution-list-row">
+      <div className="flex items-center justify-between gap-3 p-2 pr-3">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          aria-controls={detailsId}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-md p-2 text-left transition-colors hover:bg-accent/50"
+        >
+          <ChevronRight className={cn("size-4 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-90")} aria-hidden />
+          <span className="min-w-0">
+            <span className="flex items-center gap-2">
+              <span className="truncate text-sm font-medium">{list.name}</span>
+              {list.kind === "shared" && (
+                <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                  {t("Shared")}
+                </span>
+              )}
+            </span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              {t(list.members.length === 1 ? "{count} member" : "{count} members", { count: list.members.length })}
+              {" · "}
+              {list.display_mode === "list" ? t("Shown as one list") : t("Shows every address")}
+            </span>
+          </span>
+        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          {list.can_edit && (
+            <button
+              type="button"
+              onClick={onOpen}
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label={t("Edit {name}", { name: list.name })}
+              title={t("Edit")}
+            >
+              <Pencil className="size-4" />
+            </button>
+          )}
+          {list.can_manage && (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-destructive"
+              aria-label={t("Delete {name}", { name: list.name })}
+              title={t("Delete")}
+            >
+              <Trash2 className="size-4" />
+            </button>
+          )}
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-1">
-        {list.can_edit ? (
-          <button
-            type="button"
-            onClick={onOpen}
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-            aria-label={t("Edit {name}", { name: list.name })}
-            title={t("Edit")}
-          >
-            <Pencil className="size-4" />
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onOpen}
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-            aria-label={t("View members of {name}", { name: list.name })}
-            title={t("View members")}
-          >
-            <Eye className="size-4" />
-          </button>
-        )}
-        {list.can_manage && (
-          <button
-            type="button"
-            onClick={onDelete}
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-destructive"
-            aria-label={t("Delete {name}", { name: list.name })}
-            title={t("Delete")}
-          >
-            <Trash2 className="size-4" />
-          </button>
-        )}
-      </div>
+      {expanded && <ListDetails list={list} id={detailsId} />}
     </li>
   );
 }
@@ -91,6 +156,12 @@ function ListGroup({
   onOpen: (list: DistributionList) => void;
   onDelete: (list: DistributionList) => void;
 }) {
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const toggle = (id: string) => setExpanded((current) => {
+    const next = new Set(current);
+    if (!next.delete(id)) next.add(id);
+    return next;
+  });
   return (
     <section className="space-y-2" aria-label={title}>
       <h3 className="text-sm font-medium">{title}</h3>
@@ -99,7 +170,14 @@ function ListGroup({
       ) : (
         <ul className="space-y-2">
           {lists.map((list) => (
-            <ListRow key={list.id} list={list} onOpen={() => onOpen(list)} onDelete={() => onDelete(list)} />
+            <ListRow
+              key={list.id}
+              list={list}
+              expanded={expanded.has(list.id)}
+              onToggle={() => toggle(list.id)}
+              onOpen={() => onOpen(list)}
+              onDelete={() => onDelete(list)}
+            />
           ))}
         </ul>
       )}

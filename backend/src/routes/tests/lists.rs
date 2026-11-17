@@ -197,12 +197,12 @@ async fn personal_list_crud_by_owner_is_private() {
     assert_eq!(updated["name"], "Family!");
     assert_eq!(updated["members"].as_array().unwrap().len(), 1);
 
-    // Access can't be set on personal lists.
+    // Only admins can share a list.
     let (status, body) = fixture
         .put(&id, &alice, json!({ "access": [{ "email": "bob@example.com", "can_edit": false }] }))
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(error_message(&body), "Access can only be set on shared lists");
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(error_message(&body), "Only admins can manage list access");
 
     let (status, body) = fixture.delete(&id, &alice).await;
     assert_eq!(status, StatusCode::OK);
@@ -399,6 +399,57 @@ async fn list_validation_errors() {
     let (_, body) = fixture.get("/api/lists", &alice).await;
     assert_eq!(body["lists"][0]["name"], "Team");
     assert_eq!(body["lists"][0]["display_mode"], "list");
+}
+
+#[tokio::test]
+async fn kind_follows_whether_the_list_is_shared_with_someone() {
+    let fixture = Fixture::new();
+    let admin = fixture.login(ADMIN);
+    let other_admin = fixture.login("other-admin@example.com");
+    let bob = fixture.login("bob@example.com");
+    let share = json!([{ "email": "bob@example.com", "can_edit": false }]);
+
+    // Without a kind: shared with people => shared, otherwise personal.
+    let (status, list) = fixture
+        .post(&admin, json!({ "name": "Club", "display_mode": "list", "members": [], "access": share }))
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{list}");
+    assert_eq!(list["kind"], "shared");
+    let shared_id = list["id"].as_str().unwrap().to_string();
+    let (status, list) = fixture
+        .post(&admin, json!({ "name": "Mine", "display_mode": "list", "members": [], "access": [] }))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(list["kind"], "personal");
+    let personal_id = list["id"].as_str().unwrap().to_string();
+
+    // Non-admins can't share, with or without a kind.
+    let (status, body) = fixture
+        .post(&bob, json!({ "name": "Bob's", "display_mode": "list", "members": [], "access": share }))
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(error_message(&body), "Only admins can create shared lists");
+
+    // Sharing a personal list makes it shared; Bob now sees it.
+    let (status, list) = fixture.put(&personal_id, &admin, json!({ "access": share })).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(list["kind"], "shared");
+    assert_eq!(list["access"], share);
+    assert_eq!(fixture.list_names(&bob).await, vec!["Club", "Mine"]);
+
+    // Removing everyone makes the owner's list personal again.
+    let (status, list) = fixture.put(&personal_id, &admin, json!({ "access": [] })).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(list["kind"], "personal");
+    assert_eq!(list["access"], Value::Null);
+    assert_eq!(fixture.list_names(&bob).await, vec!["Club"]);
+
+    // Another admin emptying it keeps it shared so it stays visible to them.
+    let (status, list) = fixture.put(&shared_id, &other_admin, json!({ "access": [] })).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(list["kind"], "shared");
+    assert_eq!(list["access"], json!([]));
+    assert!(fixture.list_names(&bob).await.is_empty());
 }
 
 #[tokio::test]

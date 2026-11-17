@@ -1,11 +1,11 @@
 "use client";
 
-import { useTranslation } from "@/lib/i18n";
+import { translate, useTranslation } from "@/lib/i18n";
 
 import { useId, useMemo, useState } from "react";
 import { Dialog } from "radix-ui";
 import { AnimatePresence } from "framer-motion";
-import { ClipboardPaste, Loader2, X } from "lucide-react";
+import { ClipboardPaste, Loader2, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,44 +16,9 @@ import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
 import { createFadeSlideVariants, createScaleFadeVariants } from "@/lib/motion/variants";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/useUiStore";
-import type { DistributionList, ListAccess, ListDisplayMode, ListKind, ListMember } from "@/types/list";
+import type { DistributionList, ListAccess, ListDisplayMode, ListMember } from "@/types/list";
 
 const MAX_MEMBERS = 500;
-
-function Switch({
-  checked,
-  onChange,
-  label,
-  disabled,
-}: {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  label: string;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-label={label}
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={cn(
-        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
-        checked ? "bg-primary" : "bg-muted",
-        disabled && "cursor-not-allowed opacity-50",
-      )}
-    >
-      <span
-        className={cn(
-          "pointer-events-none inline-block size-4 rounded-full bg-background shadow-sm transition-transform",
-          checked ? "translate-x-4" : "translate-x-0",
-        )}
-      />
-    </button>
-  );
-}
 
 function SuggestionList<T>({
   items,
@@ -295,18 +260,33 @@ function MembersEditor({
   );
 }
 
+/**
+ * Adds `email` to `access` as a use-only entry. Returns the new entries, or an
+ * error message when the address is invalid.
+ */
+function grantAccess(access: ListAccess[], email: string): { access: ListAccess[] } | { error: string } {
+  const trimmed = email.trim();
+  if (!isValidEmail(trimmed)) return { error: translate("Not a valid email address: {addresses}", { addresses: trimmed }) };
+  if (access.some((a) => a.email.toLowerCase() === trimmed.toLowerCase())) return { access };
+  return { access: [...access, { email: trimmed, can_edit: false }] };
+}
+
+/** "Shared with": one row per person with a role dropdown and a remove button. */
 function AccessEditor({
   access,
   onChange,
   inputId,
+  input,
+  onInputChange,
 }: {
   access: ListAccess[];
   onChange: (access: ListAccess[]) => void;
   inputId: string;
+  input: string;
+  onInputChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
   const { data: users } = useListUsers();
-  const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [focused, setFocused] = useState(false);
@@ -317,91 +297,101 @@ function AccessEditor({
     : [];
 
   const add = (email: string) => {
-    const trimmed = email.trim();
-    if (!isValidEmail(trimmed)) {
-      setError(t("Not a valid email address: {addresses}", { addresses: trimmed }));
+    const result = grantAccess(access, email);
+    if ("error" in result) {
+      setError(result.error);
       return;
     }
-    if (!granted.has(trimmed.toLowerCase())) onChange([...access, { email: trimmed, can_edit: false }]);
-    setInput("");
+    if (result.access !== access) onChange(result.access);
+    onInputChange("");
     setError(null);
     setActiveIndex(0);
+  };
+
+  const addTyped = () => {
+    if (suggestions.length && !isValidEmail(input.trim())) add(suggestions[Math.min(activeIndex, suggestions.length - 1)].email);
+    else if (input.trim()) add(input);
   };
 
   return (
     <div className="space-y-2">
       <div>
         <label htmlFor={inputId} className="text-xs font-medium text-muted-foreground">
-          {t("Who can use this list")}
+          {t("Share with")}
         </label>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          {t("People with access can use the list when writing. Turn on “Can edit” to also let them change it.")}
+          {t("Add people to share the list with them. Without anyone, only you can see it.")}
         </p>
       </div>
-      <div className="relative">
-        <Input
-          id={inputId}
-          value={input}
-          autoComplete="off"
-          placeholder={t("Search people or type an email address")}
-          aria-invalid={error ? true : undefined}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          onChange={(e) => {
-            setInput(e.target.value);
-            setActiveIndex(0);
-            setError(null);
-          }}
-          onKeyDown={(e) => {
-            if (suggestions.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
-              e.preventDefault();
-              setActiveIndex((i) => Math.max(0, Math.min(i + (e.key === "ArrowDown" ? 1 : -1), suggestions.length - 1)));
-            } else if (e.key === "Enter" || e.key === ",") {
-              e.preventDefault();
-              if (suggestions.length && !isValidEmail(input.trim())) add(suggestions[Math.min(activeIndex, suggestions.length - 1)].email);
-              else if (input.trim()) add(input);
-            }
-          }}
-        />
-        <SuggestionList
-          items={suggestions}
-          activeIndex={activeIndex}
-          onHover={setActiveIndex}
-          onPick={(user) => add(user.email)}
-          label={t("People on this server")}
-          render={(user) => <span>{user.email}</span>}
-        />
-      </div>
-      {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
-      {access.length === 0 ? (
-        <p className="rounded-md border border-dashed border-border px-3 py-3 text-center text-xs text-muted-foreground">
-          {t("Only you can see this list until you give someone access.")}
-        </p>
-      ) : (
-        <ul aria-label={t("People with access")} className="max-h-48 divide-y divide-border overflow-y-auto rounded-md border border-border">
+
+      {access.length > 0 && (
+        <ul aria-label={t("People with access")} className="max-h-56 divide-y divide-border overflow-y-auto rounded-md border border-border">
           {access.map((entry) => (
-            <li key={entry.email.toLowerCase()} className="flex items-center justify-between gap-2 px-3 py-1.5 text-sm">
-              <span className="min-w-0 truncate">{entry.email}</span>
-              <span className="flex shrink-0 items-center gap-2">
-                <span className="text-xs text-muted-foreground">{t("Can edit")}</span>
-                <Switch
-                  checked={entry.can_edit}
-                  label={t("{email} can edit", { email: entry.email })}
-                  onChange={(canEdit) => onChange(access.map((a) => (a.email === entry.email ? { ...a, can_edit: canEdit } : a)))}
-                />
-                <button
-                  type="button"
-                  onClick={() => onChange(access.filter((a) => a.email !== entry.email))}
-                  aria-label={t("Remove access for {email}", { email: entry.email })}
-                  className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                >
-                  <X className="size-3.5" />
-                </button>
-              </span>
+            <li key={entry.email.toLowerCase()} className="flex items-center gap-2 px-3 py-1.5 text-sm">
+              <span className="min-w-0 flex-1 truncate" title={entry.email}>{entry.email}</span>
+              <select
+                value={entry.can_edit ? "edit" : "use"}
+                aria-label={t("Role of {email}", { email: entry.email })}
+                onChange={(e) => onChange(access.map((a) => (a.email === entry.email ? { ...a, can_edit: e.target.value === "edit" } : a)))}
+                className="shrink-0 rounded-md border border-input bg-background px-2 py-1 text-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
+                <option value="use">{t("Can use")}</option>
+                <option value="edit">{t("Can use and edit")}</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => onChange(access.filter((a) => a.email !== entry.email))}
+                aria-label={t("Remove access for {email}", { email: entry.email })}
+                className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
             </li>
           ))}
         </ul>
       )}
+
+      <div className="flex gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Input
+            id={inputId}
+            value={input}
+            autoComplete="off"
+            placeholder={t("Search people or type an email address")}
+            aria-invalid={error ? true : undefined}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            onChange={(e) => {
+              onInputChange(e.target.value);
+              setActiveIndex(0);
+              setError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return;
+              if (suggestions.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+                e.preventDefault();
+                setActiveIndex((i) => Math.max(0, Math.min(i + (e.key === "ArrowDown" ? 1 : -1), suggestions.length - 1)));
+              } else if (e.key === "Enter" || e.key === ",") {
+                e.preventDefault();
+                addTyped();
+              }
+            }}
+          />
+          <SuggestionList
+            items={suggestions}
+            activeIndex={activeIndex}
+            onHover={setActiveIndex}
+            onPick={(user) => add(user.email)}
+            label={t("People on this server")}
+            render={(user) => <span>{user.email}</span>}
+          />
+        </div>
+        <Button type="button" variant="outline" size="sm" className="h-9 shrink-0" disabled={!input.trim()} onClick={addTyped}>
+          <UserPlus className="size-3.5" />
+          {t("Add")}
+        </Button>
+      </div>
+      {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }
@@ -413,17 +403,16 @@ function ListForm({ list, onClose }: { list: DistributionList | null; onClose: (
   const updateList = useUpdateList();
   const ids = useId();
   const [name, setName] = useState(list?.name ?? "");
-  const [kind, setKind] = useState<ListKind>(list?.kind ?? "personal");
   const [displayMode, setDisplayMode] = useState<ListDisplayMode>(list?.display_mode ?? "list");
   const [members, setMembers] = useState<ListMember[]>(list?.members ?? []);
   const [memberInput, setMemberInput] = useState("");
   const [access, setAccess] = useState<ListAccess[]>(list?.access ?? []);
+  const [accessInput, setAccessInput] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
   const readOnly = !!list && !list.can_edit;
-  const showType = !list && isAdmin;
-  // Admins manage who sees a shared list; others never see (or send) access.
-  const showAccess = isAdmin && kind === "shared" && (!list || (list.can_manage && list.access !== null));
+  // Admins share lists; a list is shared exactly when it has people in "Share with".
+  const showAccess = isAdmin && (!list || list.can_manage);
   const saving = createList.isPending || updateList.isPending;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -456,6 +445,18 @@ function ListForm({ list, onClose }: { list: DistributionList | null; onClose: (
       setFormError(t("A list can have at most 500 members"));
       return;
     }
+    // Include a person still being typed in "Share with".
+    let finalAccess = access;
+    if (showAccess && accessInput.trim()) {
+      const result = grantAccess(access, accessInput);
+      if ("error" in result) {
+        setFormError(result.error);
+        return;
+      }
+      finalAccess = result.access;
+      setAccess(finalAccess);
+      setAccessInput("");
+    }
     setFormError(null);
     const callbacks = {
       onSuccess: () => {
@@ -471,16 +472,15 @@ function ListForm({ list, onClose }: { list: DistributionList | null; onClose: (
           name: trimmedName,
           display_mode: displayMode,
           members: finalMembers,
-          ...(showAccess ? { access } : {}),
+          ...(showAccess ? { access: finalAccess } : {}),
         },
       }, callbacks);
     } else {
       createList.mutate({
         name: trimmedName,
-        kind,
         display_mode: displayMode,
         members: finalMembers,
-        ...(kind === "shared" && isAdmin ? { access } : {}),
+        ...(showAccess ? { access: finalAccess } : {}),
       }, callbacks);
     }
   };
@@ -542,36 +542,17 @@ function ListForm({ list, onClose }: { list: DistributionList | null; onClose: (
           )}
         </div>
 
-        {showType && (
-          <fieldset className="space-y-1.5">
-            <legend className="text-xs font-medium text-muted-foreground">{t("Type")}</legend>
-            <div className="grid grid-cols-2 gap-2">
-              {(["personal", "shared"] as const).map((value) => (
-                <label
-                  key={value}
-                  className={cn(
-                    "flex cursor-pointer flex-col rounded-lg border p-3 text-sm",
-                    kind === value ? "border-primary bg-primary/5" : "border-border hover:bg-accent/50",
-                  )}
-                >
-                  <span className="flex items-center gap-2 font-medium">
-                    <input
-                      type="radio"
-                      name={`${ids}-kind`}
-                      value={value}
-                      checked={kind === value}
-                      onChange={() => setKind(value)}
-                      className="size-4"
-                    />
-                    {value === "personal" ? t("Personal") : t("Shared")}
-                  </span>
-                  <span className="mt-1 text-xs text-muted-foreground">
-                    {value === "personal" ? t("Only you can see it.") : t("Choose who can use or edit it.")}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
+        {showAccess && (
+          <AccessEditor
+            access={access}
+            onChange={(next) => {
+              setAccess(next);
+              setFormError(null);
+            }}
+            inputId={`${ids}-access`}
+            input={accessInput}
+            onInputChange={setAccessInput}
+          />
         )}
 
         <fieldset className="space-y-1.5" disabled={readOnly}>
@@ -615,8 +596,6 @@ function ListForm({ list, onClose }: { list: DistributionList | null; onClose: (
           input={memberInput}
           onInputChange={setMemberInput}
         />
-
-        {showAccess && <AccessEditor access={access} onChange={setAccess} inputId={`${ids}-access`} />}
       </div>
 
       <div className="space-y-2 border-t border-border px-6 py-3">
