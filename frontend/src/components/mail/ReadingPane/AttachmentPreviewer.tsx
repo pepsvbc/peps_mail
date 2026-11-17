@@ -1,0 +1,232 @@
+"use client";
+
+import { translate as t, useTranslation } from "@/lib/i18n";
+
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { Dialog } from "radix-ui";
+import { AnimatePresence } from "framer-motion";
+import {
+  Paperclip,
+  X,
+  Download,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  File,
+  CalendarDays,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { createFadeSlideVariants, createScaleFadeVariants } from "@/lib/motion/variants";
+import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
+import { useUiStore } from "@/stores/useUiStore";
+import { formatFileSize } from "./utils";
+import { IcsPreview } from "./IcsPreview";
+import type { Attachment } from "@/types/message";
+import { isPdfAttachment } from "@/lib/mail-file-types";
+
+function isCalendarType(ct: string): boolean {
+  return ct === "text/calendar" || ct === "application/ics";
+}
+
+
+interface AttachmentPreviewerProps {
+  attachments: Attachment[];
+  baseUrl: string;
+  accountId: string | null;
+  initialIndex: number;
+  onClose: () => void;
+}
+
+export function AttachmentPreviewer({
+  attachments,
+  baseUrl,
+  accountId,
+  initialIndex,
+  onClose,
+}: AttachmentPreviewerProps) {
+  useTranslation();
+  const effectiveAnimationMode = useUiStore((s) => s.effectiveAnimationMode);
+  const overlayMotionProps = useMemo(() => createFadeSlideVariants(effectiveAnimationMode, "y"), [effectiveAnimationMode]);
+  const contentMotionProps = useMemo(() => createScaleFadeVariants(effectiveAnimationMode), [effectiveAnimationMode]);
+  const [index, setIndex] = useState(initialIndex);
+  const att = attachments[index];
+  const buildUrl = (attId: string) => {
+    const path = `${baseUrl}/${attId}`;
+    return accountId ? `${path}?account_id=${encodeURIComponent(accountId)}` : path;
+  };
+  const url = buildUrl(att.id);
+
+  const goPrev = useCallback(() => setIndex((i) => Math.max(0, i - 1)), [setIndex]);
+  const goNext = useCallback(
+    () => setIndex((i) => Math.min(attachments.length - 1, i + 1)),
+    [attachments.length, setIndex],
+  );
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") goPrev();
+      else if (e.key === "ArrowRight") goNext();
+      else if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [goPrev, goNext, onClose]);
+
+  return (
+    <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
+      <Dialog.Portal>
+        <AnimatePresence>
+          <Dialog.Overlay asChild>
+            <AnimatedDiv
+              data-testid="reading-pane-attachment-overlay-transition"
+              variants={overlayMotionProps}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="fixed inset-0 z-50 bg-black/70"
+            />
+          </Dialog.Overlay>
+          <Dialog.Content asChild>
+            <AnimatedDiv
+              data-testid="reading-pane-attachment-content-transition"
+              variants={contentMotionProps}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="fixed inset-4 z-50 flex flex-col rounded-xl border border-border bg-background shadow-2xl"
+            >
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <Dialog.Title className="flex items-center gap-2 text-sm font-semibold">
+              <Paperclip className="size-4 text-muted-foreground" />
+              <span className="max-w-[400px] truncate">
+                {att.filename ?? t("Attachment")}
+              </span>
+              <span className="text-xs font-normal text-muted-foreground">
+                ({formatFileSize(att.size)})
+              </span>
+              {attachments.length > 1 && (
+                <span className="text-xs font-normal text-muted-foreground">
+                  — {t("{current} of {total}", { current: index + 1, total: attachments.length })}
+                </span>
+              )}
+            </Dialog.Title>
+            <div className="flex items-center gap-1">
+              {attachments.length > 1 && (
+                <>
+                  <button
+                    onClick={goPrev}
+                    disabled={index === 0}
+                    className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30"
+                    title={t("Previous")}
+                  >
+                    <ChevronLeft className="size-4" />
+                  </button>
+                  <button
+                    onClick={goNext}
+                    disabled={index === attachments.length - 1}
+                    className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30"
+                    title={t("Next")}
+                  >
+                    <ChevronRight className="size-4" />
+                  </button>
+                </>
+              )}
+              <a
+                href={url}
+                download={att.filename ?? undefined}
+                className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                title={t("Download")}
+              >
+                <Download className="size-4" />
+              </a>
+              <Dialog.Close asChild>
+                <button
+                  className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  title={t("Close")}
+                >
+                  <X className="size-4" />
+                </button>
+              </Dialog.Close>
+            </div>
+          </div>
+
+          {/* Thumbnail strip */}
+          {attachments.length > 1 && (
+            <div className="flex shrink-0 gap-2 overflow-x-auto border-b border-border bg-muted/30 px-4 py-2">
+              {attachments.map((thumb, i) => {
+                const thumbUrl = buildUrl(thumb.id);
+                const isActive = i === index;
+                return (
+                  <button
+                    key={thumb.id}
+                    onClick={() => setIndex(i)}
+                    className={cn(
+                      "flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-md border-2 transition-colors",
+                      isActive
+                        ? "border-primary bg-accent"
+                        : "border-transparent bg-muted hover:border-muted-foreground/30",
+                    )}
+                    title={thumb.filename ?? t("Attachment {number}", { number: i + 1 })}
+                  >
+                    {thumb.content_type.startsWith("image/") ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- blob URL thumbnail, not optimizable
+                      <img
+                        src={thumbUrl}
+                        alt={thumb.filename ?? ""}
+                        className="size-full object-cover"
+                      />
+                    ) : isPdfAttachment(thumb.content_type, thumb.filename) ? (
+                      <FileText className="size-6 text-muted-foreground" />
+                    ) : isCalendarType(thumb.content_type) ? (
+                      <CalendarDays className="size-6 text-muted-foreground" />
+                    ) : (
+                      <File className="size-6 text-muted-foreground" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Preview content */}
+          <div className="flex flex-1 items-center justify-center overflow-auto p-4">
+            {att.content_type.startsWith("image/") ? (
+              // eslint-disable-next-line @next/next/no-img-element -- blob URL preview, not optimizable
+              <img
+                src={url}
+                alt={att.filename ?? t("Attachment")}
+                className="max-h-full max-w-full object-contain"
+              />
+            ) : isPdfAttachment(att.content_type, att.filename) ? (
+              <iframe
+                src={url}
+                className="h-full w-full border-none"
+                title={att.filename ?? "PDF"}
+              />
+            ) : isCalendarType(att.content_type) ? (
+              <IcsPreview url={url} filename={att.filename} />
+            ) : (
+              <div className="flex flex-col items-center gap-4 text-center">
+                <Paperclip className="size-12 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  {t("Preview not available for this file type")}
+                </p>
+                <a
+                  href={url}
+                  download={att.filename ?? undefined}
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                >
+                  <Download className="size-4" />
+                  {t("Download")}
+                </a>
+              </div>
+            )}
+          </div>
+            </AnimatedDiv>
+          </Dialog.Content>
+        </AnimatePresence>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}

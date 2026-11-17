@@ -1,0 +1,466 @@
+"use client";
+
+import type { MailDensity } from "@/lib/mail-density";
+
+import { translate as t, useTranslation, getLocale } from "@/lib/i18n";
+
+import { memo, useState, useCallback, useMemo } from "react";
+import { motion } from "framer-motion";
+import { Star, Paperclip } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useUpdateFlags } from "@/hooks/useMessages";
+import { createScaleFadeVariants } from "@/lib/motion/variants";
+import type { AnimationMode } from "@/lib/motion/config";
+import type { MessageTag } from "@/types/tag";
+import type { EmailAddress, MessageHeader } from "@/types/message";
+
+function formatDraftRecipients(value: string): string {
+  // Server headers store recipients as JSON; older cached rows may use plain text.
+  try {
+    const addresses: EmailAddress[] = JSON.parse(value);
+    if (Array.isArray(addresses)) {
+      return addresses.map((address) => address.name || address.address).filter(Boolean).join(", ") || t("No recipient");
+    }
+  } catch {
+    // Keep legacy address strings readable.
+  }
+  return value || t("No recipient");
+}
+
+function TagDots({ tags }: { tags: MessageTag[] | undefined }) {
+  useTranslation();
+  if (!tags?.length) return null;
+  return (
+    <span className="flex shrink-0 items-center gap-0.5">
+      {tags.map((tag) => (
+        <span
+          key={tag.id}
+          className="size-2 rounded-full"
+          style={{ backgroundColor: tag.color }}
+          title={tag.name}
+        />
+      ))}
+    </span>
+  );
+}
+
+interface MessageListItemProps {
+  message: MessageHeader;
+  isSelected: boolean;
+  density: MailDensity;
+  fullWidth?: boolean;
+  preview?: string;
+  onClick: (e: React.MouseEvent) => void;
+  bulkSelectMode: boolean;
+  isBulkSelected: boolean;
+  onBulkToggle: (uid: number) => void;
+  suppressHover?: boolean;
+  effectiveAnimationMode: AnimationMode;
+}
+
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+
+  // Guard against invalid dates
+  if (isNaN(date.getTime())) return dateStr;
+
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+
+  if (isToday) {
+    return date.toLocaleTimeString(getLocale(), {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+
+  // Check if same week (within last 7 days)
+  const msPerDay = 86_400_000;
+  const daysDiff = Math.floor(
+    (now.getTime() - date.getTime()) / msPerDay,
+  );
+
+  const time = date.toLocaleTimeString(getLocale(), {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  if (daysDiff < 7 && daysDiff >= 0) {
+    const day = date.toLocaleDateString(getLocale(), { weekday: "short" });
+    return `${day} ${time}`;
+  }
+
+  // Same year
+  if (date.getFullYear() === now.getFullYear()) {
+    const day = date.toLocaleDateString(getLocale(), {
+      month: "short",
+      day: "numeric",
+    });
+    return `${day} ${time}`;
+  }
+
+  // Older
+  const day = date.toLocaleDateString(getLocale(), {
+    month: "2-digit",
+    day: "2-digit",
+    year: "2-digit",
+  });
+  return `${day} ${time}`;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${Math.round(kb)} KB`;
+  const mb = kb / 1024;
+  return `${mb.toFixed(1)} MB`;
+}
+
+export const MessageListItem = memo(function MessageListItem({
+  message,
+  isSelected,
+  density,
+  fullWidth = false,
+  preview = message.snippet,
+  onClick,
+  bulkSelectMode,
+  isBulkSelected,
+  onBulkToggle,
+  suppressHover,
+  effectiveAnimationMode,
+}: MessageListItemProps) {
+  useTranslation();
+  const isUnread = !message.flags.includes("\\Seen");
+  const isFlagged = message.flags.includes("\\Flagged");
+  const isDraft = message.flags.split(",").includes("\\Draft");
+  const sender = isDraft ? formatDraftRecipients(message.to_addresses) : (message.from_name || message.from_address);
+  const formattedDate = formatDate(message.date);
+  const formattedSize = formatSize(message.size);
+  const updateFlags = useUpdateFlags();
+  const [isHovered, setIsHovered] = useState(false);
+
+  const toggleStar = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    updateFlags.mutate({
+      folder: message.folder,
+      uid: message.uid,
+      flags: ["\\Flagged"],
+      add: !isFlagged,
+    });
+  };
+
+  const toggleRead = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    updateFlags.mutate({
+      folder: message.folder,
+      uid: message.uid,
+      flags: ["\\Seen"],
+      add: isUnread, // if unread, add \Seen; if read, remove \Seen
+    });
+  };
+
+  const [isDragging, setIsDragging] = useState(false);
+  const selectionVariants = useMemo(() => createScaleFadeVariants(effectiveAnimationMode), [effectiveAnimationMode]);
+  const serializedSelectionVariants = useMemo(() => JSON.stringify(selectionVariants), [selectionVariants]);
+  const shouldAnimateSelection =
+    isSelected &&
+    (effectiveAnimationMode === "medium" || effectiveAnimationMode === "rich");
+
+  const handleDragStart = useCallback(
+    (e: React.DragEvent) => {
+      e.dataTransfer.setData(
+        "application/json",
+        JSON.stringify({
+          uid: message.uid,
+          folder: message.folder,
+          subject: message.subject,
+        }),
+      );
+      e.dataTransfer.effectAllowed = "move";
+      setIsDragging(true);
+    },
+    [message.uid, message.folder, message.subject],
+  );
+
+  const handleDragEnd = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  if (density === "compact" || fullWidth) {
+    const compactRow = (
+      <div
+        role="row"
+        aria-selected={isSelected}
+        tabIndex={0}
+        onClick={onClick}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onClick(e as unknown as React.MouseEvent);
+          }
+        }}
+        draggable
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        className={cn(
+          "flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors",
+          density === "compact" ? "h-9" : density === "standard" ? "h-16" : "h-[88px]",
+          !suppressHover && "hover:bg-muted",
+          isUnread ? "bg-background font-semibold" : "bg-transparent font-normal",
+          isSelected && "border-primary/30 bg-muted hover:bg-muted",
+          isDragging && "opacity-50",
+        )}
+      >
+        {/* Bulk checkbox or unread indicator dot */}
+        {bulkSelectMode ? (
+          <button
+            type="button"
+            aria-label={isBulkSelected ? t("Deselect") : t("Select")}
+            onClick={(e) => { e.stopPropagation(); onBulkToggle(message.uid); }}
+            className={cn(
+              "flex size-4 shrink-0 items-center justify-center rounded border transition-colors",
+              isBulkSelected
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-muted-foreground/40 bg-transparent hover:border-primary",
+            )}
+          >
+            {isBulkSelected && (
+              <svg className="size-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2.5 6l2.5 2.5 4.5-5" />
+              </svg>
+            )}
+          </button>
+        ) : (
+          <button
+            type="button"
+            aria-label={isUnread ? t("Mark as read") : t("Mark as unread")}
+            onClick={toggleRead}
+            className="flex size-4 shrink-0 items-center justify-center rounded-full hover:bg-muted-foreground/20"
+          >
+            <span
+              className={cn(
+                "size-1.5 rounded-full",
+                isUnread ? "bg-primary" : "bg-border",
+              )}
+            />
+          </button>
+        )}
+
+        {/* Star */}
+        <button
+          type="button"
+          aria-label={isFlagged ? t("Unstar") : t("Star")}
+          onClick={toggleStar}
+          className="flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted-foreground/20"
+        >
+          {isFlagged ? (
+            <Star className="size-3.5 fill-primary text-primary" />
+          ) : (
+            <Star className="size-3.5 text-muted-foreground/40" />
+          )}
+        </button>
+
+        {isDraft && <span className="shrink-0 text-xs font-medium text-primary">{t("Draft")}</span>}
+        {/* Sender */}
+        <span title={sender} className={cn(
+          "shrink-0 truncate",
+          fullWidth ? "w-24 sm:w-40 lg:w-52" : "w-32",
+          fullWidth && isUnread ? "font-semibold" : "font-normal",
+          isFlagged ? "text-primary" : fullWidth ? "text-foreground" : "text-muted-foreground",
+        )}>{sender}</span>
+
+        {/* Compact rows use a separator; full-width rows have column spacing. */}
+        {!fullWidth && <span className="shrink-0 text-muted-foreground">&mdash;</span>}
+
+        {/* Subject */}
+        <span className="flex min-w-0 flex-1 items-baseline gap-2">
+          <span title={message.subject || t("(no subject)")} className={cn(
+            "min-w-0 truncate",
+            fullWidth && preview ? "max-w-[55%] shrink-0" : "flex-1",
+            isFlagged && "text-primary",
+          )}>{message.subject || t("(no subject)")}</span>
+          {fullWidth && preview && (
+            <span className="min-w-0 flex-1 truncate font-normal text-muted-foreground">
+              <span aria-hidden="true">— </span>{preview}
+            </span>
+          )}
+        </span>
+
+        {/* Tag color dots */}
+        <TagDots tags={message.tags} />
+
+        {/* Reaction emoji */}
+        {message.reaction && (
+          <span className="shrink-0 text-base leading-none" title={t("Reaction")}>
+            {message.reaction}
+          </span>
+        )}
+
+        {/* Attachment icon */}
+        {message.has_attachments && (
+          <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
+        )}
+
+        {/* Date / Size on hover */}
+        <span className={cn("shrink-0 text-xs", isFlagged ? "text-primary" : "text-muted-foreground")}>
+          {isHovered ? formattedSize : formattedDate}
+        </span>
+      </div>
+    );
+
+    if (!shouldAnimateSelection) {
+      return compactRow;
+    }
+
+    return (
+      <motion.div
+        data-testid="message-list-item-selection-transition"
+        data-motion-props={serializedSelectionVariants}
+        initial={selectionVariants.initial}
+        animate={selectionVariants.animate}
+        exit={selectionVariants.exit}
+      >
+        {compactRow}
+      </motion.div>
+    );
+  }
+
+  // Stacked layouts: Standard keeps sender and subject; Comfortable adds a preview.
+  const stackedRow = (
+    <div
+      role="row"
+      aria-selected={isSelected}
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick(e as unknown as React.MouseEvent);
+        }
+      }}
+      draggable
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className={cn(
+        density === "standard" ? "h-16" : "h-[88px]",
+        "flex cursor-pointer flex-col justify-center gap-1 rounded-lg border border-border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors",
+        !suppressHover && "hover:bg-muted",
+        isUnread ? "bg-background" : "bg-transparent",
+        isSelected && "border-primary/30 bg-muted hover:bg-muted",
+        isDragging && "opacity-50",
+      )}
+    >
+      {/* Top row: sender + date + star */}
+      <div className="flex items-center gap-2 pl-6">
+        {isDraft && <span className="shrink-0 text-xs font-medium text-primary">{t("Draft")}</span>}
+        {/* Sender name */}
+        <span className={cn("min-w-0 flex-1 truncate text-sm font-semibold", isFlagged ? "text-primary" : "text-foreground")}>{sender}</span>
+
+        {/* Date / Size on hover */}
+        <span className={cn("shrink-0 text-xs font-normal", isFlagged ? "text-primary" : "text-muted-foreground")}>
+          {isHovered ? formattedSize : formattedDate}
+        </span>
+
+        {/* Star */}
+        <button
+          type="button"
+          aria-label={isFlagged ? t("Unstar") : t("Star")}
+          onClick={toggleStar}
+          className="flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted-foreground/20"
+        >
+          {isFlagged ? (
+            <Star className="size-3.5 fill-primary text-primary" />
+          ) : (
+            <Star className="size-3.5 text-muted-foreground/40" />
+          )}
+        </button>
+      </div>
+
+      {/* Bottom row: checkbox/dot + subject + snippet */}
+      <div className="flex items-center gap-2">
+        {/* Bulk checkbox or unread indicator dot */}
+        {bulkSelectMode ? (
+          <button
+            type="button"
+            aria-label={isBulkSelected ? t("Deselect") : t("Select")}
+            onClick={(e) => { e.stopPropagation(); onBulkToggle(message.uid); }}
+            className={cn(
+              "flex size-4 shrink-0 items-center justify-center rounded border transition-colors",
+              isBulkSelected
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-muted-foreground/40 bg-transparent hover:border-primary",
+            )}
+          >
+            {isBulkSelected && (
+              <svg className="size-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2.5 6l2.5 2.5 4.5-5" />
+              </svg>
+            )}
+          </button>
+        ) : (
+          <button
+            type="button"
+            aria-label={isUnread ? t("Mark as read") : t("Mark as unread")}
+            onClick={toggleRead}
+            className="flex size-4 shrink-0 items-center justify-center rounded-full hover:bg-muted-foreground/20"
+          >
+            <span
+              className={cn(
+                "size-1.5 rounded-full",
+                isUnread ? "bg-primary" : "bg-border",
+              )}
+            />
+          </button>
+        )}
+
+        <span className="min-w-0 flex-1 truncate text-sm">
+          <span className={cn(isUnread ? "font-medium" : "font-normal", isFlagged ? "text-primary" : "text-foreground")}>
+            {message.subject || t("(no subject)")}
+          </span>
+
+        </span>
+
+        {/* Tag color dots */}
+        <TagDots tags={message.tags} />
+
+        {/* Reaction emoji */}
+        {message.reaction && (
+          <span className="shrink-0 text-base leading-none" title={t("Reaction")}>
+            {message.reaction}
+          </span>
+        )}
+
+        {/* Attachment icon */}
+        {message.has_attachments && (
+          <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
+        )}
+      </div>
+      {density === "comfortable" && (
+        <p className="truncate pl-6 text-xs leading-4 text-muted-foreground">{message.snippet || "\u00a0"}</p>
+      )}
+    </div>
+  );
+
+  if (!shouldAnimateSelection) {
+    return stackedRow;
+  }
+
+  return (
+    <motion.div
+      data-testid="message-list-item-selection-transition"
+      data-motion-props={serializedSelectionVariants}
+      initial={selectionVariants.initial}
+      animate={selectionVariants.animate}
+      exit={selectionVariants.exit}
+    >
+      {stackedRow}
+    </motion.div>
+  );
+});
