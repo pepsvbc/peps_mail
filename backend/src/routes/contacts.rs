@@ -67,6 +67,9 @@ fn default_limit() -> u32 {
     50
 }
 
+/// Largest number of contacts a client may request at once.
+const MAX_CONTACTS_LIMIT: u32 = 500;
+
 fn default_autocomplete_limit() -> u32 {
     10
 }
@@ -111,8 +114,9 @@ pub struct AutocompleteResponse {
 pub async fn list_contacts_handler(
     Extension(session): Extension<SessionState>,
     Extension(config): Extension<Arc<AppConfig>>,
-    Query(params): Query<ListContactsParams>,
+    Query(mut params): Query<ListContactsParams>,
 ) -> Result<Response, AppError> {
+    params.limit = params.limit.clamp(1, MAX_CONTACTS_LIMIT);
     let conn = db::pool::open_user_db(&config.data_dir, &session.user_hash)
         .map_err(|e| AppError::InternalError(format!("Database error: {e}")))?;
 
@@ -189,8 +193,9 @@ pub async fn create_contact_handler(
 pub async fn autocomplete_handler(
     Extension(session): Extension<SessionState>,
     Extension(config): Extension<Arc<AppConfig>>,
-    Query(params): Query<AutocompleteParams>,
+    Query(mut params): Query<AutocompleteParams>,
 ) -> Result<Response, AppError> {
+    params.limit = params.limit.clamp(1, MAX_CONTACTS_LIMIT);
     let query = params
         .q
         .as_deref()
@@ -349,7 +354,8 @@ fn vcard_escape(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace(',', "\\,")
         .replace(';', "\\;")
-        .replace('\n', "\\n")
+        .replace("\r\n", "\\n")
+        .replace(['\r', '\n'], "\\n")
 }
 
 /// Serialize a Contact to vCard 3.0 format.
@@ -361,7 +367,7 @@ fn contact_to_vcard(c: &Contact) -> String {
     let name = if c.name.is_empty() { &c.email } else { &c.name };
     lines.push(format!("FN:{}", vcard_escape(name)));
     lines.push(format!("N:{};;;;", vcard_escape(name)));
-    lines.push(format!("EMAIL:{}", c.email));
+    lines.push(format!("EMAIL:{}", vcard_escape(&c.email)));
 
     if !c.company.is_empty() {
         lines.push(format!("ORG:{}", vcard_escape(&c.company)));
@@ -531,20 +537,28 @@ pub async fn export_single_contact_handler(
     match contact {
         Some(c) => {
             let vcf = contact_to_vcard(&c);
-            let filename = if c.name.is_empty() {
+            // Keep the header value plain ASCII so quotes/CR/LF in a name
+            // can't break the Content-Disposition header.
+            let stem: String = c
+                .name
+                .chars()
+                .map(|ch| if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') { ch } else { '_' })
+                .take(100)
+                .collect();
+            let filename = if stem.trim_matches('_').is_empty() {
                 "contact.vcf".to_string()
             } else {
-                format!("{}.vcf", c.name.replace(' ', "_"))
+                format!("{stem}.vcf")
             };
 
-            Ok(Response::builder()
+            Response::builder()
                 .header("content-type", "text/vcard; charset=utf-8")
                 .header(
                     "content-disposition",
                     format!("attachment; filename=\"{filename}\""),
                 )
                 .body(axum::body::Body::from(vcf))
-                .unwrap())
+                .map_err(|e| AppError::InternalError(format!("Failed to build vCard response: {e}")))
         }
         None => Err(AppError::NotFound(format!("Contact '{id}' not found"))),
     }

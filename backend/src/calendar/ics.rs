@@ -61,8 +61,9 @@ pub fn parse_ics(ics_text: &str) -> Result<Vec<CreateEvent>, String> {
                     "ATTENDEE" => {
                         attendees.push(extract_email_from_cal_address(value));
                     }
+                    // Only web links: the URL is rendered as a clickable meeting link.
                     "URL"
-                        if !value.is_empty() => {
+                        if is_web_url(value) => {
                             url = Some(value.to_string());
                         }
                     _ => {}
@@ -112,6 +113,12 @@ pub fn parse_ics(ics_text: &str) -> Result<Vec<CreateEvent>, String> {
 }
 
 /// Check if a DTSTART/DTEND value is date-only (no time component).
+/// True for `http://` / `https://` URLs (case-insensitive scheme).
+fn is_web_url(value: &str) -> bool {
+    let lower = value.trim_start().to_ascii_lowercase();
+    lower.starts_with("https://") || lower.starts_with("http://")
+}
+
 fn is_date_only(value: &str) -> bool {
     // Date-only values are 8 characters: YYYYMMDD
     // Date-time values are at least 15: YYYYMMDDTHHmmSS
@@ -306,5 +313,12 @@ END:VCALENDAR"#;
             extract_email_from_cal_address("user@example.com"),
             "user@example.com"
         );
+    }
+
+    #[test]
+    fn test_non_web_meeting_urls_are_dropped() {
+        let ics = SAMPLE_ICS.replace("URL:https://zoom.us/j/12345", "URL:javascript:alert(1)");
+        let events = parse_ics(&ics).unwrap();
+        assert_eq!(events[0].meeting_url, None);
     }
 }

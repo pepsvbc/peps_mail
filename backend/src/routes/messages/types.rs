@@ -7,6 +7,9 @@ pub fn default_per_page() -> u32 {
     50
 }
 
+/// Largest page size a client may request for paginated list queries.
+pub const MAX_PER_PAGE: u32 = 200;
+
 /// Query parameters for `GET /api/folders/:folder/messages`.
 #[derive(Deserialize)]
 pub(crate) struct ListMessagesQuery {

@@ -11,7 +11,7 @@ use crate::config::AppConfig;
 use crate::db;
 use crate::db::tags::{MessageTag, Tag};
 use crate::error::AppError;
-use crate::routes::messages::types::{default_per_page, MessageSummary};
+use crate::routes::messages::types::{default_per_page, MessageSummary, MAX_PER_PAGE};
 
 // ---------------------------------------------------------------------------
 // Request / response types
@@ -247,8 +247,9 @@ pub async fn list_tag_messages_handler(
     Extension(session): Extension<SessionState>,
     Extension(config): Extension<Arc<AppConfig>>,
     Path(id): Path<String>,
-    Query(query): Query<PaginationQuery>,
+    Query(mut query): Query<PaginationQuery>,
 ) -> Result<Response, AppError> {
+    query.per_page = query.per_page.clamp(1, MAX_PER_PAGE);
     let conn = db::pool::open_user_db(&config.data_dir, &session.user_hash)
         .map_err(|e| AppError::InternalError(format!("Database error: {e}")))?;
 

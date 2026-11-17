@@ -17,6 +17,12 @@ use crate::error::AppError;
 /// Maximum attachment file size: 25 MB.
 const MAX_ATTACHMENT_SIZE: usize = 25 * 1024 * 1024;
 
+/// Request body limit for uploads: one maximum-size file plus multipart overhead.
+pub const MAX_UPLOAD_BODY: usize = MAX_ATTACHMENT_SIZE + 1024 * 1024;
+
+/// Per-user cap on stored draft attachments, so uploads can't fill the disk.
+const MAX_USER_ATTACHMENT_BYTES: i64 = 500 * 1024 * 1024;
+
 #[derive(Debug, Serialize)]
 struct UploadResponse {
     id: String,
@@ -63,6 +69,7 @@ pub async fn upload_attachment(
         .map_err(|e| AppError::InternalError(format!("Failed to create attachment dir: {e}")))?;
 
     let mut uploaded = Vec::new();
+    let mut stored_bytes = db::drafts::total_attachment_bytes(&conn).map_err(AppError::InternalError)?;
 
     while let Some(field) = multipart
         .next_field()
@@ -88,6 +95,13 @@ pub async fn upload_attachment(
                 "File '{}' exceeds maximum size of 25 MB",
                 filename
             )));
+        }
+
+        stored_bytes += data.len() as i64;
+        if stored_bytes > MAX_USER_ATTACHMENT_BYTES {
+            return Err(AppError::BadRequest(
+                "Attachment storage is full. Send or delete some drafts first.".to_string(),
+            ));
         }
 
         let att_id = uuid::Uuid::new_v4().to_string();

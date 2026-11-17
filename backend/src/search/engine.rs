@@ -343,7 +343,7 @@ impl UserIndex {
         let combined_query = BooleanQuery::new(clauses);
 
         // Get total count and paginated results.
-        let total_limit = query.offset + query.limit;
+        let total_limit = query.offset.saturating_add(query.limit);
         let (total_count, top_docs) = searcher
             .search(&combined_query, &(Count, TopDocs::with_limit(total_limit)))
             .map_err(|e| format!("Search failed: {e}"))?;

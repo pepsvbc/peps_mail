@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use axum::Extension;
 use axum::extract::WebSocketUpgrade;
@@ -16,6 +16,71 @@ use crate::realtime::events::EventBus;
 use crate::realtime::idle::IdleManager;
 use crate::routes::auth::{extract_browser_id, extract_session_cookies};
 use crate::search::engine::SearchEngine;
+
+/// Maximum simultaneous WebSockets per browser (roughly: open tabs).
+const MAX_SOCKETS_PER_BROWSER: usize = 20;
+
+/// Open socket count per browser id.
+static BROWSER_SOCKETS: LazyLock<Mutex<HashMap<String, usize>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Subscriber count and task of a shared sync loop.
+type SharedSyncLoop = (usize, tokio::task::JoinHandle<()>);
+
+/// One background sync loop per mailbox (keyed by user_hash), shared by all
+/// of its sockets.
+static SYNC_LOOPS: LazyLock<Mutex<HashMap<String, SharedSyncLoop>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Holds one of a browser's socket slots; released on drop.
+struct BrowserSocketSlot(String);
+
+impl BrowserSocketSlot {
+    fn acquire(browser_id: &str) -> Option<Self> {
+        let mut sockets = BROWSER_SOCKETS.lock().unwrap_or_else(|e| e.into_inner());
+        let count = sockets.entry(browser_id.to_string()).or_insert(0);
+        if *count >= MAX_SOCKETS_PER_BROWSER {
+            return None;
+        }
+        *count += 1;
+        Some(Self(browser_id.to_string()))
+    }
+}
+
+impl Drop for BrowserSocketSlot {
+    fn drop(&mut self) {
+        let mut sockets = BROWSER_SOCKETS.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(count) = sockets.get_mut(&self.0) {
+            *count -= 1;
+            if *count == 0 {
+                sockets.remove(&self.0);
+            }
+        }
+    }
+}
+
+/// Subscribes to the mailbox's shared sync loop, starting it if needed.
+fn subscribe_sync(user_hash: &str, spawn: impl FnOnce() -> tokio::task::JoinHandle<()>) {
+    let mut loops = SYNC_LOOPS.lock().unwrap_or_else(|e| e.into_inner());
+    match loops.get_mut(user_hash) {
+        Some((subscribers, handle)) if !handle.is_finished() => *subscribers += 1,
+        _ => {
+            loops.insert(user_hash.to_string(), (1, spawn()));
+        }
+    }
+}
+
+/// Drops one subscription; the last one stops the sync loop.
+fn unsubscribe_sync(user_hash: &str) {
+    let mut loops = SYNC_LOOPS.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((subscribers, handle)) = loops.get_mut(user_hash) {
+        *subscribers = subscribers.saturating_sub(1);
+        if *subscribers == 0 {
+            handle.abort();
+            loops.remove(user_hash);
+        }
+    }
+}
 
 struct SocketAccount {
     session: AccountSession,
@@ -107,10 +172,15 @@ pub async fn ws_handler(
     let Some(auth) = authenticate_socket(&headers, &store) else {
         return (StatusCode::UNAUTHORIZED, "No authenticated accounts").into_response();
     };
+    // Each socket keeps IMAP connections open, so cap them per browser.
+    let Some(slot) = BrowserSocketSlot::acquire(&auth.browser_id) else {
+        return (StatusCode::TOO_MANY_REQUESTS, "Too many open connections").into_response();
+    };
 
     ws.on_upgrade(move |socket| {
         handle_socket_multi_account(
             socket,
+            slot,
             auth,
             store,
             config,
@@ -125,6 +195,7 @@ pub async fn ws_handler(
 #[allow(clippy::too_many_arguments)]
 async fn handle_socket_multi_account(
     socket: WebSocket,
+    _slot: BrowserSocketSlot,
     auth: SocketAuth,
     store: Arc<SessionStore>,
     config: Arc<AppConfig>,
@@ -138,7 +209,6 @@ async fn handle_socket_multi_account(
     }
     tracing::info!(account_count = auth.accounts.len(), "WebSocket connected");
 
-    let mut sync_handles: Vec<tokio::task::JoinHandle<()>> = Vec::new();
     let mut forward_handles: Vec<tokio::task::JoinHandle<()>> = Vec::new();
 
     let (event_tx, mut event_rx) =
@@ -186,15 +256,16 @@ async fn handle_socket_multi_account(
             )
             .await;
 
-        let handle = tokio::spawn(super::sync::sync_loop(
-            user_hash,
-            creds,
-            config.clone(),
-            imap_client.clone(),
-            event_bus.clone(),
-            search_engine.clone(),
-        ));
-        sync_handles.push(handle);
+        subscribe_sync(&user_hash, || {
+            tokio::spawn(super::sync::sync_loop(
+                user_hash.clone(),
+                creds,
+                config.clone(),
+                imap_client.clone(),
+                event_bus.clone(),
+                search_engine.clone(),
+            ))
+        });
     }
 
     drop(event_tx);
@@ -244,8 +315,8 @@ async fn handle_socket_multi_account(
 
     tracing::info!("WebSocket disconnected");
 
-    for handle in sync_handles {
-        handle.abort();
+    for account in &auth.accounts {
+        unsubscribe_sync(&account.session.user_hash);
     }
 
     for handle in forward_handles {
@@ -263,6 +334,35 @@ async fn handle_socket_multi_account(
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn browser_socket_slots_are_capped_and_released() {
+        let browser = "slot-test-browser";
+        let slots: Vec<_> = (0..MAX_SOCKETS_PER_BROWSER)
+            .map(|_| BrowserSocketSlot::acquire(browser).expect("slot under the cap"))
+            .collect();
+        assert!(BrowserSocketSlot::acquire(browser).is_none());
+        drop(slots);
+        assert!(BrowserSocketSlot::acquire(browser).is_some());
+    }
+
+    #[tokio::test]
+    async fn sync_loop_is_shared_until_last_subscriber_leaves() {
+        let user = "sync-share-test-user";
+        let mut spawned = 0;
+        for _ in 0..3 {
+            subscribe_sync(user, || {
+                spawned += 1;
+                tokio::spawn(std::future::pending())
+            });
+        }
+        assert_eq!(spawned, 1);
+        unsubscribe_sync(user);
+        unsubscribe_sync(user);
+        assert!(SYNC_LOOPS.lock().unwrap().contains_key(user));
+        unsubscribe_sync(user);
+        assert!(!SYNC_LOOPS.lock().unwrap().contains_key(user));
+    }
 
     fn add_account(store: &SessionStore, browser_id: &str) -> (String, String) {
         store.add_account_to_browser(

@@ -162,7 +162,9 @@ fn parse_date_start(date_str: &str) -> Option<i64> {
     let month: i64 = parts[1].parse().ok()?;
     let day: i64 = parts[2].parse().ok()?;
 
-    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+    // Bounding the year also bounds the per-year loop below, so a crafted
+    // `after:9000000000000000000-01-01` cannot pin a worker thread.
+    if !(1970..=9999).contains(&year) || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
         return None;
     }
 
@@ -227,8 +229,13 @@ fn default_sort() -> String {
 }
 
 fn default_limit() -> usize {
-    10_000
+    MAX_SEARCH_LIMIT
 }
+
+/// Upper bound for `limit`; larger values make Tantivy pre-allocate huge buffers.
+const MAX_SEARCH_LIMIT: usize = 10_000;
+/// Upper bound for `offset`, so `offset + limit` stays small.
+const MAX_SEARCH_OFFSET: usize = 100_000;
 
 // ---------------------------------------------------------------------------
 // Response types
@@ -287,7 +294,8 @@ pub async fn search_messages(
     }
 
     let sort_order = params.sort.clone();
-    let limit = params.limit;
+    let limit = params.limit.clamp(1, MAX_SEARCH_LIMIT);
+    let offset = params.offset.min(MAX_SEARCH_OFFSET);
 
     // Parse structured operators from the query string.
     let parsed = parse_search_query(&query_text);
@@ -361,7 +369,7 @@ pub async fn search_messages(
             date_to,
             has_attachment,
             limit,
-            offset: params.offset,
+            offset,
         })
     {
         // Resolve Tantivy UIDs via SQLite in spawn_blocking.
@@ -548,5 +556,13 @@ mod tests {
         // Invalid date
         assert_eq!(parse_date_start("not-a-date"), None);
         assert_eq!(parse_date_start("2024-13-01"), None);
+    }
+
+    #[test]
+    fn date_parsing_rejects_out_of_range_years() {
+        assert_eq!(parse_date_start("9000000000000000000-01-01"), None);
+        assert_eq!(parse_date_start("10000-01-01"), None);
+        assert_eq!(parse_date_start("1969-12-31"), None);
+        assert!(parse_date_start("9999-12-31").is_some());
     }
 }

@@ -231,7 +231,7 @@ pub fn get_messages(
     page: u32,
     per_page: u32,
 ) -> Result<Vec<CachedMessage>, String> {
-    let offset = page * per_page;
+    let offset = page.saturating_mul(per_page);
     let sql = format!(
         "SELECT {MSG_SELECT_COLS}
          FROM messages

@@ -57,8 +57,9 @@ pub async fn list_messages(
     Extension(search_engine): Extension<Arc<SearchEngine>>,
     Extension(event_bus): Extension<Arc<EventBus>>,
     Path(folder): Path<String>,
-    Query(query): Query<ListMessagesQuery>,
+    Query(mut query): Query<ListMessagesQuery>,
 ) -> Result<Response, AppError> {
+    query.per_page = query.per_page.clamp(1, types::MAX_PER_PAGE);
     let mut syncing = false;
 
     // Open the per-user database.
@@ -695,6 +696,18 @@ pub async fn get_message(
 /// `PATCH /api/messages/:folder/:uid/flags`
 ///
 /// Updates message flags on the IMAP server and in the SQLite cache.
+/// System flags plus IMAP keyword atoms such as `$Label1` or `Junk`.
+fn is_valid_flag(flag: &str) -> bool {
+    const SYSTEM_FLAGS: [&str; 5] = ["\\Seen", "\\Answered", "\\Flagged", "\\Deleted", "\\Draft"];
+    if SYSTEM_FLAGS.iter().any(|system| system.eq_ignore_ascii_case(flag)) {
+        return true;
+    }
+    (1..=64).contains(&flag.len())
+        && flag
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '$' | '_' | '-' | '.'))
+}
+
 pub async fn update_flags(
     Extension(session): Extension<SessionState>,
     Extension(config): Extension<Arc<AppConfig>>,
@@ -702,6 +715,12 @@ pub async fn update_flags(
     Path((folder, uid)): Path<(String, u32)>,
     Json(body): Json<UpdateFlagsRequest>,
 ) -> Result<Response, AppError> {
+    // Flags are joined into the raw STORE command, so only accept standard
+    // system flags and keyword atoms (no spaces, parens, quotes or CR/LF).
+    if let Some(bad) = body.flags.iter().find(|flag| !is_valid_flag(flag)) {
+        return Err(AppError::BadRequest(format!("Invalid flag: {bad:?}")));
+    }
+
     let creds = build_creds(&session, &config)?;
 
     // Convert flags to &str slices for the IMAP client.
@@ -929,4 +948,24 @@ pub async fn delete_message_handler(
         .map_err(|e| AppError::InternalError(format!("Database error: {e}")))?;
 
     Ok(Json(serde_json::json!({ "status": "ok" })).into_response())
+}
+
+#[cfg(test)]
+mod flag_tests {
+    use super::is_valid_flag;
+
+    #[test]
+    fn accepts_system_flags_and_keywords() {
+        for flag in [r"\Seen", r"\flagged", "$Junk", "$Label1", "Important", "my_tag-2.0"] {
+            assert!(is_valid_flag(flag), "{flag}");
+        }
+    }
+
+    #[test]
+    fn rejects_flags_that_could_break_the_store_command() {
+        for flag in ["", r"\Recent", "a b", "x)", "(x", "\"q\"", "a\r\nA1 DELETE INBOX", r"\*"] {
+            assert!(!is_valid_flag(flag), "{flag:?}");
+        }
+        assert!(!is_valid_flag(&"a".repeat(65)));
+    }
 }

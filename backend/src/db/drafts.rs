@@ -184,6 +184,12 @@ pub fn add_draft_attachment(
     Ok(())
 }
 
+/// Total bytes of all stored draft attachments for this user.
+pub fn total_attachment_bytes(conn: &Connection) -> Result<i64, String> {
+    conn.query_row("SELECT COALESCE(SUM(size), 0) FROM draft_attachments", [], |row| row.get(0))
+        .map_err(|e| format!("Failed to sum draft attachments: {e}"))
+}
+
 /// Get all attachments for a draft.
 pub fn get_draft_attachments(
     conn: &Connection,

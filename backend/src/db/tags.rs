@@ -213,7 +213,7 @@ pub fn get_messages_by_tag(
     page: u32,
     per_page: u32,
 ) -> Result<Vec<CachedMessage>, String> {
-    let offset = page * per_page;
+    let offset = page.saturating_mul(per_page);
     let mut stmt = conn
         .prepare(
             "SELECT m.uid, m.folder, m.message_id, m.in_reply_to, m.references_header,
