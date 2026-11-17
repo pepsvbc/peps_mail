@@ -19,6 +19,7 @@ import {
   Sun,
   Settings,
   Keyboard,
+  Users,
 } from "lucide-react";
 import { useUiStore } from "@/stores/useUiStore";
 import { useComposeStore } from "@/stores/useComposeStore";
@@ -184,6 +185,14 @@ export function CommandPalette() {
                   }
                 >
                   {t("Go to Trash")}
+                </CommandItem>
+                <CommandItem
+                  icon={<Users className="size-4" />}
+                  onSelect={() =>
+                    runAndClose(() => useUiStore.getState().setViewMode("lists"))
+                  }
+                >
+                  {t("Open distribution lists")}
                 </CommandItem>
                 <CommandItem
                   icon={<Settings className="size-4" />}

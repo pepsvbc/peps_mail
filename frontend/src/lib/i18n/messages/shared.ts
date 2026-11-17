@@ -52,6 +52,7 @@ export const sharedMessages: Record<string, string> = {
   "Go to Drafts": "Aller aux brouillons",
   "Go to Trash": "Aller à la corbeille",
   "Open Settings": "Ouvrir les paramètres",
+  "Settings sections": "Sections des paramètres",
   "Switching account...": "Changement de compte…",
   "{count} unread message in Inbox": "{count} message non lu dans la boîte de réception",
   "{count} unread messages in Inbox": "{count} messages non lus dans la boîte de réception",

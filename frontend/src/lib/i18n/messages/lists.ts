@@ -4,6 +4,8 @@ export const listMessages: Record<string, string> = {
   "Distribution lists": "Listes de diffusion",
   "Write to a whole group at once, for example a team. Type the list name in To, Cc or Bcc.": "Écrivez à tout un groupe en une fois, par exemple une équipe. Tapez le nom de la liste dans À, Cc ou Cci.",
   "New list": "Nouvelle liste",
+  "Open distribution lists": "Ouvrir les listes de diffusion",
+  "Create and manage personal and shared lists. Also available from the left bar.": "Créez et gérez vos listes personnelles et partagées. Aussi accessible depuis la barre de gauche.",
   "Loading lists...": "Chargement des listes…",
   "Could not load lists: {error}": "Impossible de charger les listes : {error}",
   "My lists": "Mes listes",

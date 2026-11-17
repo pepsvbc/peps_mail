@@ -102,7 +102,7 @@ export function NotificationSettings() {
   const folders = foldersData?.folders ?? [];
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="space-y-6">
       <div>
         <h2 className="text-base font-semibold">{t("Notifications")}</h2>
         <p className="mt-0.5 text-sm text-muted-foreground">

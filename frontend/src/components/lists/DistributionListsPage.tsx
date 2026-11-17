@@ -107,7 +107,8 @@ function ListGroup({
   );
 }
 
-export function DistributionListSettings() {
+/** Dedicated page for personal and shared distribution lists (left navigation bar). */
+export function DistributionListsPage() {
   const { t } = useTranslation();
   const { data: lists, isLoading, isError, error } = useLists();
   const deleteList = useDeleteList();
@@ -130,51 +131,57 @@ export function DistributionListSettings() {
   };
 
   return (
-    <div className="max-w-2xl space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h2 className="text-base font-semibold">{t("Distribution lists")}</h2>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {t("Write to a whole group at once, for example a team. Type the list name in To, Cc or Bcc.")}
-          </p>
+    <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="border-b border-border px-4 py-4 sm:px-6">
+        <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-lg font-semibold">{t("Distribution lists")}</h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {t("Write to a whole group at once, for example a team. Type the list name in To, Cc or Bcc.")}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDialog({ list: null })}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
+          >
+            <Plus className="size-4" />
+            {t("New list")}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => setDialog({ list: null })}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
-        >
-          <Plus className="size-4" />
-          {t("New list")}
-        </button>
       </div>
 
-      {isLoading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
-          {t("Loading lists...")}
+      <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
+        <div className="mx-auto w-full max-w-3xl space-y-6">
+          {isLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              {t("Loading lists...")}
+            </div>
+          ) : isError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {t("Could not load lists: {error}", { error: error?.message ?? "" })}
+            </p>
+          ) : (
+            <>
+              <ListGroup
+                title={t("My lists")}
+                empty={t("You have no lists yet. Create one to write to a group in one go.")}
+                lists={personal}
+                onOpen={(list) => setDialog({ list })}
+                onDelete={setPendingDelete}
+              />
+              <ListGroup
+                title={t("Shared lists")}
+                empty={t("No lists have been shared with you.")}
+                lists={shared}
+                onOpen={(list) => setDialog({ list })}
+                onDelete={setPendingDelete}
+              />
+            </>
+          )}
         </div>
-      ) : isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {t("Could not load lists: {error}", { error: error?.message ?? "" })}
-        </p>
-      ) : (
-        <>
-          <ListGroup
-            title={t("My lists")}
-            empty={t("You have no lists yet. Create one to write to a group in one go.")}
-            lists={personal}
-            onOpen={(list) => setDialog({ list })}
-            onDelete={setPendingDelete}
-          />
-          <ListGroup
-            title={t("Shared lists")}
-            empty={t("No lists have been shared with you.")}
-            lists={shared}
-            onOpen={(list) => setDialog({ list })}
-            onDelete={setPendingDelete}
-          />
-        </>
-      )}
+      </div>
 
       <DistributionListDialog open={dialog !== null} list={dialog?.list ?? null} onClose={() => setDialog(null)} />
 

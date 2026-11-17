@@ -13,6 +13,7 @@ import {
   Sun,
   Keyboard,
   LogOut,
+  Users,
   Volleyball,
 } from "lucide-react";
 import { Tooltip } from "radix-ui";
@@ -177,6 +178,12 @@ export function NavRail() {
               setActiveFolder("INBOX");
               setViewMode("mail");
             }}
+          />
+          <NavButton
+            icon={<Users className="size-5" />}
+            label={t("Distribution lists")}
+            active={viewMode === "lists"}
+            onClick={() => setViewMode("lists")}
           />
         </div>
 

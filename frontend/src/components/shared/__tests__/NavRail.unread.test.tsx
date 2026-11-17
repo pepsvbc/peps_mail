@@ -42,6 +42,13 @@ describe("Mail navigation unread total", () => {
     expect(screen.queryByRole("button", { name: "Calendar" })).toBeNull();
   });
 
+  it("opens the distribution lists page from the button under Mail", () => {
+    useUiStore.setState({ viewMode: "mail" });
+    render(<NavRail />);
+    fireEvent.click(screen.getByRole("button", { name: "Distribution lists" }));
+    expect(useUiStore.getState().viewMode).toBe("lists");
+  });
+
   it("returns to the Inbox when Mail is selected", () => {
     useUiStore.setState({
       viewMode: "settings",

@@ -7,7 +7,7 @@ import { useLanguageStore } from "@/lib/i18n";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useUiStore } from "@/stores/useUiStore";
 import type { DistributionList } from "@/types/list";
-import { DistributionListSettings } from "../DistributionListSettings";
+import { DistributionListsPage } from "../DistributionListsPage";
 
 vi.mock("@/lib/api", () => ({ apiGet: vi.fn(), apiPost: vi.fn(), apiPut: vi.fn(), apiDelete: vi.fn() }));
 vi.mock("@/hooks/useAutocomplete", () => ({ useAutocomplete: () => ({ results: [], isLoading: false }) }));
@@ -41,7 +41,7 @@ function setAdmin(isAdmin: boolean) {
 
 function renderSettings() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  return render(<QueryClientProvider client={client}><DistributionListSettings /></QueryClientProvider>);
+  return render(<QueryClientProvider client={client}><DistributionListsPage /></QueryClientProvider>);
 }
 
 function addMember(address: string) {
