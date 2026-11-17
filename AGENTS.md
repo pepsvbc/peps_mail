@@ -18,7 +18,7 @@ pepsvbc-mail-client/
 ├── frontend/          # Next.js 16 App Router
 │   └── src/
 │       ├── app/       # Routes (auth)/mail, login
-│       ├── components/# mail/, contacts/, settings/, shared/, ui/
+│       ├── components/# mail/, settings/, shared/, ui/
 │       ├── hooks/     # Data fetching (TanStack Query)
 │       ├── stores/    # Zustand stores (auth, UI, compose)
 │       └── lib/       # API client, utilities

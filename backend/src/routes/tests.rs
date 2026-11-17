@@ -1,4 +1,5 @@
     mod account_unread;
+    mod addresses;
     mod attachment_security;
     mod draft_paths;
     mod rate_limit_key;

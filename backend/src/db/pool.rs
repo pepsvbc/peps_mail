@@ -27,6 +27,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (20, include_str!("../../migrations/V020__language_preference.sql")),
     (21, include_str!("../../migrations/V021__reading_layout.sql")),
     (22, include_str!("../../migrations/V022__draft_sources.sql")),
+    (23, include_str!("../../migrations/V023__remove_calendar_contacts.sql")),
 ];
 
 /// Run any pending migrations based on SQLite's `user_version` PRAGMA.
@@ -154,5 +155,59 @@ mod tests {
         assert_eq!(fk, 1);
 
         drop(conn);
+    }
+
+    #[test]
+    fn test_v023_copies_contacts_to_known_addresses_and_blanks_caldav_password() {
+        let conn = Connection::open_in_memory().unwrap();
+        for &(version, sql) in MIGRATIONS.iter().filter(|(v, _)| *v < 23) {
+            conn.execute_batch(sql).unwrap();
+            conn.execute_batch(&format!("PRAGMA user_version = {version};"))
+                .unwrap();
+        }
+
+        conn.execute_batch(
+            "INSERT INTO contacts (id, email, name) VALUES
+                 ('c1', 'carol@example.com', 'Carol Contact'),
+                 ('c2', 'dave@example.com', 'Dave Contact'),
+                 ('c3', 'erin@example.com', '');
+             INSERT INTO known_addresses (email, name) VALUES
+                 ('dave@example.com', 'Dave Header'),
+                 ('erin@example.com', 'Erin Header');
+             INSERT INTO calendar_settings (id, caldav_password) VALUES (1, 'secret');",
+        )
+        .unwrap();
+
+        run_migrations(&conn).unwrap();
+
+        let known: Vec<(String, String)> = conn
+            .prepare("SELECT email, name FROM known_addresses ORDER BY email")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            known,
+            vec![
+                ("carol@example.com".to_string(), "Carol Contact".to_string()),
+                ("dave@example.com".to_string(), "Dave Contact".to_string()),
+                // An empty contact name does not overwrite a known name.
+                ("erin@example.com".to_string(), "Erin Header".to_string()),
+            ]
+        );
+
+        let password: String = conn
+            .query_row("SELECT caldav_password FROM calendar_settings", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(password, "");
+
+        // The old tables are kept.
+        let contacts: i64 = conn
+            .query_row("SELECT COUNT(*) FROM contacts", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(contacts, 3);
     }
 }

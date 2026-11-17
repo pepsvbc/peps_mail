@@ -1,4 +1,3 @@
-mod calendar;
 mod config;
 mod error;
 mod db;

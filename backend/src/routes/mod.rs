@@ -1,10 +1,8 @@
 pub mod account;
+pub mod addresses;
 mod attachment_response;
 pub mod attachments;
 pub mod auth;
-pub mod calendar;
-pub mod contact_groups;
-pub mod contacts;
 pub mod display_preferences;
 pub mod drafts;
 mod draft_import;
@@ -203,6 +201,8 @@ async fn security_headers(
 /// - `GET  /api/messages/:folder/:uid/attachments/:attachment_id` — download attachment (auth_guard + CSRF)
 /// - `POST /api/messages/move`                 — move message (auth_guard + CSRF)
 /// - `DELETE /api/messages/:folder/:uid`       — delete message (auth_guard + CSRF)
+/// - `GET  /api/addresses/autocomplete`        — search known addresses (auth_guard + CSRF)
+/// - `GET  /api/addresses/autocomplete/all`    — all known addresses (auth_guard + CSRF)
 ///
 /// All other paths serve static files from `config.static_dir`.
 /// Non-matching static paths fall back to `index.html` (SPA routing).
@@ -322,22 +322,6 @@ pub fn create_router(
         )
         .route("/search", get(search::search_messages))
         .route(
-            "/contact-groups",
-            get(contact_groups::list_groups_handler).post(contact_groups::create_group_handler),
-        )
-        .route(
-            "/contact-groups/{id}",
-            put(contact_groups::update_group_handler).delete(contact_groups::delete_group_handler),
-        )
-        .route(
-            "/contact-groups/{id}/members",
-            get(contact_groups::list_members_handler).post(contact_groups::add_member_handler),
-        )
-        .route(
-            "/contact-groups/{id}/members/{contact_id}",
-            delete(contact_groups::remove_member_handler),
-        )
-        .route(
             "/tags",
             get(tags::list_tags_handler).post(tags::create_tag_handler),
         )
@@ -362,26 +346,12 @@ pub fn create_router(
             get(tags::get_message_tags_handler),
         )
         .route(
-            "/contacts",
-            get(contacts::list_contacts_handler).post(contacts::create_contact_handler),
-        )
-        .route("/contacts/export", get(contacts::export_contacts_handler))
-        .route("/contacts/import", post(contacts::import_contacts_handler))
-        .route(
-            "/contacts/autocomplete/all",
-            get(contacts::autocomplete_all_handler),
+            "/addresses/autocomplete/all",
+            get(addresses::autocomplete_all_handler),
         )
         .route(
-            "/contacts/autocomplete",
-            get(contacts::autocomplete_handler),
-        )
-        .route(
-            "/contacts/{id}",
-            get(contacts::get_contact_handler).delete(contacts::delete_contact_handler),
-        )
-        .route(
-            "/contacts/{id}/export",
-            get(contacts::export_single_contact_handler),
+            "/addresses/autocomplete",
+            get(addresses::autocomplete_handler),
         )
         .route(
             "/identities",
@@ -402,34 +372,6 @@ pub fn create_router(
             "/settings/notifications",
             get(notification_preferences::get_notification_preferences)
                 .put(notification_preferences::update_notification_preferences),
-        )
-        .route(
-            "/calendar/events",
-            get(calendar::list_events).post(calendar::create_event),
-        )
-        .route(
-            "/calendar/events/import-ics",
-            post(calendar::import_ics),
-        )
-        .route(
-            "/calendar/events/{id}",
-            get(calendar::get_event)
-                .put(calendar::update_event)
-                .delete(calendar::delete_event),
-        )
-        .route(
-            "/calendar/settings",
-            get(calendar::get_calendar_settings)
-                .put(calendar::update_calendar_settings),
-        )
-        .route(
-            "/calendar/meeting-templates",
-            get(calendar::list_meeting_templates)
-                .post(calendar::create_meeting_template),
-        )
-        .route(
-            "/calendar/meeting-templates/{id}",
-            delete(calendar::delete_meeting_template),
         )
         .route("/quota", get(quota::get_quota))
         .layer(middleware::from_fn(auth_guard))

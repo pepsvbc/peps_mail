@@ -278,7 +278,7 @@ fn upsert_and_index_headers(
         .map_err(|e| AppError::InternalError(format!("Database error: {e}")))?;
 
         // Populate denormalized known_addresses table.
-        db::contacts::populate_known_addresses(conn, from_address, from_name, &to_json, &cc_json)
+        db::known_addresses::populate_known_addresses(conn, from_address, from_name, &to_json, &cc_json)
             .map_err(|e| AppError::InternalError(format!("Known addresses error: {e}")))?;
     }
 
@@ -372,7 +372,7 @@ async fn sync_remaining_headers(params: BackgroundSyncParams) {
             .map_err(|e| format!("Database error: {e}"))?;
 
             // Populate denormalized known_addresses table.
-            db::contacts::populate_known_addresses(&conn, from_address, from_name, &to_json, &cc_json)
+            db::known_addresses::populate_known_addresses(&conn, from_address, from_name, &to_json, &cc_json)
                 .map_err(|e| format!("Known addresses error: {e}"))?;
         }
 

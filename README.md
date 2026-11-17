@@ -40,8 +40,7 @@ Branding can be customized in these files:
 ## Features
 
 - **Mail** — Read, compose, reply, forward, and manage emails with a rich text editor (Tiptap)
-- **Contacts** — Browse and manage your address book
-- **Calendar** — iCal event parsing and calendar view
+- **Address Autocomplete** — Recipient suggestions from addresses seen in your mail (calendar and contacts stay with your mail provider)
 - **Full-Text Search** — Instant local search powered by Tantivy
 - **Real-Time Updates** — WebSocket-driven live mailbox sync
 - **Security** — IMAP credential auth, session tokens with configurable timeout, rate limiting
