@@ -388,7 +388,11 @@ pub fn create_router(
         .route("/setup/apple.mobileconfig", get(setup::download_apple_profile))
         .nest("/auth", auth_router)
         .merge(ws_route)
-        .merge(protected_data);
+        .merge(protected_data)
+        // Unknown API paths must not fall through to the SPA's index.html.
+        .fallback(|| async {
+            crate::error::AppError::NotFound("API endpoint not found".to_string())
+        });
 
     let index_path = Path::new(&config.static_dir).join("index.html");
     let static_service = ServeDir::new(&config.static_dir).fallback(ServeFile::new(index_path));

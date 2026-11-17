@@ -213,6 +213,23 @@
     }
 
     #[tokio::test]
+    async fn unknown_api_paths_return_json_404_not_the_spa() {
+        let dir = setup_static_dir();
+        let config = test_config(dir.path().to_str().unwrap());
+        let app = create_router(config, test_store(), test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
+
+        let response = app
+            .oneshot(Request::builder().uri("/api/contacts").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["error"]["code"], "NOT_FOUND");
+    }
+
+    #[tokio::test]
     async fn root_serves_index_html() {
         let dir = setup_static_dir();
         let config = test_config(dir.path().to_str().unwrap());
