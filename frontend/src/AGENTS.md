@@ -14,7 +14,6 @@ src/
 │   └── login/       # Auth entry point
 ├── components/      # Feature-based UI
 │   ├── mail/        # Compose, ReadingPane, MessageList
-│   ├── contacts/    # Address book UI
 │   ├── settings/    # User preferences
 │   ├── shared/      # Layout, Sidebar, SearchBar
 │   └── ui/          # shadcn/ui primitives

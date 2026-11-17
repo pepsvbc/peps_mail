@@ -5,9 +5,8 @@ import { translate as t, useTranslation } from "@/lib/i18n";
 import { useState, useCallback, useMemo, type ReactNode } from "react";
 import { Popover, Dialog } from "radix-ui";
 import { AnimatePresence } from "framer-motion";
-import { Send, Copy, Check, UserPlus, X, Search } from "lucide-react";
+import { Send, Copy, X, Search } from "lucide-react";
 import { useComposeStore } from "@/stores/useComposeStore";
-import { useCreateContact } from "@/hooks/useContacts";
 import { createFadeSlideVariants, createScaleFadeVariants } from "@/lib/motion/variants";
 import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
 import { useUiStore } from "@/stores/useUiStore";
@@ -23,15 +22,9 @@ function AddressPopover({
   children: ReactNode;
 }) {
   useTranslation();
-  const createContact = useCreateContact();
-  const [contactAdded, setContactAdded] = useState(false);
 
   return (
-    <Popover.Root
-      onOpenChange={(open) => {
-        if (!open) setContactAdded(false);
-      }}
-    >
+    <Popover.Root>
       <Popover.Trigger asChild>{children}</Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
@@ -68,29 +61,6 @@ function AddressPopover({
           >
             <Copy className="size-3.5 text-muted-foreground" />
             {t("Copy address")}
-          </button>
-          <button
-            type="button"
-            disabled={contactAdded || createContact.isPending}
-            onClick={() => {
-              createContact.mutate(
-                { email: address, name: name ?? "" },
-                { onSuccess: () => setContactAdded(true) },
-              );
-            }}
-            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
-          >
-            {contactAdded ? (
-              <>
-                <Check className="size-3.5 text-green-500" />
-                {t("Contact added")}
-              </>
-            ) : (
-              <>
-                <UserPlus className="size-3.5 text-muted-foreground" />
-                {t("Add to contacts")}
-              </>
-            )}
           </button>
         </Popover.Content>
       </Popover.Portal>

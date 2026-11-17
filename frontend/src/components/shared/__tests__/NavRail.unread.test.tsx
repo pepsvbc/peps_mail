@@ -36,9 +36,15 @@ describe("Mail navigation unread total", () => {
     expect(screen.getByRole("img", { name: brand.appName })).toBeTruthy();
   });
 
+  it("does not offer Contacts or Calendar navigation", () => {
+    render(<NavRail />);
+    expect(screen.queryByRole("button", { name: "Contacts" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Calendar" })).toBeNull();
+  });
+
   it("returns to the Inbox when Mail is selected", () => {
     useUiStore.setState({
-      viewMode: "contacts",
+      viewMode: "settings",
       activeFolder: "Sent",
       searchActive: true,
       searchQuery: "invoice",

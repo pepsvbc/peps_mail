@@ -5,10 +5,11 @@ import { useDebouncedValue } from "./useDebouncedValue";
 import { FuzzySearcher, type SearchableItem, type SearchResult } from "@/lib/fuzzySearch";
 import { apiGet } from "@/lib/api";
 
+/** An address seen in the user's mail, as returned by /api/addresses/autocomplete. */
 export interface AutocompleteSuggestion {
   email: string;
   name: string;
-  source?: "contact" | "known";
+  source?: "known";
 }
 
 export interface AutocompleteResult extends SearchResult {
@@ -31,20 +32,20 @@ export function useAutocomplete(
 } {
   const debouncedQuery = useDebouncedValue(query, debounceMs);
 
-  const { data: allContacts, isLoading: isLoadingAll } = useQuery<AutocompleteApiResponse>({
-    queryKey: ["contacts-all-for-autocomplete"],
-    queryFn: () => apiGet<AutocompleteApiResponse>("/contacts/autocomplete/all"),
+  const { data: allAddresses, isLoading: isLoadingAll } = useQuery<AutocompleteApiResponse>({
+    queryKey: ["address-autocomplete-all"],
+    queryFn: () => apiGet<AutocompleteApiResponse>("/addresses/autocomplete/all"),
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
   });
 
   const { data: serverResults, isLoading: isLoadingServer, error } = useQuery<AutocompleteApiResponse>({
-    queryKey: ["contacts-autocomplete", debouncedQuery],
+    queryKey: ["address-autocomplete", debouncedQuery],
     queryFn: () =>
       apiGet<AutocompleteApiResponse>(
-        `/contacts/autocomplete?q=${encodeURIComponent(debouncedQuery)}&limit=20`
+        `/addresses/autocomplete?q=${encodeURIComponent(debouncedQuery)}&limit=20`
       ),
-    enabled: debouncedQuery.length >= MIN_QUERY_LENGTH && !allContacts?.suggestions?.length,
+    enabled: debouncedQuery.length >= MIN_QUERY_LENGTH && !allAddresses?.suggestions?.length,
     staleTime: 30000,
   });
 
@@ -53,23 +54,15 @@ export function useAutocomplete(
       return [];
     }
 
-    if (allContacts?.suggestions?.length) {
-      const searchableItems: SearchableItem[] = allContacts.suggestions.map((s) => ({
+    const suggestions = allAddresses?.suggestions?.length
+      ? allAddresses.suggestions
+      : serverResults?.suggestions;
+
+    if (suggestions) {
+      const searchableItems: SearchableItem[] = suggestions.map((s) => ({
         email: s.email,
         name: s.name,
-        source: s.source ?? "known",
-      }));
-
-      const searcher = new FuzzySearcher();
-      searcher.setItems(searchableItems);
-      return searcher.search(debouncedQuery, 20) as AutocompleteResult[];
-    }
-
-    if (serverResults?.suggestions) {
-      const searchableItems: SearchableItem[] = serverResults.suggestions.map((s) => ({
-        email: s.email,
-        name: s.name,
-        source: s.source ?? "known",
+        source: "known",
       }));
 
       const searcher = new FuzzySearcher();

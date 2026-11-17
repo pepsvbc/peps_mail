@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 const { mockUiState } = vi.hoisted(() => ({
   mockUiState: {
-    viewMode: "mail" as "mail" | "contacts" | "calendar" | "settings",
+    viewMode: "mail" as "mail" | "settings",
     effectiveAnimationMode: "medium" as "rich" | "medium" | "subtle" | "off",
   },
 }));
@@ -49,14 +49,6 @@ vi.mock("@/components/mail/ReadingPane", () => ({
   ReadingPane: vi.fn(() => <div data-testid="reading-pane" />),
 }));
 
-vi.mock("@/components/calendar/CalendarPanel", () => ({
-  CalendarPanel: vi.fn(() => <div data-testid="calendar-panel" />),
-}));
-
-vi.mock("@/components/contacts/ContactsPanel", () => ({
-  ContactsPanel: vi.fn(() => <div data-testid="contacts-panel" />),
-}));
-
 vi.mock("@/components/settings/SettingsPanel", () => ({
   SettingsPanel: vi.fn(() => <div data-testid="settings-panel" />),
 }));
@@ -81,12 +73,7 @@ import MailPage from "../page";
 
 describe("Mail page motion transitions", () => {
   it("uses animated wrappers for all views in non-off modes", () => {
-    const views: Array<"mail" | "contacts" | "calendar" | "settings"> = [
-      "mail",
-      "contacts",
-      "calendar",
-      "settings",
-    ];
+    const views: Array<"mail" | "settings"> = ["mail", "settings"];
     const modes: Array<"rich" | "medium" | "subtle"> = ["rich", "medium", "subtle"];
 
     for (const mode of modes) {
@@ -102,12 +89,7 @@ describe("Mail page motion transitions", () => {
   });
 
   it("uses a static non-animated path in off mode", () => {
-    const views: Array<"mail" | "contacts" | "calendar" | "settings"> = [
-      "mail",
-      "contacts",
-      "calendar",
-      "settings",
-    ];
+    const views: Array<"mail" | "settings"> = ["mail", "settings"];
 
     mockUiState.effectiveAnimationMode = "off";
 
@@ -116,6 +98,18 @@ describe("Mail page motion transitions", () => {
       const { unmount } = render(<MailPage />);
       expect(screen.getByTestId(`mail-view-static-${view}`)).toBeTruthy();
       expect(screen.queryByTestId(`mail-view-transition-${view}`)).toBeNull();
+      unmount();
+    }
+  });
+
+  it("falls back to the mail layout for retired view modes", () => {
+    mockUiState.effectiveAnimationMode = "off";
+
+    for (const retired of ["contacts", "calendar"]) {
+      mockUiState.viewMode = retired as "mail";
+      const { unmount } = render(<MailPage />);
+      expect(screen.getByTestId("mail-layout")).toBeTruthy();
+      expect(screen.queryByTestId("settings-panel")).toBeNull();
       unmount();
     }
   });

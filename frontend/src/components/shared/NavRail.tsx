@@ -8,8 +8,6 @@ import { useCallback, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   Mail,
-  Users,
-  Calendar,
   Settings,
   Moon,
   Sun,
@@ -179,18 +177,6 @@ export function NavRail() {
               setActiveFolder("INBOX");
               setViewMode("mail");
             }}
-          />
-          <NavButton
-            icon={<Users className="size-5" />}
-            label={t("Contacts")}
-            active={viewMode === "contacts"}
-            onClick={() => setViewMode(viewMode === "contacts" ? "mail" : "contacts")}
-          />
-          <NavButton
-            icon={<Calendar className="size-5" />}
-            label={t("Calendar")}
-            active={viewMode === "calendar"}
-            onClick={() => setViewMode(viewMode === "calendar" ? "mail" : "calendar")}
           />
         </div>
 

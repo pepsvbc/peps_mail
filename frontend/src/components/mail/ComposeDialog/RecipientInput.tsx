@@ -170,7 +170,7 @@ export function RecipientInput({
           )}
           {results.map((result, i) => (
             <button
-              key={`${result.item.email}-${result.item.source}`}
+              key={`${result.item.email}-${i}`}
               type="button"
               className={`flex w-full flex-col px-3 py-2 text-left text-sm transition-colors ${i === selectedIndex
                 ? "bg-accent text-accent-foreground"
@@ -192,11 +192,6 @@ export function RecipientInput({
               {result.item.name && (
                 <span className="text-xs text-muted-foreground">
                   <HighlightedText html={result.highlightedEmail} />
-                </span>
-              )}
-              {result.item.source === "known" && (
-                <span className="mt-0.5 text-xs text-muted-foreground/60">
-                  {t("From email history")}
                 </span>
               )}
             </button>

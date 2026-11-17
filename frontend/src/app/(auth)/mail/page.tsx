@@ -7,8 +7,6 @@ import { NavRail } from "@/components/shared/NavRail";
 import { FolderTree } from "@/components/mail/FolderTree";
 import { MessageList } from "@/components/mail/MessageList";
 import { ReadingPane } from "@/components/mail/ReadingPane";
-import { CalendarPanel } from "@/components/calendar/CalendarPanel";
-import { ContactsPanel } from "@/components/contacts/ContactsPanel";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { useUiStore } from "@/stores/useUiStore";
 import type { UiState } from "@/stores/useUiStore";
@@ -36,19 +34,7 @@ export default function MailPage() {
   const shouldAnimateViews = effectiveAnimationMode !== "off";
 
   let viewContent: React.ReactNode;
-  if (viewMode === "contacts") {
-    viewContent = (
-      <div className="flex h-full min-h-0 w-full overflow-hidden">
-        <ContactsPanel />
-      </div>
-    );
-  } else if (viewMode === "calendar") {
-    viewContent = (
-      <div className="flex h-full min-h-0 w-full overflow-hidden">
-        <CalendarPanel />
-      </div>
-    );
-  } else if (viewMode === "settings") {
+  if (viewMode === "settings") {
     viewContent = (
       <div className="flex h-full min-h-0 w-full overflow-hidden">
         <SettingsPanel />

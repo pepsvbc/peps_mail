@@ -124,4 +124,12 @@ describe("CommandPalette", () => {
     expect(mockUiState.setSearchActive).not.toHaveBeenCalled();
     expect(mockUiState.setCommandPaletteOpen).toHaveBeenCalledWith(false);
   });
+
+  it("does not offer contacts or calendar navigation", () => {
+    render(<CommandPalette />);
+
+    expect(screen.getByRole("button", { name: "Open Settings" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /contacts/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /calendar/i })).toBeNull();
+  });
 });

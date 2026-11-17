@@ -18,7 +18,6 @@ import {
   Moon,
   Sun,
   Settings,
-  Users,
   Keyboard,
 } from "lucide-react";
 import { useUiStore } from "@/stores/useUiStore";
@@ -193,14 +192,6 @@ export function CommandPalette() {
                   }
                 >
                   {t("Open Settings")}
-                </CommandItem>
-                <CommandItem
-                  icon={<Users className="size-4" />}
-                  onSelect={() =>
-                    runAndClose(() => useUiStore.getState().setViewMode("contacts"))
-                  }
-                >
-                  {t("Open Contacts")}
                 </CommandItem>
               </Command.Group>
             </Command.List>
