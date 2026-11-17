@@ -49,13 +49,25 @@ pub struct AppConfig {
     #[serde(default = "default_static_dir")]
     pub static_dir: String,
 
-    /// Environment the application is running in (development, production)
+    /// Environment the application is running in (development, production).
+    /// Anything other than `development` enables Secure cookies, HSTS and
+    /// disables permissive CORS, so the default fails safe.
     #[serde(default = "default_environment")]
     pub environment: String,
 
     /// Optional base path prefix (e.g. "/mail") for serving behind a reverse proxy subpath.
     #[serde(default)]
     pub base_path: Option<String>,
+
+    /// Comma-separated IPs or CIDR ranges of reverse proxies whose
+    /// `X-Forwarded-For` header is trusted for the login rate limiter.
+    #[serde(default)]
+    pub trusted_proxies: Option<String>,
+
+    /// Allow sender identities with any email address. Only enable this when
+    /// the SMTP server itself rejects From addresses the login does not own.
+    #[serde(default)]
+    pub allow_any_sender: bool,
 }
 
 fn default_host() -> String {
@@ -91,7 +103,7 @@ fn default_static_dir() -> String {
 }
 
 fn default_environment() -> String {
-    "development".to_string()
+    "production".to_string()
 }
 
 impl AppConfig {
@@ -127,7 +139,9 @@ mod tests {
         assert_eq!(config.data_dir, "/data");
         assert_eq!(config.session_timeout_hours, 24);
         assert_eq!(config.static_dir, "./static");
-        assert_eq!(config.environment, "development");
+        assert_eq!(config.environment, "production");
+        assert!(config.trusted_proxies.is_none());
+        assert!(!config.allow_any_sender);
     }
 
     #[test]

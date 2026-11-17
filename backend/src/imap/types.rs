@@ -83,13 +83,26 @@ pub struct ImapAttachment {
 
 /// Parameters needed to establish an IMAP connection.
 /// Passed explicitly to every trait method so the trait stays stateless.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ImapCredentials {
     pub host: String,
     pub port: u16,
     pub tls: bool,
     pub email: String,
     pub password: String,
+}
+
+// Hand-written so a stray `?creds` in a log line never prints the password.
+impl std::fmt::Debug for ImapCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImapCredentials")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("tls", &self.tls)
+            .field("email", &self.email)
+            .field("password", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Lightweight result of an IMAP `SELECT` command.

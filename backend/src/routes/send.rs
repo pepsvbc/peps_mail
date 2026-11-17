@@ -108,10 +108,18 @@ pub async fn send_message_handler(
         let identity = db::identities::get_identity(&conn, identity_id)
             .map_err(AppError::InternalError)?
             .ok_or_else(|| AppError::NotFound("Identity not found".to_string()))?;
+        // Re-checked here so identities saved before the check existed can't be used.
+        crate::routes::identities::ensure_sender_allowed(&config, &session, &identity.email)?;
         if identity.display_name.is_empty() {
             identity.email
         } else {
-            format!("\"{}\" <{}>", identity.display_name, identity.email)
+            // Let lettre quote the display name so it can't smuggle in another address.
+            let address: lettre::Address = identity
+                .email
+                .trim()
+                .parse()
+                .map_err(|_| AppError::BadRequest("Identity email is invalid".to_string()))?;
+            lettre::message::Mailbox::new(Some(identity.display_name), address).to_string()
         }
     } else {
         session.email.clone()

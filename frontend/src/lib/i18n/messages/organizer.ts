@@ -114,6 +114,8 @@ export const organizerMessages: Record<string, string> = {
   "Identity updated": "Identité mise à jour",
   "Identity deleted": "Identité supprimée",
   "Cannot delete the default identity": "Impossible de supprimer l’identité par défaut",
+  "Identities can only use the address you signed in with": "Une identité ne peut utiliser que l’adresse avec laquelle vous êtes connecté",
+  "Attachment storage is full. Send or delete some drafts first.": "L’espace pour les pièces jointes est plein. Envoyez ou supprimez des brouillons d’abord.",
   "Failed to create: {error}": "Échec de la création : {error}",
   "Failed to delete: {error}": "Échec de la suppression : {error}",
   "Loading identities...": "Chargement des identités…",

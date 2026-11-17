@@ -29,6 +29,8 @@ pub enum AppError {
     Unauthorized(String),
     /// Bad request (400).
     BadRequest(String),
+    /// Forbidden (403).
+    Forbidden(String),
     /// Service unavailable (503).
     ServiceUnavailable(String),
 }
@@ -41,6 +43,7 @@ impl AppError {
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            AppError::Forbidden(_) => StatusCode::FORBIDDEN,
             AppError::ServiceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
@@ -52,6 +55,7 @@ impl AppError {
             AppError::NotFound(_) => "NOT_FOUND",
             AppError::Unauthorized(_) => "UNAUTHORIZED",
             AppError::BadRequest(_) => "BAD_REQUEST",
+            AppError::Forbidden(_) => "FORBIDDEN",
             AppError::ServiceUnavailable(_) => "SERVICE_UNAVAILABLE",
         }
     }
@@ -63,6 +67,7 @@ impl AppError {
             | AppError::NotFound(msg)
             | AppError::Unauthorized(msg)
             | AppError::BadRequest(msg)
+            | AppError::Forbidden(msg)
             | AppError::ServiceUnavailable(msg) => msg,
         }
     }

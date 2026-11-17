@@ -31,16 +31,19 @@ fn browser_cookie(browser_id: &str, max_age_secs: u64, secure: bool) -> String {
     )
 }
 
+/// `max_age_secs: None` makes a browser-session cookie, dropped when the
+/// browser closes (used when "remember me" is off).
 fn account_session_cookie(
     account_id: &str,
     token: &str,
-    max_age_secs: u64,
+    max_age_secs: Option<u64>,
     secure: bool,
 ) -> String {
     let secure_flag = if secure { " Secure;" } else { "" };
+    let max_age = max_age_secs.map(|secs| format!("; Max-Age={secs}")).unwrap_or_default();
     format!(
-        "{SESSION_COOKIE_PREFIX}{}={};{} HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
-        account_id, token, secure_flag, max_age_secs
+        "{SESSION_COOKIE_PREFIX}{}={};{} HttpOnly; SameSite=Strict; Path=/{}",
+        account_id, token, secure_flag, max_age
     )
 }
 
@@ -115,6 +118,23 @@ pub async fn login(
     headers: axum::http::HeaderMap,
     Json(body): Json<LoginRequest>,
 ) -> Response {
+    // The email is sent to the IMAP server and used as the cache key, so
+    // reject control characters (CR/LF could break the LOGIN command).
+    if body.email.len() > 320 || body.email.chars().any(char::is_control) {
+        return (
+            StatusCode::BAD_REQUEST,
+            [("content-type", "application/json")],
+            serde_json::json!({
+                "error": {
+                    "code": "BAD_REQUEST",
+                    "message": "Invalid email address",
+                    "status": 400
+                }
+            })
+            .to_string(),
+        )
+            .into_response();
+    }
     if body.email.trim().is_empty() || body.password.trim().is_empty() {
         return (
             StatusCode::BAD_REQUEST,
@@ -302,7 +322,7 @@ pub async fn login(
             let secure = config.environment != "development";
             let browser_cookie_header = browser_cookie(&browser_id, max_age, secure);
             let session_cookie_header =
-                account_session_cookie(&account_id, &token, max_age, secure);
+                account_session_cookie(&account_id, &token, body.remember.then_some(max_age), secure);
 
             let response = (
                 StatusCode::CREATED,
@@ -343,19 +363,24 @@ pub async fn login(
             .to_string(),
         )
             .into_response(),
-        AuthResult::ServerUnreachable(msg) => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            [("content-type", "application/json")],
-            serde_json::json!({
-                "error": {
-                    "code": "SERVER_UNREACHABLE",
-                    "message": msg,
-                    "status": 503
-                }
-            })
-            .to_string(),
-        )
-            .into_response(),
+        AuthResult::ServerUnreachable(msg) => {
+            // Network/TLS/IMAP details stay in the server log; anonymous
+            // clients only learn that the mail server is unavailable.
+            tracing::warn!(error = %msg, "Login failed: mail server unreachable");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                [("content-type", "application/json")],
+                serde_json::json!({
+                    "error": {
+                        "code": "SERVER_UNREACHABLE",
+                        "message": "Unable to reach the mail server",
+                        "status": 503
+                    }
+                })
+                .to_string(),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -484,8 +509,9 @@ pub async fn remove_account(
 
 /// `POST /api/auth/logout`
 ///
-/// Removes the current session from the store and clears the session cookie.
-/// Requires authentication.
+/// Revokes every account session proven by this browser's cookies and clears
+/// them. Does not require a valid active account, so stale accounts can't
+/// block logging out of the others.
 pub async fn logout(
     Extension(store): Extension<Arc<SessionStore>>,
     Extension(config): Extension<Arc<AppConfig>>,
@@ -601,12 +627,7 @@ mod tests {
             .route("/login", post(login))
             .route("/accounts", get(list_accounts))
             .route("/accounts/{id}", delete(remove_account))
-            .route(
-                "/logout",
-                post(logout).layer(axum::middleware::from_fn(
-                    crate::auth::middleware::auth_guard,
-                )),
-            )
+            .route("/logout", post(logout))
             .layer(Extension(store))
             .layer(Extension(Arc::new(config)))
     }

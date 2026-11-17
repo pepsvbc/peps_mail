@@ -12,7 +12,7 @@ pub type AccountId = String;
 
 pub type SessionState = AccountSession;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AccountSession {
     pub account_id: AccountId,
     pub email: String,
@@ -30,6 +30,26 @@ pub struct AccountSession {
     pub smtp_tls: bool,
     pub last_accessed: Instant,
     pub timeout_override: Option<Duration>,
+}
+
+// Hand-written so a stray `?session` in a log line never prints the password.
+impl std::fmt::Debug for AccountSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AccountSession")
+            .field("account_id", &self.account_id)
+            .field("email", &self.email)
+            .field("password", &"<redacted>")
+            .field("user_hash", &self.user_hash)
+            .field("imap_host", &self.imap_host)
+            .field("imap_port", &self.imap_port)
+            .field("imap_tls", &self.imap_tls)
+            .field("smtp_host", &self.smtp_host)
+            .field("smtp_port", &self.smtp_port)
+            .field("smtp_tls", &self.smtp_tls)
+            .field("last_accessed", &self.last_accessed)
+            .field("timeout_override", &self.timeout_override)
+            .finish()
+    }
 }
 
 /// Thread-safe, in-memory session store backed by `DashMap`.

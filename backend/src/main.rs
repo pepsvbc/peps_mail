@@ -32,6 +32,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration via figment (serde defaults + env vars).
     let config = Arc::new(AppConfig::load()?);
 
+    if config.environment == "development" {
+        tracing::warn!("ENVIRONMENT=development: cookies are not Secure and CORS is permissive; never use this behind a public URL");
+    }
+    if !config.tls_enabled {
+        tracing::warn!("TLS_ENABLED=false: mail passwords are sent to the IMAP/SMTP servers in plaintext");
+    }
+    if config.allow_any_sender {
+        tracing::warn!("ALLOW_ANY_SENDER=true: users can send from any address unless the SMTP server enforces sender ownership");
+    }
+
     // Create the in-memory session store with the configured timeout.
     let store = Arc::new(SessionStore::new(Duration::from_secs(
         config.session_timeout_hours * 3600,

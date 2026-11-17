@@ -1,6 +1,7 @@
     mod account_unread;
     mod attachment_security;
     mod draft_paths;
+    mod rate_limit_key;
     mod setup;
     mod sent_copy;
 
@@ -35,6 +36,8 @@
             static_dir: static_dir.to_string(),
             environment: "development".to_string(),
             base_path: None,
+            trusted_proxies: None,
+            allow_any_sender: false,
         })
     }
 
@@ -53,6 +56,8 @@
             static_dir: static_dir.to_string(),
             environment: "development".to_string(),
             base_path: None,
+            trusted_proxies: None,
+            allow_any_sender: false,
         })
     }
 
@@ -71,6 +76,8 @@
             static_dir: static_dir.to_string(),
             environment: "development".to_string(),
             base_path: None,
+            trusted_proxies: None,
+            allow_any_sender: false,
         })
     }
 
@@ -184,6 +191,24 @@
             .to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["status"], "ok");
+    }
+
+    #[tokio::test]
+    async fn responses_carry_baseline_security_headers() {
+        let dir = setup_static_dir();
+        let config = test_config(dir.path().to_str().unwrap());
+        let app = create_router(config, test_store(), test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
+
+        let response = app
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        let headers = response.headers();
+        assert!(headers["content-security-policy"].to_str().unwrap().contains("frame-ancestors 'self'"));
+        assert_eq!(headers["x-content-type-options"], "nosniff");
+        assert_eq!(headers["x-frame-options"], "SAMEORIGIN");
+        assert_eq!(headers["referrer-policy"], "no-referrer");
     }
 
     #[tokio::test]
@@ -460,7 +485,7 @@
             .to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["error"]["code"], "SERVER_UNREACHABLE");
-        assert!(json["error"]["message"].as_str().unwrap().contains("Connection refused"));
+        assert_eq!(json["error"]["message"], "Unable to reach the mail server");
     }
 
     #[tokio::test]
@@ -514,11 +539,30 @@
     }
 
     #[tokio::test]
-    async fn logout_without_auth_returns_401() {
+    async fn logout_without_csrf_header_is_rejected() {
         let dir = setup_static_dir();
         let config = test_config(dir.path().to_str().unwrap());
         let store = test_store();
-        let app = create_router(config, store, test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
+        let (browser_id, account_id, token) = setup_test_account(&store, "alice@example.com");
+        let app = create_router(config, store.clone(), test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
+
+        let mut req = Request::builder().method("POST").uri("/api/auth/logout");
+        for (name, value) in auth_headers(&browser_id, &account_id, &token) {
+            req = req.header(name, value);
+        }
+        let response = app.oneshot(req.body(Body::empty()).unwrap()).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert!(store.get(&token).is_some());
+    }
+
+    #[tokio::test]
+    async fn logout_revokes_sessions_even_when_active_account_is_stale() {
+        let dir = setup_static_dir();
+        let config = test_config(dir.path().to_str().unwrap());
+        let store = test_store();
+        let (browser_id, account_id, token) = setup_test_account(&store, "alice@example.com");
+        let app = create_router(config, store.clone(), test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
 
         let response = app
             .oneshot(
@@ -526,13 +570,16 @@
                     .method("POST")
                     .uri("/api/auth/logout")
                     .header("x-requested-with", "XMLHttpRequest")
+                    .header("cookie", format!("peps_mail_browser={browser_id}; peps_mail_session_{account_id}={token}"))
+                    .header("x-active-account", "expired-account")
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
 
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(store.get(&token).is_none());
     }
 
     #[tokio::test]

@@ -21,13 +21,14 @@ pub mod send;
 pub mod setup;
 pub mod tags;
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::ConnectInfo;
-use axum::http::Request;
+use axum::extract::{ConnectInfo, State};
+use axum::http::{HeaderValue, Request, header};
+use axum::response::Response;
 use axum::routing::{delete, get, patch, post, put};
 use axum::{Extension, Router, middleware};
 use tower_governor::GovernorError;
@@ -47,26 +48,142 @@ use crate::realtime::events::EventBus;
 use crate::realtime::idle::IdleManager;
 use crate::smtp::client::SmtpClient;
 
-/// Per-IP key extractor that falls back to the loopback address when
-/// `ConnectInfo<SocketAddr>` is unavailable (e.g. in unit tests using
-/// `oneshot`).  In production the server is started with
-/// `into_make_service_with_connect_info::<SocketAddr>()` so the real
-/// peer IP is always present.
+/// An IP network such as `10.0.0.0/8`, or a single address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct PeerIpKeyExtractorFallback;
+struct IpNetwork {
+    addr: IpAddr,
+    prefix: u8,
+}
 
-impl KeyExtractor for PeerIpKeyExtractorFallback {
+impl IpNetwork {
+    fn parse(s: &str) -> Option<Self> {
+        let (addr, prefix) = match s.split_once('/') {
+            Some((addr, prefix)) => (addr.trim().parse::<IpAddr>().ok()?, Some(prefix.trim().parse::<u8>().ok()?)),
+            None => (s.trim().parse::<IpAddr>().ok()?, None),
+        };
+        let max = if addr.is_ipv4() { 32 } else { 128 };
+        let prefix = prefix.unwrap_or(max);
+        (prefix <= max).then_some(Self { addr, prefix })
+    }
+
+    fn contains(&self, ip: IpAddr) -> bool {
+        match (self.addr, ip.to_canonical()) {
+            (IpAddr::V4(net), IpAddr::V4(ip)) => {
+                let mask = u32::MAX.checked_shl(32 - u32::from(self.prefix)).unwrap_or(0);
+                u32::from(net) & mask == u32::from(ip) & mask
+            }
+            (IpAddr::V6(net), IpAddr::V6(ip)) => {
+                let mask = u128::MAX.checked_shl(128 - u32::from(self.prefix)).unwrap_or(0);
+                u128::from(net) & mask == u128::from(ip) & mask
+            }
+            _ => false,
+        }
+    }
+}
+
+/// Parse `TRUSTED_PROXIES` (comma-separated IPs/CIDRs), skipping invalid entries.
+fn parse_trusted_proxies(value: Option<&str>) -> Vec<IpNetwork> {
+    value
+        .unwrap_or_default()
+        .split(',')
+        .filter(|entry| !entry.trim().is_empty())
+        .filter_map(|entry| {
+            let network = IpNetwork::parse(entry);
+            if network.is_none() {
+                tracing::warn!(entry, "Ignoring invalid TRUSTED_PROXIES entry");
+            }
+            network
+        })
+        .collect()
+}
+
+/// Per-client key extractor for the login rate limiter.
+///
+/// Uses the TCP peer address, or — when the peer is a configured trusted
+/// proxy — the right-most `X-Forwarded-For` hop that is not itself a trusted
+/// proxy, so clients can't spoof the header but proxied users don't all share
+/// one bucket. IPv6 clients are grouped by /64, the usual per-host allocation.
+/// Falls back to loopback when `ConnectInfo` is missing (unit tests using
+/// `oneshot`); production uses `into_make_service_with_connect_info`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ClientIpKeyExtractor {
+    trusted_proxies: Arc<Vec<IpNetwork>>,
+}
+
+impl ClientIpKeyExtractor {
+    fn is_trusted(&self, ip: IpAddr) -> bool {
+        self.trusted_proxies.iter().any(|network| network.contains(ip))
+    }
+
+    fn client_ip<T>(&self, req: &Request<T>) -> IpAddr {
+        let peer = req
+            .extensions()
+            .get::<ConnectInfo<SocketAddr>>()
+            .map(|ci: &ConnectInfo<SocketAddr>| ci.0.ip().to_canonical())
+            .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+        if !self.is_trusted(peer) {
+            return peer;
+        }
+        let forwarded: Vec<IpAddr> = req
+            .headers()
+            .get_all("x-forwarded-for")
+            .iter()
+            .filter_map(|value| value.to_str().ok())
+            .flat_map(|value| value.split(','))
+            .filter_map(|hop| hop.trim().parse::<IpAddr>().ok())
+            .map(|ip| ip.to_canonical())
+            .collect();
+        forwarded
+            .into_iter()
+            .rev()
+            .find(|ip| !self.is_trusted(*ip))
+            .unwrap_or(peer)
+    }
+}
+
+impl KeyExtractor for ClientIpKeyExtractor {
     type Key = IpAddr;
 
     fn extract<T>(&self, req: &Request<T>) -> Result<Self::Key, GovernorError> {
-        // Try ConnectInfo<SocketAddr> first (production path).
-        let ip = req
-            .extensions()
-            .get::<ConnectInfo<SocketAddr>>()
-            .map(|ci: &ConnectInfo<SocketAddr>| ci.0.ip());
-
-        Ok(ip.unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST)))
+        Ok(match self.client_ip(req) {
+            IpAddr::V6(ip) => IpAddr::V6(Ipv6Addr::from(u128::from(ip) & (u128::MAX << 64))),
+            ip => ip,
+        })
     }
+}
+
+/// Baseline security headers for every response (static app and API).
+///
+/// Headers a handler already set win, so attachment downloads keep their
+/// stricter sandbox CSP. The CSP leaves scripts/styles alone (the static
+/// Next.js export needs inline bootstrap scripts) but blocks plugins, `<base>`
+/// hijacking, cross-site form posts and framing by other sites; the email
+/// iframe uses `srcdoc`, so it inherits these restrictions too.
+async fn security_headers(
+    State(hsts): State<bool>,
+    req: axum::extract::Request,
+    next: middleware::Next,
+) -> Response {
+    let mut response = next.run(req).await;
+    let headers = response.headers_mut();
+    let defaults = [
+        (
+            header::CONTENT_SECURITY_POLICY,
+            "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'",
+        ),
+        (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        (header::X_FRAME_OPTIONS, "SAMEORIGIN"),
+        (header::REFERRER_POLICY, "no-referrer"),
+    ];
+    for (name, value) in defaults {
+        headers.entry(name).or_insert(HeaderValue::from_static(value));
+    }
+    if hsts {
+        headers
+            .entry(header::STRICT_TRANSPORT_SECURITY)
+            .or_insert(HeaderValue::from_static("max-age=31536000"));
+    }
+    response
 }
 
 /// Assembles all application routes into an Axum Router.
@@ -77,7 +194,7 @@ impl KeyExtractor for PeerIpKeyExtractorFallback {
 /// - `GET  /api/setup/apple.mobileconfig`      — Apple mail profile (public)
 /// - `POST /api/auth/login`                    — login (public, CSRF only)
 /// - `GET  /api/auth/session`                  — get session (auth_guard + CSRF)
-/// - `POST /api/auth/logout`                   — logout (auth_guard + CSRF)
+/// - `POST /api/auth/logout`                   — logout (CSRF; validates cookies itself)
 /// - `GET  /api/account/unread`                — Inbox unread count (auth_guard + CSRF)
 /// - `GET  /api/folders`                       — list folders (auth_guard + CSRF)
 /// - `GET  /api/folders/:folder/messages`      — list messages (auth_guard + CSRF)
@@ -106,11 +223,25 @@ pub fn create_router(
 ) -> Router {
     // Rate-limit login: replenish 1 token every 12 s, burst of 5.
     let governor_conf = GovernorConfigBuilder::default()
-        .key_extractor(PeerIpKeyExtractorFallback)
+        .key_extractor(ClientIpKeyExtractor {
+            trusted_proxies: Arc::new(parse_trusted_proxies(config.trusted_proxies.as_deref())),
+        })
         .period(Duration::from_secs(12))
         .burst_size(5)
         .finish()
         .expect("valid governor config");
+
+    // Drop idle per-IP buckets so the limiter's memory doesn't grow forever.
+    if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+        let limiter = governor_conf.limiter().clone();
+        runtime.spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            loop {
+                interval.tick().await;
+                limiter.retain_recent();
+            }
+        });
+    }
 
     // Public auth route: GovernorLayer (outermost) -> CSRF -> handler.
     let public_auth = Router::new()
@@ -122,12 +253,14 @@ pub fn create_router(
     // Handlers validate the browser cookie and each account's session token.
     let browser_routes = Router::new()
         .route("/accounts", get(auth::list_accounts))
-        .route("/accounts/{id}", delete(auth::remove_account).layer(middleware::from_fn(csrf_protection)));
+        .route("/accounts/{id}", delete(auth::remove_account).layer(middleware::from_fn(csrf_protection)))
+        // Logout validates every session cookie itself, so it must not depend on
+        // the active account still being valid (that would leave others signed in).
+        .route("/logout", post(auth::logout).layer(middleware::from_fn(csrf_protection)));
 
     // Protected auth routes (auth_guard + CSRF).
     let protected_auth = Router::new()
         .route("/session", get(auth::get_session))
-        .route("/logout", post(auth::logout))
         .layer(middleware::from_fn(auth_guard))
         .layer(middleware::from_fn(csrf_protection));
 
@@ -175,7 +308,9 @@ pub fn create_router(
         .route("/drafts/{id}", delete(drafts::delete_draft_handler))
         .route(
             "/drafts/{draft_id}/attachments",
-            post(attachments::upload_attachment),
+            // axum's default 2 MB body limit would make the 25 MB attachment cap unreachable.
+            post(attachments::upload_attachment)
+                .layer(axum::extract::DefaultBodyLimit::max(attachments::MAX_UPLOAD_BODY)),
         )
         .route(
             "/drafts/{draft_id}/attachments/{attachment_id}",
@@ -334,6 +469,10 @@ pub fn create_router(
         .layer(Extension(imap_client))
         .layer(Extension(store))
         .layer(Extension(config.clone()))
+        .layer(middleware::from_fn_with_state(
+            config.environment != "development",
+            security_headers,
+        ))
         .layer(TraceLayer::new_for_http());
 
     if config.environment == "development" {

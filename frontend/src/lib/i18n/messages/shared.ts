@@ -80,6 +80,7 @@ export const sharedMessages: Record<string, string> = {
   "Account session has expired": "La session du compte a expiré",
   "Invalid or expired session": "La session est invalide ou a expiré",
   "Email and password are required": "L’adresse e-mail et le mot de passe sont obligatoires",
+  "Invalid email address": "Adresse e-mail invalide",
   "Invalid email or password": "Adresse e-mail ou mot de passe incorrect",
   "IMAP server not configured": "Le serveur IMAP n’est pas configuré",
   "SMTP server not configured": "Le serveur SMTP n’est pas configuré",

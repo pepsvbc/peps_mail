@@ -10,6 +10,25 @@ use crate::db;
 use crate::db::identities::{CreateIdentity, UpdateIdentity};
 use crate::error::AppError;
 
+/// Reject sender addresses the signed-in mailbox does not own.
+///
+/// Without this, any user could send mail "From" any address and rely on
+/// the SMTP server to catch it. `ALLOW_ANY_SENDER=true` lifts the check for
+/// servers that enforce sender ownership themselves.
+pub(crate) fn ensure_sender_allowed(
+    config: &AppConfig,
+    session: &SessionState,
+    email: &str,
+) -> Result<(), AppError> {
+    if config.allow_any_sender || email.trim().eq_ignore_ascii_case(session.email.trim()) {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            "Identities can only use the address you signed in with".to_string(),
+        ))
+    }
+}
+
 /// `GET /api/identities` — list all sender identities.
 pub async fn list_identities_handler(
     Extension(session): Extension<SessionState>,
@@ -51,6 +70,7 @@ pub async fn create_identity_handler(
     if data.email.trim().is_empty() {
         return Err(AppError::BadRequest("Email is required".to_string()));
     }
+    ensure_sender_allowed(&config, &session, &data.email)?;
 
     let conn = db::pool::open_user_db(&config.data_dir, &session.user_hash)
         .map_err(|e| AppError::InternalError(format!("Failed to open database: {e}")))?;
@@ -68,6 +88,9 @@ pub async fn update_identity_handler(
     Path(id): Path<i64>,
     Json(data): Json<UpdateIdentity>,
 ) -> Result<Response, AppError> {
+    if let Some(email) = &data.email {
+        ensure_sender_allowed(&config, &session, email)?;
+    }
     let conn = db::pool::open_user_db(&config.data_dir, &session.user_hash)
         .map_err(|e| AppError::InternalError(format!("Failed to open database: {e}")))?;
 
