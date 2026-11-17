@@ -1,4 +1,5 @@
 import { translate as t, getLocale } from "@/lib/i18n";
+import { escapeHtml } from "@/lib/email-html";
 
 /**
  * Email utility functions for reply, reply-all, and forward.
@@ -89,22 +90,24 @@ export function buildReferences(
 
 /**
  * Build a quoted reply body in HTML from the original HTML content.
+ * `html` must already be sanitized (see sanitizeQuotedHtml); header fields are escaped here.
  */
 export function buildReplyBodyHtml(
   html: string,
   from: string,
   date: string,
 ): string {
-  const formattedDate = formatQuoteDate(date);
+  const formattedDate = escapeHtml(formatQuoteDate(date));
   return [
     '<p><br></p>',
-    `<p>${t("On {date}, {sender} wrote:", { date: formattedDate, sender: from })}</p>`,
+    `<p>${t("On {date}, {sender} wrote:", { date: formattedDate, sender: escapeHtml(from) })}</p>`,
     `<blockquote style="margin:0 0 0 0.8ex;border-left:1px solid #ccc;padding-left:1ex">${html}</blockquote>`,
   ].join("");
 }
 
 /**
  * Build a forwarded message body in HTML from the original HTML content.
+ * `html` must already be sanitized (see sanitizeQuotedHtml); header fields are escaped here.
  */
 export function buildForwardBodyHtml(
   html: string,
@@ -113,14 +116,14 @@ export function buildForwardBodyHtml(
   subject: string,
   to: string,
 ): string {
-  const formattedDate = formatQuoteDate(date);
+  const formattedDate = escapeHtml(formatQuoteDate(date));
   return [
     '<p><br></p>',
     `<p>${t("---------- Forwarded message ----------")}</p>`,
-    `<p>${t("From: {sender}", { sender: from })}<br>`,
+    `<p>${t("From: {sender}", { sender: escapeHtml(from) })}<br>`,
     `${t("Date: {date}", { date: formattedDate })}<br>`,
-    `${t("Subject: {subject}", { subject })}<br>`,
-    `${t("To: {recipient}", { recipient: to })}</p>`,
+    `${t("Subject: {subject}", { subject: escapeHtml(subject) })}<br>`,
+    `${t("To: {recipient}", { recipient: escapeHtml(to) })}</p>`,
     '<hr>',
     html,
   ].join("");

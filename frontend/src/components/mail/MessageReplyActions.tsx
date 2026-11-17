@@ -19,6 +19,7 @@ import {
   buildForwardBodyHtml,
   buildReferences,
 } from "@/lib/email-utils";
+import { sanitizeQuotedHtml } from "@/lib/email-html";
 import type { EmailAddress } from "@/types/message";
 import { useIdentities } from "@/hooks/useIdentities";
 import type { Identity } from "@/types/identity";
@@ -45,7 +46,14 @@ function formatAddressList(addresses: EmailAddress[]): string {
     .join(", ");
 }
 
-export function MessageReplyActions({ labeled = false }: { labeled?: boolean }) {
+export function MessageReplyActions({
+  labeled = false,
+  remoteContentAllowed = false,
+}: {
+  labeled?: boolean;
+  /** Whether the user allowed remote content for this message; otherwise remote images are dropped from the quote. */
+  remoteContentAllowed?: boolean;
+}) {
   const { t } = useTranslation();
   const activeFolder = useUiStore((s) => s.activeFolder);
   const selectedMessageUid = useUiStore((s) => s.selectedMessageUid);
@@ -75,7 +83,7 @@ export function MessageReplyActions({ labeled = false }: { labeled?: boolean }) 
       sourceMessageKey: composeMessageKey(useAuthStore.getState().activeAccountId, activeFolder, selectedMessageUid),
       subject: buildReplySubject(data.subject),
       body: hasHtml
-        ? buildReplyBodyHtml(data.html!, data.from_address, data.date)
+        ? buildReplyBodyHtml(sanitizeQuotedHtml(data.html!, remoteContentAllowed), data.from_address, data.date)
         : buildReplyBody(data.text, data.from_address, data.date),
       inReplyTo: messageId,
       references: buildReferences(refs, messageId),
@@ -107,7 +115,7 @@ export function MessageReplyActions({ labeled = false }: { labeled?: boolean }) 
       sourceMessageKey: composeMessageKey(useAuthStore.getState().activeAccountId, activeFolder, selectedMessageUid),
       subject: buildReplySubject(data.subject),
       body: hasHtml
-        ? buildReplyBodyHtml(data.html!, data.from_address, data.date)
+        ? buildReplyBodyHtml(sanitizeQuotedHtml(data.html!, remoteContentAllowed), data.from_address, data.date)
         : buildReplyBody(data.text, data.from_address, data.date),
       inReplyTo: messageId,
       references: buildReferences(refs, messageId),
@@ -124,7 +132,7 @@ export function MessageReplyActions({ labeled = false }: { labeled?: boolean }) 
       sourceMessageKey: composeMessageKey(useAuthStore.getState().activeAccountId, activeFolder, selectedMessageUid),
       subject: buildForwardSubject(data.subject),
       body: hasHtml
-        ? buildForwardBodyHtml(data.html!, data.from_address, data.date, data.subject, toList)
+        ? buildForwardBodyHtml(sanitizeQuotedHtml(data.html!, remoteContentAllowed), data.from_address, data.date, data.subject, toList)
         : buildForwardBody(data.text, data.from_address, data.date, data.subject, toList),
       isHtml: hasHtml,
     });

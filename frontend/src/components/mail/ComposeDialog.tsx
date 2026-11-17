@@ -43,6 +43,7 @@ import {
 import { useComposeAccount } from "@/hooks/useComposeAccount";
 import { useIdentities } from "@/hooks/useIdentities";
 import { cn } from "@/lib/utils";
+import { escapeHtml } from "@/lib/email-html";
 import { useInlineComposeHost } from "@/stores/useInlineComposeHost";
 import { useUiStore } from "@/stores/useUiStore";
 import { useAuthStore } from "@/stores/useAuthStore";
@@ -724,10 +725,10 @@ function ComposeWindow({ store = defaultComposeStore, windowDock, leftTabDock, r
       // HTML → plain text: strip tags
       setField("body", stripHtml(body));
     } else {
-      // Plain text → HTML: wrap lines in <p> tags
+      // Plain text → HTML: wrap lines in <p> tags (escaped: quoted mail text is untrusted)
       const html = body
         .split("\n")
-        .map((line) => `<p>${line || "<br>"}</p>`)
+        .map((line) => `<p>${line ? escapeHtml(line) : "<br>"}</p>`)
         .join("");
       setField("body", html);
     }

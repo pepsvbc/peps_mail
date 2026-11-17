@@ -281,7 +281,7 @@ export function ReadingPane() {
 
       <div className="relative z-10 my-2 h-px shrink-0 bg-border">
         <div className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-background px-2">
-          <MessageReplyActions />
+          <MessageReplyActions remoteContentAllowed={remoteAllowed} />
         </div>
       </div>
 
@@ -373,7 +373,7 @@ export function ReadingPane() {
       </div>
       {!(expandedView && inlineComposerVisible) && (
         <div className="flex shrink-0 justify-start border-t border-border px-6 py-2">
-          <MessageReplyActions labeled />
+          <MessageReplyActions labeled remoteContentAllowed={remoteAllowed} />
         </div>
       )}
     </div>

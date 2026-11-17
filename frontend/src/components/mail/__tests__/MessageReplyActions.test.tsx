@@ -72,3 +72,19 @@ it("keeps reply actions out of the top toolbar", () => {
   expect(screen.queryByRole("button", { name: "Reply all" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Forward" })).toBeNull();
 });
+
+it("drops remote images from the quoted HTML unless remote content was allowed", () => {
+  message.data!.html = '<p>Hello</p><img src="https://tracker.example/p.gif" alt="Logo"><img src="data:image/png;base64,AAAA">';
+  const { unmount } = render(<MessageReplyActions labeled />);
+  fireEvent.click(screen.getByRole("button", { name: "Reply" }));
+  const blocked = useComposeStore.getState().body;
+  expect(blocked).not.toContain("tracker.example");
+  expect(blocked).toContain("Logo");
+  expect(blocked).toContain("data:image/png;base64,AAAA");
+  unmount();
+
+  useComposeStore.getState().reset();
+  render(<MessageReplyActions labeled remoteContentAllowed />);
+  fireEvent.click(screen.getByRole("button", { name: "Forward" }));
+  expect(useComposeStore.getState().body).toContain("https://tracker.example/p.gif");
+});

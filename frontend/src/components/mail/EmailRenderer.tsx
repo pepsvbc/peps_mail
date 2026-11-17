@@ -4,6 +4,16 @@ import { translate as t, useTranslation } from "@/lib/i18n";
 
 import { useRef, useCallback, useEffect, useState, useMemo } from "react";
 import { useUiStore } from "@/stores/useUiStore";
+import {
+  XHTML_NS,
+  documentHasRemoteResources,
+  escapeStyleText,
+  isSafeCssColor,
+  isSafeLinkHref,
+  parseEmailHtml,
+  sanitizeEmailDocument,
+  stripRemoteResources,
+} from "@/lib/email-html";
 
 interface EmailRendererProps {
   autoHeight?: boolean;
@@ -14,52 +24,215 @@ interface EmailRendererProps {
   emailTheme?: 'light' | 'dark' | 'transparent' | 'adaptive';
 }
 
+const WHITE_COLOR_RE = /^(#fff(fff)?|white)$/i;
+
+/** CSS color-scheme declarations, but not `prefers-color-scheme` inside @media queries. */
+const COLOR_SCHEME_DECLARATION_RE = /(?<![-])(?:supported-)?color-schemes?\s*:[^;}"']+[;]?/gi;
+
 /**
- * Strip remote resource URLs from HTML, keeping data: and cid: URIs intact.
- * Returns the cleaned HTML and whether any remote resources were found.
+ * Content-Security-Policy for the email iframe. It is the real remote-content
+ * block: attribute stripping is only cosmetic, while the CSP also covers CSS
+ * imports, fonts, media and anything the stripping does not know about.
+ * Inline images are served as data: URIs (the backend rewrites cid: URLs).
  */
-function stripRemoteResources(html: string): { cleaned: string; hasRemote: boolean } {
-  let hasRemote = false;
-
-  // Strip remote src attributes on img tags (keep data: and cid:)
-  let cleaned = html.replace(
-    /(<img\b[^>]*?\bsrc\s*=\s*)(["'])((?:https?:\/\/)[^"']*?)\2/gi,
-    (_match, prefix, quote, _url) => {
-      hasRemote = true;
-      return `${prefix}${quote}${quote} data-blocked-src=${quote}${_url}${quote}`;
-    },
-  );
-
-  // Strip remote srcset attributes
-  cleaned = cleaned.replace(
-    /(<img\b[^>]*?\bsrcset\s*=\s*)(["'])([^"']*?)\2/gi,
-    (match, prefix, quote, value) => {
-      if (/https?:\/\//i.test(value)) {
-        hasRemote = true;
-        return `${prefix}${quote}${quote} data-blocked-srcset=${quote}${value}${quote}`;
-      }
-      return match;
-    },
-  );
-
-  // Strip remote background images in inline styles
-  cleaned = cleaned.replace(
-    /url\(\s*(["']?)(https?:\/\/[^)]*?)\1\s*\)/gi,
-    (_match, quote, url) => {
-      hasRemote = true;
-      return `url(${quote}${quote}) /* blocked: ${url} */`;
-    },
-  );
-
-  return { cleaned, hasRemote };
+function buildEmailCsp(allowRemote: boolean): string {
+  const remote = allowRemote ? " https: http:" : "";
+  return [
+    "default-src 'none'",
+    `img-src data: cid: blob:${remote}`,
+    `style-src 'unsafe-inline'${remote}`,
+    `font-src data:${remote}`,
+    `media-src data:${remote}`,
+    "frame-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+  ].join("; ");
 }
 
-/** Check if HTML contains any remote resource URLs (http/https). */
+let lastRemoteCheck: { html: string; result: boolean } | null = null;
+
+/** Check if HTML would load anything from a remote server (http/https or protocol-relative). */
 export function hasRemoteResources(html: string | null): boolean {
   if (!html) return false;
-  // Check for remote src, srcset, or background-image URLs
-  return /(?:src|srcset)\s*=\s*["']https?:\/\//i.test(html) ||
-    /url\(\s*["']?https?:\/\//i.test(html);
+  // Called on every ReadingPane render, so remember the last message's answer.
+  if (lastRemoteCheck?.html === html) return lastRemoteCheck.result;
+  const doc = parseEmailHtml(html);
+  sanitizeEmailDocument(doc);
+  const result = documentHasRemoteResources(doc);
+  lastRemoteCheck = { html, result };
+  return result;
+}
+
+/**
+ * Replace `@media (prefers-color-scheme: dark) { ... }` blocks in a stylesheet.
+ * Hand-rolled instead of a regex: nested-brace regexes backtrack catastrophically
+ * on crafted CSS.
+ */
+function replaceDarkMediaBlocks(css: string, replace: (innerCss: string) => string): string {
+  const lower = css.toLowerCase();
+  let out = "";
+  let pos = 0;
+  for (;;) {
+    const at = lower.indexOf("@media", pos);
+    if (at === -1) break;
+    const open = css.indexOf("{", at);
+    if (open === -1) break;
+    if (!/^\s*\([^)]*prefers-color-scheme\s*:\s*dark[^)]*\)/.test(lower.slice(at + 6, open))) {
+      out += css.slice(pos, open + 1);
+      pos = open + 1;
+      continue;
+    }
+    let depth = 1;
+    let end = open + 1;
+    for (; end < css.length && depth > 0; end++) {
+      if (css[end] === "{") depth++;
+      else if (css[end] === "}") depth--;
+    }
+    if (depth !== 0) break;
+    out += css.slice(pos, at) + replace(css.slice(open + 1, end - 1));
+    pos = end;
+  }
+  return out + css.slice(pos);
+}
+
+/**
+ * Sanitize the email and flatten it for embedding in our wrapper document:
+ * the email's own <html>/<head>/<body> are dropped (their content is kept) so
+ * the browser cannot create a second document root that bypasses the inversion
+ * filter, and so nothing in the email can precede our CSP <meta>.
+ */
+function processEmailHtml(
+  html: string,
+  blockRemoteResources: boolean,
+  adaptiveMode: "dark" | "light" | null,
+): { bodyHtml: string; emailBgColor: string | null; adaptiveDarkCSS: string } {
+  const doc = parseEmailHtml(html);
+  sanitizeEmailDocument(doc);
+  if (blockRemoteResources) stripRemoteResources(doc);
+
+  // Strip email's own CSS color-scheme declarations — we set our own in the wrapper.
+  // (The email's color-scheme <meta> tags are removed with all other <meta>s.)
+  for (const element of Array.from(doc.querySelectorAll("[style]"))) {
+    const style = element.getAttribute("style") ?? "";
+    const cleaned = style.replace(COLOR_SCHEME_DECLARATION_RE, "");
+    if (cleaned !== style) element.setAttribute("style", cleaned);
+  }
+
+  // For adaptive emails, we can't rely on @media(prefers-color-scheme:dark)
+  // because browsers evaluate it against OS preference, not the iframe's
+  // color-scheme meta tag. Instead:
+  // - In dark mode: extract rules from @media dark blocks and inject as unconditional CSS
+  // - In light mode: strip the blocks entirely so they don't fire from OS dark mode
+  const extractedRules: string[] = [];
+  for (const styleElement of Array.from(doc.querySelectorAll("style"))) {
+    const original = styleElement.textContent ?? "";
+    let css = original.replace(COLOR_SCHEME_DECLARATION_RE, "");
+    if (adaptiveMode === "dark") {
+      css = replaceDarkMediaBlocks(css, (innerCss) => {
+        extractedRules.push(innerCss.trim());
+        return "/* dark mode CSS extracted and applied unconditionally */";
+      });
+    } else if (adaptiveMode === "light") {
+      css = replaceDarkMediaBlocks(css, () => "/* dark mode CSS stripped for light mode */");
+    }
+    if (css !== original) styleElement.textContent = escapeStyleText(css);
+  }
+  const adaptiveDarkCSS = extractedRules.length > 0
+    ? `\n/* Adaptive dark mode CSS applied unconditionally */\n${escapeStyleText(extractedRules.join("\n"))}`
+    : "";
+
+  // Move the body's inline style and bgcolor to a wrapper div, and extract the
+  // email's background color for padding matching.
+  const body = doc.body;
+  let wrapperStyle = body?.getAttribute("style") ?? "";
+  const bodyBgAttr = body?.getAttribute("bgcolor")?.trim() || null;
+  if (bodyBgAttr && !wrapperStyle.includes("background")) {
+    wrapperStyle += (wrapperStyle ? "; " : "") + "background-color: " + bodyBgAttr;
+  }
+  let emailBgColor: string | null = null;
+  // Prefer background-color over background shorthand (which may have gradients).
+  const bgcMatch = wrapperStyle.match(/background-color\s*:\s*([^;!]+)/i);
+  const bgShorthandMatch = wrapperStyle.match(/background\s*:\s*([^;!]+)/i);
+  if (bgcMatch) {
+    emailBgColor = bgcMatch[1].trim();
+  } else if (bgShorthandMatch) {
+    // Extract a hex or rgb color from background shorthand (skip gradients)
+    const colorInShorthand = bgShorthandMatch[1].match(/(#[0-9a-fA-F]{3,8}|rgba?\([^()]*\))/);
+    if (colorInShorthand) {
+      emailBgColor = colorInShorthand[1];
+    }
+  } else if (bodyBgAttr) {
+    emailBgColor = bodyBgAttr;
+  }
+
+  // If body tag had a plain white background (#ffffff/white), the actual visible
+  // background is likely on the first wrapper table/td with a non-white bg.
+  // Prefer that for padding matching since white on body is often just a boilerplate reset.
+  const bodyBgIsWhite = emailBgColor && WHITE_COLOR_RE.test(emailBgColor);
+  if (bodyBgIsWhite || !emailBgColor) {
+    for (const cell of Array.from(body?.querySelectorAll("table, td") ?? [])) {
+      const styleBg = cell.getAttribute("style")?.match(/background(?:-color)?\s*:\s*([^;!"]+)/i);
+      const color = (styleBg?.[1] ?? cell.getAttribute("bgcolor") ?? "").trim();
+      if (color && !WHITE_COLOR_RE.test(color)) {
+        emailBgColor = color;
+        break;
+      }
+    }
+  }
+
+  // The color is interpolated into the wrapper's <style>, so anything that is
+  // not a plain color value (e.g. "red}</style>...") is dropped.
+  if (emailBgColor && !isSafeCssColor(emailBgColor)) emailBgColor = null;
+
+  let contentHtml = body?.innerHTML ?? "";
+  if (body && wrapperStyle) {
+    const wrapper = doc.createElement("div");
+    wrapper.setAttribute("style", wrapperStyle);
+    wrapper.append(...Array.from(body.childNodes));
+    contentHtml = wrapper.outerHTML;
+  }
+
+  // Keep the email's <head> content (mostly <style> blocks) ahead of its body.
+  return { bodyHtml: (doc.head?.innerHTML ?? "") + contentHtml, emailBgColor, adaptiveDarkCSS };
+}
+
+/**
+ * Click handler for the email document. Static sanitization already gives safe
+ * links target="_blank" and removes unsafe hrefs; this also covers hrefs that
+ * change after load (SVG) and fragment links, which in a srcdoc document would
+ * otherwise resolve against the app URL and load the app inside the iframe.
+ */
+function handleEmailLinkClick(event: MouseEvent) {
+  const link = (event.target as Element | null)?.closest?.("a, area");
+  if (!link) return;
+  const svgHref = (link as unknown as { href?: unknown }).href;
+  const href = typeof svgHref === "object" && svgHref !== null
+    ? (svgHref as SVGAnimatedString).animVal
+    : link.getAttribute("href");
+  if (!href) return;
+
+  if (href.trim().startsWith("#")) {
+    event.preventDefault();
+    let id = href.trim().slice(1);
+    try {
+      id = decodeURIComponent(id);
+    } catch {
+      // Keep the raw fragment
+    }
+    const doc = link.ownerDocument;
+    if (id) (doc.getElementById(id) ?? doc.getElementsByName(id)[0])?.scrollIntoView();
+    return;
+  }
+
+  if (!isSafeLinkHref(href)) {
+    event.preventDefault();
+    return;
+  }
+
+  if (link.namespaceURI !== XHTML_NS || link.getAttribute("target") !== "_blank") {
+    event.preventDefault();
+    window.open(href.trim(), "_blank", "noopener,noreferrer");
+  }
 }
 
 export function EmailRenderer({
@@ -119,6 +292,10 @@ export function EmailRenderer({
     try {
       const doc = iframe.contentDocument;
       const body = doc?.body;
+      if (doc) {
+        doc.addEventListener("click", handleEmailLinkClick, true);
+        doc.addEventListener("auxclick", handleEmailLinkClick, true);
+      }
       if (body) {
         // Use the container height as a minimum so email bg fills the pane
         const containerHeight = autoHeight ? 0 : iframe.parentElement?.clientHeight ?? 0;
@@ -162,102 +339,16 @@ export function EmailRenderer({
     }
   }, [autoHeight]);
 
-  // Memoize the heavy HTML processing — regex replacements, CSS generation, etc.
+  // Memoize the heavy HTML processing — DOM sanitization, CSS generation, etc.
   // This only re-runs when the actual inputs change, not on every render.
   const wrappedHtml = useMemo(() => {
     if (!html) return null;
 
-    const processedHtml = blockRemoteResources ? stripRemoteResources(html) : { cleaned: html, hasRemote: false };
-    const displayHtml = processedHtml.cleaned;
-
-    // Extract the email's own background color from body tag (for padding bg matching)
-    let emailBgColor: string | null = null;
-    
-    // Strip nested <html>, <head>, <body> tags from email but keep their content.
-    // This prevents the browser from creating a second document root that could
-    // bypass our inversion filter. We keep <style> tags from the email intact.
-    let cleanedHtml = displayHtml
-      .replace(/<html[^>]*>/gi, '')
-      .replace(/<\/html>/gi, '')
-      .replace(/<head[^>]*>/gi, '')
-      .replace(/<\/head>/gi, '')
-      // Strip email's own color-scheme meta tags — we set our own in the wrapper
-      .replace(/<meta[^>]*(?:color-scheme|supported-color-schemes)[^>]*>/gi, '')
-      // Strip email's own CSS color-scheme and supported-color-schemes declarations
-      // Use negative lookbehind to avoid matching 'prefers-color-scheme' inside @media queries
-      .replace(/(?<![-])(?:supported-)?color-schemes?\s*:[^;}"']+[;]?/gi, '')
-      .replace(/<body[^>]*>/gi, (match: string) => {
-        // Extract inline style from body tag and apply it to a wrapper div
-        const styleMatch = match.match(/style\s*=\s*"([^"]+)"/i) || match.match(/style\s*=\s*'([^']+)'/i);
-        const bgMatch = match.match(/bgcolor\s*=\s*["']([^"']+)["']/i);
-        let wrapperStyle = styleMatch ? styleMatch[1] : '';
-        if (bgMatch && !wrapperStyle.includes('background')) {
-          wrapperStyle += (wrapperStyle ? '; ' : '') + 'background-color: ' + bgMatch[1];
-        }
-        // Extract the background color for iframe padding matching.
-        // Prefer background-color over background shorthand (which may have gradients).
-        const bgcMatch = wrapperStyle.match(/background-color\s*:\s*([^;!]+)/i);
-        const bgShorthandMatch = wrapperStyle.match(/background\s*:\s*([^;!]+)/i);
-        if (bgcMatch) {
-          emailBgColor = bgcMatch[1].trim();
-        } else if (bgShorthandMatch) {
-          // Extract a hex or rgb color from background shorthand (skip gradients)
-          const colorInShorthand = bgShorthandMatch[1].match(/(#[0-9a-fA-F]{3,8}|rgb\([^)]+\)|rgba\([^)]+\))/);
-          if (colorInShorthand) {
-            emailBgColor = colorInShorthand[1];
-          }
-        } else if (bgMatch) {
-          emailBgColor = bgMatch[1].trim();
-        }
-        return wrapperStyle ? `<div style="${wrapperStyle}">` : '<div>';
-      })
-      .replace(/<\/body>/gi, '</div>');
-
-    // For adaptive emails, we can't rely on @media(prefers-color-scheme:dark)
-    // because browsers evaluate it against OS preference, not the iframe's
-    // color-scheme meta tag. Instead:
-    // - In dark mode: extract rules from @media dark blocks and inject as unconditional CSS
-    // - In light mode: strip the blocks entirely so they don't fire from OS dark mode
-    let adaptiveDarkCSS = '';
-    if (emailTheme === 'adaptive') {
-      const darkMediaRe = /@media\s*\([^)]*prefers-color-scheme\s*:\s*dark[^)]*\)\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/gi;
-      
-      if (isDark) {
-        // Extract inner CSS rules and collect them for unconditional injection
-        const extractedRules: string[] = [];
-        cleanedHtml = cleanedHtml.replace(darkMediaRe, (_match, innerCSS: string) => {
-          extractedRules.push(innerCSS.trim());
-          return '/* dark mode CSS extracted and applied unconditionally */';
-        });
-        if (extractedRules.length > 0) {
-          adaptiveDarkCSS = `\n/* Adaptive dark mode CSS applied unconditionally */\n${extractedRules.join('\n')}`;
-        }
-      } else {
-        cleanedHtml = cleanedHtml.replace(darkMediaRe,
-          '/* dark mode CSS stripped for light mode */'
-        );
-      }
-    }
-
-    // If body tag had a plain white background (#ffffff/white), the actual visible
-    // background is likely on the first wrapper table/td with a non-white bg.
-    // Prefer that for padding matching since white on body is often just a boilerplate reset.
-    const bodyBgIsWhite = emailBgColor && /^(#fff(fff)?|white)$/i.test(emailBgColor);
-
-    // Find the first non-white background from wrapper tables/tds
-    const wrapperBgRe = /<(?:table|td)\b[^>]*(?:style\s*=\s*"[^"]*background(?:-color)?\s*:\s*([^;!"]+)[^"]*"|bgcolor\s*=\s*["']([^"']+)["'])[^>]*>/gi;
-    let wrapperBgColor: string | null = null;
-    for (const wrapperMatch of cleanedHtml.matchAll(wrapperBgRe)) {
-      const color = (wrapperMatch[1] || wrapperMatch[2] || '').trim();
-      if (color && !/^(#fff(fff)?|white)$/i.test(color)) {
-        wrapperBgColor = color;
-        break;
-      }
-    }
-
-    if ((bodyBgIsWhite || !emailBgColor) && wrapperBgColor) {
-      emailBgColor = wrapperBgColor;
-    }
+    const { bodyHtml: cleanedHtml, emailBgColor, adaptiveDarkCSS } = processEmailHtml(
+      html,
+      blockRemoteResources,
+      emailTheme === 'adaptive' ? (isDark ? 'dark' : 'light') : null,
+    );
 
     // App theme colors (must match globals.css --background / --foreground)
     const appDarkBg = '#09090b';
@@ -312,8 +403,8 @@ export function EmailRenderer({
       // Fall back to app theme colors.
       if (isDark && adaptiveDarkCSS) {
         // Look for the first background color in the adaptive dark CSS rules
-        const darkBgMatch = adaptiveDarkCSS.match(/background(?:-color)?\s*:\s*(#[0-9a-fA-F]{3,8}|rgb\([^)]+\))/i);
-        iframeBg = darkBgMatch ? darkBgMatch[1].trim() : appDarkBg;
+        const darkBgMatch = adaptiveDarkCSS.match(/background(?:-color)?\s*:\s*(#[0-9a-fA-F]{3,8}|rgb\([^()]*\))/i);
+        iframeBg = darkBgMatch && isSafeCssColor(darkBgMatch[1]) ? darkBgMatch[1].trim() : appDarkBg;
       } else {
         iframeBg = isDark ? appDarkBg : appLightBg;
       }
@@ -349,6 +440,9 @@ export function EmailRenderer({
     return `<!DOCTYPE html>
 <html class="${shouldInvert ? 'invert' : ''}">
 <head>
+  <meta http-equiv="Content-Security-Policy" content="${buildEmailCsp(!blockRemoteResources)}" />
+  <meta name="referrer" content="no-referrer" />
+  <meta http-equiv="x-dns-prefetch-control" content="off" />
   <meta charset="utf-8" />
   <meta name="color-scheme" content="${iframeColorScheme}" />
   <style>
@@ -488,7 +582,10 @@ export function EmailRenderer({
          *   in handleIframeLoad breaks entirely.
          *
          * allow-popups / allow-popups-to-escape-sandbox — Lets mailto: and http(s)
-         *   links open in new tabs/windows as users expect.
+         *   links open in new tabs/windows as users expect. Sanitization keeps only
+         *   http(s)/mailto/fragment hrefs and marks links target="_blank"
+         *   rel="noopener noreferrer"; handleEmailLinkClick catches the rest, so
+         *   the iframe itself never navigates.
          *
          * RISK: allow-same-origin combined with allow-scripts would let embedded
          *   content access the parent page's cookies, localStorage, and DOM — a
