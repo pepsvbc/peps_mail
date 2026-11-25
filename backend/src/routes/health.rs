@@ -50,6 +50,7 @@ mod tests {
             trusted_proxies: None,
             allow_any_sender: false,
             allowed_email_domains: None,
+            login_default_domain: None,
             admin_emails: None,
         });
         let store = Arc::new(SessionStore::new(Duration::from_secs(3600)));

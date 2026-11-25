@@ -14,6 +14,7 @@ import {
   Keyboard,
   LogOut,
   Users,
+  Mails,
   Volleyball,
 } from "lucide-react";
 import { Tooltip } from "radix-ui";
@@ -26,6 +27,7 @@ import { useAuthStore } from "@/stores/useAuthStore";
 import { useAccountUnreadCounts } from "@/hooks/useAccountUnreadCounts";
 import { useUpdateDisplayPreferences } from "@/hooks/useDisplayPreferences";
 import { ConnectionStatus } from "@/components/shared/ConnectionStatus";
+import { useProviderAdminAccess } from "@/integrations/useProviderAdminAccess";
 import { useWsStatus } from "@/lib/ws-context";
 
 type NavButtonClickEvent = MouseEvent<Element>;
@@ -104,6 +106,7 @@ export function NavRail() {
   const setLanguage = useLanguageStore((state) => state.setLanguage);
   const { status: wsStatus, failCount: wsFailCount } = useWsStatus();
   const router = useRouter();
+  const canManageUsers = useProviderAdminAccess();
   const viewMode = useUiStore((s) => s.viewMode);
   const setViewMode = useUiStore((s) => s.setViewMode);
   const setActiveFolder = useUiStore((s) => s.setActiveFolder);
@@ -180,11 +183,17 @@ export function NavRail() {
             }}
           />
           <NavButton
-            icon={<Users className="size-5" />}
+            icon={<Mails className="size-5" />}
             label={t("Distribution lists")}
             active={viewMode === "lists"}
             onClick={() => setViewMode("lists")}
           />
+          {canManageUsers && <NavButton
+            icon={<Users className="size-5" />}
+            label={t("Users")}
+            active={viewMode === "users"}
+            onClick={() => setViewMode("users")}
+          />}
         </div>
 
         {/* Spacer */}

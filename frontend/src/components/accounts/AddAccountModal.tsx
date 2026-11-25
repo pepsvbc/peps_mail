@@ -16,6 +16,7 @@ import { useUiStore } from "@/stores/useUiStore";
 import type { UiState } from "@/stores/useUiStore";
 import { createFadeSlideVariants, createScaleFadeVariants } from "@/lib/motion/variants";
 import { AnimatedDiv } from "@/lib/motion/AnimatedDiv";
+import { useLoginOptions } from "@/hooks/useLoginOptions";
 
 interface AddAccountModalProps {
   open: boolean;
@@ -24,6 +25,7 @@ interface AddAccountModalProps {
 
 function AddAccountForm({ onClose }: Pick<AddAccountModalProps, "onClose">) {
   const { t } = useTranslation();
+  const defaultDomain = useLoginOptions().data?.default_domain;
   const setAccounts = useAuthStore((s) => s.setAccounts);
   const setActiveAccount = useAuthStore((s) => s.setActiveAccount);
   const queryClient = useQueryClient();
@@ -73,18 +75,22 @@ function AddAccountForm({ onClose }: Pick<AddAccountModalProps, "onClose">) {
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
-          <Label htmlFor="add-email">{t("Email")}</Label>
+          <Label htmlFor="add-email">{t(defaultDomain ? "Email or username" : "Email")}</Label>
           <Input
             ref={emailInputRef}
             id="add-email"
-            type="email"
-            placeholder={t("you@example.com")}
-            autoComplete="email"
+            type="text"
+            placeholder={defaultDomain ? t("name or name@{domain}", { domain: defaultDomain }) : t("you@example.com")}
+            autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
+            aria-describedby={defaultDomain ? "add-domain-hint" : undefined}
             required
             disabled={loading}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
+          {defaultDomain && <p id="add-domain-hint" className="text-xs text-muted-foreground">{t("You can leave out @{domain}.", { domain: defaultDomain })}</p>}
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="add-password">{t("Password")}</Label>

@@ -233,6 +233,14 @@ impl SessionStore {
         }
     }
 
+    /// Revoke every browser session for one mailbox after a credential change.
+    pub fn revoke_mailbox(&self, email: &str, host: &str) {
+        let accounts: Vec<_> = self.sessions.iter()
+            .filter(|s| s.email.eq_ignore_ascii_case(email) && s.imap_host.eq_ignore_ascii_case(host))
+            .map(|s| s.account_id.clone()).collect();
+        for account in accounts { self.remove_account(&account); }
+    }
+
     #[cfg(test)]
     pub fn remove_browser(&self, browser_id: &str) {
         if let Some((_, account_ids)) = self.browsers.remove(browser_id) {

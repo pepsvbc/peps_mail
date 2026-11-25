@@ -2,8 +2,10 @@
 
 import { useTranslation } from "@/lib/i18n";
 
-import { ArrowRight, Users } from "lucide-react";
+import { ArrowRight, Mails } from "lucide-react";
 import { useUiStore } from "@/stores/useUiStore";
+import { ProviderSettings } from "@/integrations/ProviderSettings";
+import { PasswordSettingsLink } from "@/integrations/franklymail/PasswordSettings";
 import { DisplaySettings } from "./DisplaySettings";
 import { IdentitySettings } from "./IdentitySettings";
 import { NotificationSettings } from "./NotificationSettings";
@@ -20,7 +22,7 @@ function DistributionListsLink() {
         onClick={() => setViewMode("lists")}
         className="flex w-full items-center gap-3 rounded-lg border border-border p-4 text-left transition-colors hover:bg-accent"
       >
-        <Users className="size-5 shrink-0 text-muted-foreground" />
+        <Mails className="size-5 shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium">{t("Open distribution lists")}</span>
           <span className="mt-0.5 block text-xs text-muted-foreground">
@@ -58,6 +60,7 @@ export function SettingsPanel() {
                 {t(label)}
               </button>
             ))}
+            <PasswordSettingsLink />
           </nav>
         </div>
       </div>
@@ -68,6 +71,7 @@ export function SettingsPanel() {
               <Component />
             </section>
           ))}
+          <ProviderSettings />
         </div>
       </div>
     </div>

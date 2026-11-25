@@ -1,4 +1,8 @@
 export const publicMessages: Record<string, string> = {
+  "Email or username": "E-mail ou nom d’utilisateur",
+  "name or name@{domain}": "nom ou nom@{domain}",
+  "You can leave out @{domain}.": "Vous pouvez omettre @{domain}.",
+  "Use your full email address to sign in": "Utilisez votre adresse e-mail complète pour vous connecter",
   "Sign in to Mail": "Connexion à la messagerie",
   "Email": "Adresse e-mail",
   "Password": "Mot de passe",

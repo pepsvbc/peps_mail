@@ -1,0 +1,12 @@
+Welcome!
+
+Your new mailbox is {{mailbox}}.
+Choose your own password using this one-time link within 15 minutes:
+
+{{link}}
+
+No password is included in this email. Once you have set your password,
+you can sign in to webmail or your preferred IMAP/SMTP client.
+
+If the link has expired, request a new password link on the sign-in page
+or contact your administrator. Never share this link.

@@ -8,6 +8,7 @@ mod auth;
 mod realtime;
 mod routes;
 mod search;
+mod integrations;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -73,7 +74,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let idle_manager = Arc::new(realtime::idle::IdleManager::new());
 
     // Build the application router with auth, session, and static file serving.
-    let app = routes::create_router(
+    let provider_config = integrations::franklymail::config::Config::load()
+        .map_err(|_| "Invalid FranklyMail environment configuration")?;
+    let provider_routes = integrations::franklymail::router(provider_config, &config)
+        .map_err(|e| e.to_string())?;
+    let app = routes::create_router_with_integrations(
         config.clone(),
         store,
         imap_client,
@@ -81,6 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         search_engine,
         event_bus,
         idle_manager,
+        provider_routes,
     );
 
     // Bind to the configured host and port.

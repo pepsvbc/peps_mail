@@ -13,11 +13,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LoginThemeToggle } from "@/components/shared/LoginThemeToggle";
 import { apiPost, fetchAccounts } from "@/lib/api";
+import { ProviderRecoveryLink } from "@/integrations/ProviderRecoveryLink";
 import { brand } from "@/lib/brand";
 import { useAuthStore } from "@/stores/useAuthStore";
+import { useLoginOptions } from "@/hooks/useLoginOptions";
 
 export default function Home() {
   const { t } = useTranslation();
+  const defaultDomain = useLoginOptions().data?.default_domain;
   const router = useRouter();
   const setAccounts = useAuthStore((s) => s.setAccounts);
   const setActiveAccount = useAuthStore((s) => s.setActiveAccount);
@@ -110,18 +113,22 @@ export default function Home() {
           )}
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="email">{t("Email")}</Label>
+              <Label htmlFor="email">{t(defaultDomain ? "Email or username" : "Email")}</Label>
               <Input
                 id="email"
-                type="email"
-                placeholder={t("you@example.com")}
-                autoComplete="email"
+                type="text"
+                placeholder={defaultDomain ? t("name or name@{domain}", { domain: defaultDomain }) : t("you@example.com")}
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
+                aria-describedby={defaultDomain ? "login-domain-hint" : undefined}
                 required
                 disabled={loading}
                 className="h-11 border-muted-foreground/80 bg-background text-foreground shadow-none dark:bg-background"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
+              {defaultDomain && <p id="login-domain-hint" className="text-xs text-muted-foreground">{t("You can leave out @{domain}.", { domain: defaultDomain })}</p>}
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="password">{t("Password")}</Label>
@@ -158,6 +165,7 @@ export default function Home() {
               {loading ? t("Signing in...") : t("Sign in")}
             </Button>
           </form>
+          <ProviderRecoveryLink />
           <Link
             href="/help"
             className="mt-6 flex min-h-11 items-center justify-center gap-2 rounded-md text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"

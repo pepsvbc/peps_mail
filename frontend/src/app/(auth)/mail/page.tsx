@@ -8,6 +8,7 @@ import { FolderTree } from "@/components/mail/FolderTree";
 import { MessageList } from "@/components/mail/MessageList";
 import { ReadingPane } from "@/components/mail/ReadingPane";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
+import { AdminPage } from "@/integrations/franklymail/AdminPage";
 import { DistributionListsPage } from "@/components/lists/DistributionListsPage";
 import { useUiStore } from "@/stores/useUiStore";
 import type { UiState } from "@/stores/useUiStore";
@@ -41,6 +42,8 @@ export default function MailPage() {
         <SettingsPanel />
       </div>
     );
+  } else if (viewMode === "users") {
+    viewContent = <div className="flex h-full min-h-0 w-full overflow-hidden"><AdminPage /></div>;
   } else if (viewMode === "lists") {
     viewContent = (
       <div className="flex h-full min-h-0 w-full overflow-hidden">

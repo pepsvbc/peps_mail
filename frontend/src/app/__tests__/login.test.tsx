@@ -3,14 +3,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "../page";
 import { AddAccountModal } from "@/components/accounts/AddAccountModal";
-import { apiPost, fetchAccounts } from "@/lib/api";
+import { apiGet, apiPost, fetchAccounts } from "@/lib/api";
 import { useAuthStore, type Account } from "@/stores/useAuthStore";
 import { useUiStore } from "@/stores/useUiStore";
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
-vi.mock("@/lib/api", () => ({ apiPost: vi.fn(), fetchAccounts: vi.fn() }));
+vi.mock("@/lib/api", () => ({ apiGet: vi.fn(), apiPost: vi.fn(), fetchAccounts: vi.fn() }));
 
 const existingAccount: Account = {
   id: "existing-account",
@@ -39,6 +39,7 @@ beforeEach(() => {
   useAuthStore.setState({ accounts: [], activeAccountId: null });
   useUiStore.setState({ effectiveAnimationMode: "off" });
   vi.mocked(fetchAccounts).mockResolvedValue({ accounts: [] });
+  vi.mocked(apiGet).mockResolvedValue({ franklymail: false, franklymail_recovery: false });
   vi.mocked(apiPost).mockResolvedValue({ account: newAccount });
 });
 
@@ -46,7 +47,7 @@ afterEach(cleanup);
 
 describe("sign in", () => {
   it.each([false, true])("sends only credentials and remember=%s, then activates the account", async (remember) => {
-    render(<Home />);
+    render(<QueryClientProvider client={new QueryClient()}><Home /></QueryClientProvider>);
     await screen.findByLabelText("Email");
     expect(screen.getByRole("link", { name: "Need help setting up your email?" }).getAttribute("href")).toBe("/help");
     expect(screen.queryByText(/server configuration/i)).toBeNull();
@@ -66,7 +67,7 @@ describe("sign in", () => {
 
   it("redirects an already signed-in browser to the mailbox", async () => {
     vi.mocked(fetchAccounts).mockResolvedValue({ accounts: [existingAccount] });
-    render(<Home />);
+    render(<QueryClientProvider client={new QueryClient()}><Home /></QueryClientProvider>);
 
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/mail"));
     expect(apiPost).not.toHaveBeenCalled();
@@ -75,7 +76,7 @@ describe("sign in", () => {
 
   it("shows rejected credentials and enables retry without navigating", async () => {
     vi.mocked(apiPost).mockRejectedValue(new Error("Invalid credentials"));
-    render(<Home />);
+    render(<QueryClientProvider client={new QueryClient()}><Home /></QueryClientProvider>);
     await screen.findByLabelText("Email");
     enterCredentials();
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
@@ -163,5 +164,26 @@ describe("adding another account", () => {
     expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("");
     expect((screen.getByLabelText("Keep me logged in") as HTMLInputElement).checked).toBe(false);
     expect(screen.queryByText("Invalid credentials")).toBeNull();
+  });
+});
+
+
+describe("short mailbox login", () => {
+  it.each([false, true])("accepts a short name with the server domain (add account=%s)", async (adding) => {
+    vi.mocked(apiGet).mockImplementation(async (path) => path === "/auth/options" ? { default_domain: "tnq.ch" } : { franklymail:false, franklymail_recovery:false });
+    if (adding) useAuthStore.setState({ accounts: [existingAccount], activeAccountId: existingAccount.id });
+    const account = { ...newAccount, email: "admin@tnq.ch" };
+    vi.mocked(apiPost).mockResolvedValue({ account });
+    render(<QueryClientProvider client={new QueryClient()}>{adding ? <AddAccountModal open onClose={vi.fn()} /> : <Home />}</QueryClientProvider>);
+    const identifier = await screen.findByLabelText("Email or username");
+    expect((identifier as HTMLInputElement).type).toBe("text");
+    expect(screen.getByText("You can leave out @tnq.ch.")).toBeTruthy();
+    vi.mocked(fetchAccounts).mockResolvedValue({ accounts: adding ? [existingAccount, account] : [account] });
+    fireEvent.change(identifier, { target: { value: "admin" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "test-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(apiPost).toHaveBeenCalledExactlyOnceWith("/auth/login", {email:"admin", password:"test-password", remember:false}));
+    await waitFor(() => expect(useAuthStore.getState().activeAccountId).toBe(account.id));
+    expect(useAuthStore.getState().accounts.find((a) => a.id === account.id)?.email).toBe("admin@tnq.ch");
   });
 });

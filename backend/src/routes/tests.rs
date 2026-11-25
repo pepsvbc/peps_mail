@@ -1,4 +1,5 @@
     mod account_unread;
+    mod franklymail;
     mod addresses;
     mod attachment_security;
     mod draft_paths;
@@ -41,6 +42,7 @@
             trusted_proxies: None,
             allow_any_sender: false,
             allowed_email_domains: None,
+            login_default_domain: None,
             admin_emails: None,
         })
     }
@@ -63,6 +65,7 @@
             trusted_proxies: None,
             allow_any_sender: false,
             allowed_email_domains: None,
+            login_default_domain: None,
             admin_emails: None,
         })
     }
@@ -85,6 +88,7 @@
             trusted_proxies: None,
             allow_any_sender: false,
             allowed_email_domains: None,
+            login_default_domain: None,
             admin_emails: None,
         })
     }

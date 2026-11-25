@@ -49,7 +49,7 @@ use crate::smtp::client::SmtpClient;
 
 /// An IP network such as `10.0.0.0/8`, or a single address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct IpNetwork {
+pub(crate) struct IpNetwork {
     addr: IpAddr,
     prefix: u8,
 }
@@ -81,7 +81,7 @@ impl IpNetwork {
 }
 
 /// Parse `TRUSTED_PROXIES` (comma-separated IPs/CIDRs), skipping invalid entries.
-fn parse_trusted_proxies(value: Option<&str>) -> Vec<IpNetwork> {
+pub(crate) fn parse_trusted_proxies(value: Option<&str>) -> Vec<IpNetwork> {
     value
         .unwrap_or_default()
         .split(',')
@@ -105,8 +105,8 @@ fn parse_trusted_proxies(value: Option<&str>) -> Vec<IpNetwork> {
 /// Falls back to loopback when `ConnectInfo` is missing (unit tests using
 /// `oneshot`); production uses `into_make_service_with_connect_info`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct ClientIpKeyExtractor {
-    trusted_proxies: Arc<Vec<IpNetwork>>,
+pub(crate) struct ClientIpKeyExtractor {
+    pub(crate) trusted_proxies: Arc<Vec<IpNetwork>>,
 }
 
 impl ClientIpKeyExtractor {
@@ -218,6 +218,7 @@ async fn security_headers(
 /// - tower-http tracing
 /// - CSRF protection on auth routes
 /// - auth_guard on protected routes
+#[cfg(test)]
 pub fn create_router(
     config: Arc<AppConfig>,
     store: Arc<SessionStore>,
@@ -226,6 +227,21 @@ pub fn create_router(
     search_engine: Arc<crate::search::engine::SearchEngine>,
     event_bus: Arc<EventBus>,
     idle_manager: Arc<IdleManager>,
+) -> Router {
+    create_router_with_integrations(config, store, imap_client, smtp_client, search_engine, event_bus, idle_manager, Router::new())
+}
+
+/// Integrations supply routes relative to /api; core mail remains provider independent.
+#[allow(clippy::too_many_arguments)]
+pub fn create_router_with_integrations(
+    config: Arc<AppConfig>,
+    store: Arc<SessionStore>,
+    imap_client: Arc<dyn ImapClient>,
+    smtp_client: Arc<dyn SmtpClient>,
+    search_engine: Arc<crate::search::engine::SearchEngine>,
+    event_bus: Arc<EventBus>,
+    idle_manager: Arc<IdleManager>,
+    integrations: Router,
 ) -> Router {
     // Rate-limit login: replenish 1 token every 12 s, burst of 5.
     let governor_conf = GovernorConfigBuilder::default()
@@ -271,6 +287,7 @@ pub fn create_router(
         .layer(middleware::from_fn(csrf_protection));
 
     let auth_router = Router::new()
+        .route("/options", get(auth::login_options))
         .merge(public_auth)
         .merge(browser_routes)
         .merge(protected_auth);
@@ -404,6 +421,7 @@ pub fn create_router(
         .nest("/auth", auth_router)
         .merge(ws_route)
         .merge(protected_data)
+        .merge(integrations)
         // Unknown API paths must not fall through to the SPA's index.html.
         .fallback(|| async {
             crate::error::AppError::NotFound("API endpoint not found".to_string())

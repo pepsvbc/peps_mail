@@ -230,6 +230,8 @@ vi.mock("@/stores/useAuthStore", () => ({
   ),
 }));
 
+vi.mock("@/hooks/useLoginOptions", () => ({ useLoginOptions: () => ({ data: { default_domain: null } }) }));
+
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ clear: vi.fn() }),
 }));

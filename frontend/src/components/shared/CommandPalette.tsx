@@ -19,7 +19,7 @@ import {
   Sun,
   Settings,
   Keyboard,
-  Users,
+  Mails,
 } from "lucide-react";
 import { useUiStore } from "@/stores/useUiStore";
 import { useComposeStore } from "@/stores/useComposeStore";
@@ -187,7 +187,7 @@ export function CommandPalette() {
                   {t("Go to Trash")}
                 </CommandItem>
                 <CommandItem
-                  icon={<Users className="size-4" />}
+                  icon={<Mails className="size-4" />}
                   onSelect={() =>
                     runAndClose(() => useUiStore.getState().setViewMode("lists"))
                   }

@@ -23,6 +23,31 @@ pub struct LoginRequest {
     pub remember: bool,
 }
 
+pub async fn login_options(
+    Extension(config): Extension<Arc<AppConfig>>,
+) -> Json<serde_json::Value> {
+    Json(serde_json::json!({"default_domain": config.login_domain()}))
+}
+
+fn resolve_login_email(value: &str, config: &AppConfig) -> Result<String, &'static str> {
+    let value = value.trim();
+    let email = if value.contains('@') {
+        value.to_string()
+    } else {
+        let domain = config
+            .login_domain()
+            .ok_or("Use your full email address to sign in")?;
+        format!("{value}@{domain}")
+    };
+    if email.len() > 320
+        || email.chars().any(char::is_whitespace)
+        || email.parse::<lettre::Address>().is_err()
+    {
+        return Err("Invalid email address");
+    }
+    Ok(email)
+}
+
 fn browser_cookie(browser_id: &str, max_age_secs: u64, secure: bool) -> String {
     let secure_flag = if secure { " Secure;" } else { "" };
     format!(
@@ -116,7 +141,7 @@ pub async fn login(
     Extension(store): Extension<Arc<SessionStore>>,
     Extension(config): Extension<Arc<AppConfig>>,
     headers: axum::http::HeaderMap,
-    Json(body): Json<LoginRequest>,
+    Json(mut body): Json<LoginRequest>,
 ) -> Response {
     // The email is sent to the IMAP server and used as the cache key, so
     // reject control characters (CR/LF could break the LOGIN command).
@@ -150,6 +175,12 @@ pub async fn login(
         )
             .into_response();
     }
+    body.email = match resolve_login_email(&body.email, &config) {
+        Ok(email) => email,
+        Err(message) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "error": {"code":"BAD_REQUEST", "message":message, "status":400}
+        }))).into_response(),
+    };
     // Checked before contacting the IMAP server, so other mailboxes on a shared
     // provider can't use this instance (or probe passwords through it).
     if !config.is_email_domain_allowed(&body.email) {
@@ -693,6 +724,11 @@ mod tests {
     // A real TCP IMAP peer makes the route tests exercise credential validation,
     // including which endpoint and transport the route actually chooses.
     async fn accepting_imap() -> (u16, tokio::task::JoinHandle<()>) {
+        accepting_imap_for(None).await
+    }
+
+    async fn accepting_imap_for(expected_email: Option<&str>) -> (u16, tokio::task::JoinHandle<()>) {
+        let expected_email = expected_email.map(str::to_owned);
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let handle = tokio::spawn(async move {
@@ -706,6 +742,7 @@ mod tests {
             let mut line = String::new();
             stream.read_line(&mut line).await.unwrap();
             assert!(line.contains(" LOGIN "), "expected an IMAP LOGIN command");
+            if let Some(email) = expected_email { assert!(line.contains(&email), "IMAP must receive the full address"); }
             let tag = line.split_whitespace().next().unwrap();
             stream
                 .get_mut()
@@ -751,6 +788,86 @@ mod tests {
             .next()
             .unwrap()
             .to_string()
+    }
+
+
+    #[tokio::test]
+    async fn short_and_full_logins_use_the_same_mailbox_and_cache() {
+        let data_dir = tempfile::tempdir().unwrap();
+        for identifier in ["admin", "admin@tnq.ch"] {
+            let mut config = test_config(&data_dir);
+            config.allowed_email_domains = Some("tnq.ch".into());
+            config.admin_emails = Some("admin@tnq.ch".into());
+            let (port, imap) = accepting_imap_for(Some("admin@tnq.ch")).await;
+            config.imap_port = port;
+            let store = test_store();
+            let (status, headers, json) = request(
+                test_router(store.clone(), config),
+                "POST",
+                "/login",
+                "",
+                serde_json::json!({"email":identifier,"password":"password"}),
+            )
+            .await;
+            assert_eq!(status, StatusCode::CREATED, "{json}");
+            assert_eq!(json["account"]["email"], "admin@tnq.ch");
+            let browser = response_cookie(&headers, BROWSER_COOKIE);
+            let accounts = store.get_browser_accounts(&browser);
+            assert_eq!(accounts[0].email, "admin@tnq.ch");
+            assert_eq!(accounts[0].user_hash, user_data::hash_email("admin@tnq.ch"));
+            imap.await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn short_login_cannot_add_an_already_signed_in_mailbox() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut config = test_config(&data_dir);
+        config.allowed_email_domains = Some("example.com".into());
+        let (port, imap) = accepting_imap_for(Some("member@example.com")).await;
+        config.imap_port = port;
+        let store = test_store();
+        let browser = store.create_browser();
+        let (token, account) = add_test_account(&store, &browser, "member@example.com");
+        let cookie = format!("peps_mail_browser={browser}; peps_mail_session_{account}={token}");
+        let (status, _, json) = request(
+            test_router(store.clone(), config),
+            "POST",
+            "/login",
+            &cookie,
+            serde_json::json!({"email":"member","password":"password"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{json}");
+        assert_eq!(json["error"]["code"], "DUPLICATE_ACCOUNT");
+        assert_eq!(store.get_browser_accounts(&browser).len(), 1);
+        imap.await.unwrap();
+    }
+
+    #[test]
+    fn login_names_require_an_unambiguous_configured_domain() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut config = test_config(&temp);
+        assert!(resolve_login_email("admin", &config).is_err());
+        config.allowed_email_domains = Some("tnq.ch,example.com".into());
+        assert!(resolve_login_email("admin", &config).is_err());
+        config.login_default_domain = Some("TNQ.CH".into());
+        assert_eq!(
+            resolve_login_email(" admin ", &config).unwrap(),
+            "admin@tnq.ch"
+        );
+        assert_eq!(
+            resolve_login_email("admin@example.com", &config).unwrap(),
+            "admin@example.com"
+        );
+        assert!(resolve_login_email("first last", &config).is_err());
+        config.login_default_domain = Some("outside.org".into());
+        assert!(resolve_login_email("admin", &config).is_err());
+        config.login_default_domain = Some("bad@tnq.ch".into());
+        assert!(config.login_domain().is_none());
+        config.login_default_domain = None;
+        config.allowed_email_domains = Some("TNQ.CH, tnq.ch,".into());
+        assert_eq!(config.login_domain().as_deref(), Some("tnq.ch"));
     }
 
     #[tokio::test]

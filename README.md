@@ -4,191 +4,86 @@
 
 # PEPS VBC Mail
 
-**The email client for PEPS VBC volleyball club.**
+**A self-hosted email client for PEPS VBC, built with React and Rust.**
 
-Built with React + Rust.\
-Connects to an existing IMAP/SMTP mail server.
+Connects to any existing IMAP/SMTP mail server.
 
 [![CI](https://github.com/pepsvbc/peps_mail/actions/workflows/ci.yml/badge.svg)](https://github.com/pepsvbc/peps_mail/actions/workflows/ci.yml)
 
-[Club website](https://pepsvbc.ch/) · [Original project](https://github.com/c0h1b4/oxi)
+[Club website](https://pepsvbc.ch/) · [Original project: oxi](https://github.com/c0h1b4/oxi)
 
 </div>
 
----
-
-## PEPS VBC customizations
-
-- Updates the theme, logo, app title, and icons to match PEPS VBC branding.
-- Restricts login to the configured mail servers and strengthens account and session checks.
-- Protects draft attachment paths and isolates potentially unsafe attachment content.
-- Keeps message display preferences and remote-image permissions separate for each account and message.
-- Adds English/French language selection and light/dark theme controls.
-- Shows unread inbox counts across accounts and supports docking or minimizing drafts.
-- Provides a public setup guide with iOS profiles and IMAP/SMTP instructions.
-
-Branding can be customized in these files:
-
-| Branding | Location |
-|----------|----------|
-| Club name, app title, description, and logo path | [`frontend/src/lib/brand.ts`](frontend/src/lib/brand.ts) |
-| Light and dark colour palettes | [`frontend/src/app/globals.css`](frontend/src/app/globals.css) |
-| Club logo | [`frontend/public/peps-vbc-logo.png`](frontend/public/peps-vbc-logo.png) |
-| Browser icons | [`frontend/src/app/icon.svg`](frontend/src/app/icon.svg), [`frontend/src/app/favicon.ico`](frontend/src/app/favicon.ico) |
-| Notification icon | [`frontend/public/notification-icon.svg`](frontend/public/notification-icon.svg) |
-
 ## Features
 
-- **Mail** — Read, compose, reply, forward, and manage emails with a rich text editor (Tiptap)
-- **Address Autocomplete** — Recipient suggestions from addresses seen in your mail (calendar and contacts stay with your mail provider)
-- **Distribution Lists** — Personal recipient lists, plus shared lists that admins create and share with chosen members
-- **Full-Text Search** — Instant local search powered by Tantivy
-- **Real-Time Updates** — WebSocket-driven live mailbox sync
-- **Security** — IMAP credential auth, session tokens with configurable timeout, rate limiting
-- **Fast** — Rust backend with per-user SQLite caching, static frontend served from the same binary
-- **Self-Hosted** — Single Docker image, connects to any IMAP/SMTP server
+- Multiple mailboxes, rich-text composing, attachments and full-text search.
+- Live updates, address autocomplete, personal and shared distribution lists.
+- English/French interface, light/dark themes and per-account preferences.
+- Phone and desktop setup instructions at `/help`, including Apple Mail profiles.
+- Optional FranklyMail administration for mailboxes, password recovery and server forwarding.
 
-## Tech Stack
+## Run with Docker
 
-| Layer | Technology |
-|-------|-----------|
-| **Frontend** | Next.js 16, React 19, Tailwind CSS 4, Shadcn/ui, Zustand, TanStack Query |
-| **Backend** | Rust, Axum, Tokio, async-imap, Lettre (SMTP) |
-| **Search** | Tantivy (Rust-native full-text search) |
-| **Database** | SQLite per user (local cache via rusqlite + Refinery migrations) |
-| **Editor** | Tiptap (rich text compose) |
-| **Deploy** | Docker (GHCR), single binary serves frontend + API |
-
-## Quick Start
-
-### Docker (recommended)
-
-Build the app using the included [`docker-compose.yml`](docker-compose.yml). From the repository root:
+From the repository root:
 
 ```bash
-# Create your local configuration if it does not already exist.
 [ -f .env ] || cp .env.example .env
-
-# Set your IMAP/SMTP hosts, ports, and TLS settings in .env, then:
+# Fill in .env before starting.
 docker compose up -d --build
 ```
 
-Or use our image with this `compose.yaml`:
+Configure these in your private `.env`:
 
-```yaml
-services:
-  app:
-    image: ghcr.io/pepsvbc/peps_mail:latest
-    container_name: peps-mail
-    restart: unless-stopped
-    ports:
-      - "3001:3001"
-    env_file:
-      - .env
-    volumes:
-      - ./data:/data
-```
+| Setting | Purpose |
+| --- | --- |
+| `IMAP_HOST`, `IMAP_PORT` | Incoming mail server |
+| `SMTP_HOST`, `SMTP_PORT` | Outgoing mail server |
+| `ALLOWED_EMAIL_DOMAINS` | Domains allowed to sign in, e.g. `pepsvbc.ch` |
+| `LOGIN_DEFAULT_DOMAIN` | Optional domain for short logins such as `admin`; defaults to the sole allowed domain |
+| `ADMIN_EMAILS` | Mailboxes allowed to manage shared lists and provider settings |
 
-Copy [`.env.example`](.env.example) to `.env` beside `compose.yaml` (download the example first if you are using the image without cloning this repository):
+See [`.env.example`](.env.example) for all options. Keep `.env` private; it is excluded from Git and Docker builds. On shared mail providers, set `ALLOWED_EMAIL_DOMAINS` to prevent other customers from signing in.
 
-```bash
-[ -f .env ] || cp .env.example .env
-```
+For production, put an HTTPS reverse proxy in front of port **3001**, preserve the `Host` header, and configure `TRUSTED_PROXIES`. The included Compose file binds to localhost by default. Users sign in with their mailbox credentials.
 
-Edit `.env` to set your IMAP/SMTP hostnames, ports, and TLS settings, then run `docker compose up -d`.
+Persistent data lives in `./data`; back it up. To update after pulling changes, rerun `docker compose up -d --build`.
 
-Then open [http://localhost:3001](http://localhost:3001) and log in with your email credentials.
+## FranklyMail integration
 
-The image example and included Compose file store SQLite databases and search indexes in `./data` on the host, mounted at `/data` in the container. Development uses the same folder. This folder is excluded from Git and Docker builds.
+This separate module is disabled by default. The standard mail client works without it.
 
-Our image and local builds include the PEPS VBC theme.
+1. Set `FRANKLYMAIL_ENABLED=true`, `FRANKLYMAIL_API_KEY` to a management key, and `FRANKLYMAIL_DOMAINS` to your managed domains.
+2. For welcome/reset emails, set `FRANKLYMAIL_PUBLIC_URL` to the app’s public HTTPS URL, plus `FRANKLYMAIL_MAIL_FROM`, `FRANKLYMAIL_SMTP_USERNAME` and `FRANKLYMAIL_SMTP_PASSWORD`. Use an existing no-reply or admin mailbox. The module reuses the shared IMAP/SMTP servers; keep `TLS_ENABLED=true`.
+3. Sign in with an address listed in `ADMIN_EMAILS` and open **Users** in the left bar (also linked from **Settings → Users**).
 
-### Local Development
+Admins can create a mailbox and register its owner’s personal email. The owner receives a one-time link to choose a password; links expire after **15 minutes**. Verify the personal address before entering it, since it grants password-reset access. Existing mailboxes can also receive reset links.
 
-```bash
-# From the repository root, build the frontend and backend.
-(cd frontend && bun install && bun run build)
-(cd backend && cargo build --release)
+Admins can delete a user from **Users → Manage user → Delete user**, after typing the address to confirm. FranklyMail takes the address out of service and retains its mail.
 
-# Export your local .env settings for direct backend execution.
-set -a
-. ./.env
-set +a
+Users can change their own password in **Settings → Change password** by confirming their current password. They must sign in again afterwards and update their other mail apps.
 
-# Run (serves frontend + API on port 3001)
-STATIC_DIR=frontend/out DATA_DIR=./data ./backend/target/release/peps-mail-server
-```
+Forwarding runs on **FranklyMail’s server**, so it continues when this app is offline. Existing server rules are preserved and may affect delivery; avoid editing rules in multiple clients at once. Run one app instance for this integration.
 
-## Configuration
-
-Keep actual mail-server settings in your local `.env`, which is ignored by Git. [`.env.example`](.env.example) is a generic, public template. Docker Compose reads `.env` for the variables referenced in `docker-compose.yml`; direct backend runs require environment variables exported into the shell.
-
-Set both `IMAP_HOST` and `SMTP_HOST`. On a shared mail provider, also set `ALLOWED_EMAIL_DOMAINS` (e.g. `pepsvbc.ch,pepsvolley.ch`). Otherwise any mailbox at that provider, including other customers', can sign in to your instance. Login and mailbox operations use the hosts, ports, and TLS settings configured on the server. Members enter their mailbox credentials; custom mail servers cannot be supplied by the browser. Multiple accounts on the configured provider remain supported.
-
-The sign-in page links to a public `/help/` guide for setting up phones and mail clients. The guide reads the configured hostnames, ports, and connection security from `GET /api/setup`; it requires no login. With mail servers configured and TLS enabled, `GET /api/setup/apple.mobileconfig` downloads an unsigned Apple Mail profile. iOS asks for the email address, usernames, and password during installation, so the download contains no credentials. Each download has unique profile identifiers to support separate mailboxes. Install from Safari, and remove unused profiles in iOS Settings.
-
-The interface supports English and Swiss French (`fr-CH`). The first visit follows the browser’s preferred supported language. EN/FR controls on sign-in and help remember the choice on this device; Settings → Display also saves it to the active account. An explicit device preference takes precedence across accounts, while a saved account preference supplies the language on a new browser. “Follow browser language” restores automatic selection. Migration V020 replaces the former English-only placeholder preference with this automatic default.
-
-Translations live in `frontend/src/lib/i18n/messages/`, grouped by feature. English source phrases are the English catalog and fallback; the dictionaries contain French translations. Use `useTranslation()` in components, and `translate()` for event callbacks or utilities. Interpolate complete phrases with named placeholders and provide separate singular/plural phrases. Format dates using the selected locale, and keep protocol identifiers, user-created folder names, and email content unchanged. The iOS profile download accepts `?lang=fr` for French descriptions.
-
-`ENVIRONMENT` defaults to `production`, which enables Secure cookies and HSTS. Set `ENVIRONMENT=development` only for local plain-HTTP testing (`dev.sh` does this and binds to `127.0.0.1`). The reverse proxy must preserve the public `Host` header for WebSocket origin validation, and should set `X-Forwarded-For`. List the proxy's address in `TRUSTED_PROXIES` so login rate limiting applies per client rather than to the proxy as a whole. Docker Compose publishes port 3001 on `127.0.0.1` only. If the proxy runs on another machine, set `PUBLISH_ADDRESS`. The container drops root privileges at start and takes ownership of the data directory for its `app` user (UID 10001).
-
-Sender identities may only use the signed-in mailbox address. Set `ALLOW_ANY_SENDER=true` only if your SMTP server itself rejects From addresses that the login does not own. Browser sessions use HttpOnly cookies; removing or expiring a session stops its live mail events. Sessions are held in memory and require signing in again after a server restart.
-
-Distribution lists are stored in `DATA_DIR/shared.sqlite`, which is shared by all users of the instance. Anyone can create personal lists, which only they can see. Only the addresses in `ADMIN_EMAILS` can share lists: a list is shared as soon as an admin adds people under "Share with", and becomes personal again when its owner removes everyone. For each person, the admin chooses "Can use" or "Can use and edit". The picker offers people who have signed in to this instance, and every address must be allowed by `ALLOWED_EMAIL_DOMAINS`. Only admins can delete shared lists. Admins see all shared lists, but not other people's personal lists.
-
-The following table lists backend defaults:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `HOST` | `0.0.0.0` | HTTP server bind address |
-| `PORT` | `3001` | HTTP server port |
-| `IMAP_HOST` | — | IMAP server hostname (**required**) |
-| `IMAP_PORT` | `993` | IMAP server port |
-| `SMTP_HOST` | — | SMTP server hostname (**required**) |
-| `SMTP_PORT` | `587` | SMTP server port |
-| `TLS_ENABLED` | `true` | Enable TLS for mail connections |
-| `DATA_DIR` | `/data` | Persistent data storage directory |
-| `SESSION_TIMEOUT_HOURS` | `24` | Session expiry in hours |
-| `STATIC_DIR` | `./static` | Frontend static files directory |
-| `ENVIRONMENT` | `production` | Runtime environment (`development` disables Secure cookies) |
-| `BASE_PATH` | — | Base path prefix for reverse proxy (e.g. `/mail`) |
-| `TRUSTED_PROXIES` | — | Comma-separated IPs/CIDRs whose `X-Forwarded-For` is trusted |
-| `ALLOW_ANY_SENDER` | `false` | Allow identities with any From address |
-| `ALLOWED_EMAIL_DOMAINS` | — | Comma-separated domains allowed to sign in (empty allows any mailbox the IMAP server accepts) |
-| `ADMIN_EMAILS` | — | Comma-separated admin addresses (manage shared distribution lists) |
-| `RUST_LOG` | `info` | Log level filter |
-
-## Architecture
-
-```mermaid
-graph LR
-    Browser["Browser\n(Next.js)"] -->|HTTP / WS| Backend["Rust Backend\n(Axum)"]
-    Backend -->|IMAP| IMAP["IMAP Server"]
-    Backend -->|SMTP| SMTP["SMTP Server"]
-    Backend --- SQLite["SQLite\n(cache)"]
-    Backend --- Tantivy["Tantivy\n(search)"]
-```
+Welcome/reset emails include styled HTML with a button and visible URL, plus plain text. Edit the [bundled templates](backend/src/integrations/franklymail/templates/), or mount custom files and set their `FRANKLYMAIL_*_TEMPLATE_PATH` options in `.env`. Keep `{{link}}` in each template; `{{mailbox}}` inserts the mailbox address.
 
 ## Development
 
+For local HTTP testing with Docker:
+
 ```bash
-# Run frontend dev server (hot reload)
-cd frontend && bun run dev
-
-# Run backend
-cd backend && cargo run
-
-# Run tests
-cd frontend && bunx vitest run
-cd backend && cargo test
-
-# Lint
-cd frontend && bun run lint
-cd backend && cargo clippy -- -D warnings
+./dev.sh
 ```
 
+Open **http://localhost:3001**. This uses your `.env` and `./data`; rerun the script after changes.
 
-## Credits
+For source development, use Node 22, Bun and Rust. Direct backend runs require configuration exported into the environment.
 
-Based on [oxi](https://github.com/c0h1b4/oxi).
+```bash
+# Frontend dependencies and checks
+(cd frontend && bun install && bun run lint && bun run test && bun run build)
+
+# Backend checks
+(cd backend && cargo test && cargo clippy -- -D warnings)
+```
+
+Branding: [name and logo](frontend/src/lib/brand.ts) · [colours](frontend/src/app/globals.css).

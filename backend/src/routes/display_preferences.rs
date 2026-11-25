@@ -79,6 +79,7 @@ mod tests {
             trusted_proxies: None,
             allow_any_sender: false,
             allowed_email_domains: None,
+            login_default_domain: None,
             admin_emails: None,
         })
     }

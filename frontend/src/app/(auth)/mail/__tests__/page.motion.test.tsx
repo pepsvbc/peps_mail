@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 const { mockUiState } = vi.hoisted(() => ({
   mockUiState: {
-    viewMode: "mail" as "mail" | "settings" | "lists",
+    viewMode: "mail" as "mail" | "settings" | "lists" | "users",
     effectiveAnimationMode: "medium" as "rich" | "medium" | "subtle" | "off",
   },
 }));
@@ -53,6 +53,8 @@ vi.mock("@/components/lists/DistributionListsPage", () => ({
   DistributionListsPage: vi.fn(() => <div data-testid="lists-page" />),
 }));
 
+vi.mock("@/integrations/franklymail/AdminPage", () => ({ AdminPage: () => <div data-testid="users-page" /> }));
+
 vi.mock("@/components/settings/SettingsPanel", () => ({
   SettingsPanel: vi.fn(() => <div data-testid="settings-panel" />),
 }));
@@ -77,7 +79,7 @@ import MailPage from "../page";
 
 describe("Mail page motion transitions", () => {
   it("uses animated wrappers for all views in non-off modes", () => {
-    const views: Array<"mail" | "settings" | "lists"> = ["mail", "settings", "lists"];
+    const views: Array<"mail" | "settings" | "lists" | "users"> = ["mail", "settings", "lists", "users"];
     const modes: Array<"rich" | "medium" | "subtle"> = ["rich", "medium", "subtle"];
 
     for (const mode of modes) {
@@ -93,7 +95,7 @@ describe("Mail page motion transitions", () => {
   });
 
   it("uses a static non-animated path in off mode", () => {
-    const views: Array<"mail" | "settings" | "lists"> = ["mail", "settings", "lists"];
+    const views: Array<"mail" | "settings" | "lists" | "users"> = ["mail", "settings", "lists", "users"];
 
     mockUiState.effectiveAnimationMode = "off";
 

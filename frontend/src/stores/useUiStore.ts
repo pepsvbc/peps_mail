@@ -72,7 +72,7 @@ export interface UiState {
   theme: ThemeMode;
   searchQuery: string;
   searchActive: boolean;
-  viewMode: "mail" | "settings" | "lists";
+  viewMode: "mail" | "settings" | "lists" | "users";
   selectedMessageUids: number[];
   bulkSelectMode: boolean;
   activeTagId: string | null;
@@ -98,7 +98,7 @@ export interface UiState {
   setSearchQuery: (query: string) => void;
   setSearchActive: (active: boolean) => void;
   clearSearch: () => void;
-  setViewMode: (mode: "mail" | "settings" | "lists") => void;
+  setViewMode: (mode: "mail" | "settings" | "lists" | "users") => void;
   toggleBulkSelect: (uid: number) => void;
   selectAllMessages: (uids: number[]) => void;
   clearBulkSelection: () => void;

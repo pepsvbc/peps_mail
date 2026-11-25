@@ -1,3 +1,5 @@
+const providerAccess = vi.hoisted(() => ({ enabled: false }));
+vi.mock("@/integrations/useProviderAdminAccess", () => ({ useProviderAdminAccess: () => providerAccess.enabled }));
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountUnreadCount } from "@/hooks/useAccountUnreadCounts";
@@ -13,6 +15,7 @@ vi.mock("@/hooks/useDisplayPreferences", () => ({ useUpdateDisplayPreferences: (
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn() }) }));
 
 beforeEach(() => {
+  providerAccess.enabled = false;
   useAuthStore.setState({
     accounts: ["a1", "a2"].map((id) => ({ id, email: `${id}@example.com`, imapHost: "imap.example.com", smtpHost: "smtp.example.com" })),
     activeAccountId: "a1",
@@ -106,3 +109,14 @@ describe("Mail navigation unread total", () => {
     expect(screen.getByRole("button", { name: "Mail — 107 unread messages in all inboxes" }).textContent).toBe("99+");
   });
 });
+
+ it("shows Users only for an enabled administrator and opens the users view", () => {
+    const { rerender } = render(<NavRail />);
+    expect(screen.queryByRole("button", { name: "Users" })).toBeNull();
+    providerAccess.enabled = true;
+    rerender(<NavRail />);
+    fireEvent.click(screen.getByRole("button", { name: "Users" }));
+    expect(useUiStore.getState().viewMode).toBe("users");
+    expect(screen.getByRole("button", { name: "Users" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("button", { name: "Distribution lists" }).querySelector(".lucide-mails")).toBeTruthy();
+  });

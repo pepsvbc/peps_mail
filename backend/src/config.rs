@@ -75,6 +75,10 @@ pub struct AppConfig {
     #[serde(default)]
     pub allowed_email_domains: Option<String>,
 
+    /// Domain appended to short login names. Otherwise use the sole allowed domain.
+    #[serde(default)]
+    pub login_default_domain: Option<String>,
+
     /// Comma-separated admin email addresses (e.g. may manage shared lists).
     #[serde(default)]
     pub admin_emails: Option<String>,
@@ -126,15 +130,41 @@ fn default_environment() -> String {
 }
 
 impl AppConfig {
+    pub fn login_domain(&self) -> Option<String> {
+        let domain = match self
+            .login_default_domain
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            Some(domain) => domain.to_ascii_lowercase(),
+            None => {
+                let domains: std::collections::BTreeSet<_> =
+                    csv_items(self.allowed_email_domains.as_deref()).collect();
+                if domains.len() != 1 {
+                    return None;
+                }
+                domains.into_iter().next()?
+            }
+        };
+        let probe = format!("login@{domain}");
+        if domain.contains('@')
+            || domain.chars().any(char::is_whitespace)
+            || probe.parse::<lettre::Address>().is_err()
+            || !self.is_email_domain_allowed(&probe)
+        {
+            return None;
+        }
+        Some(domain)
+    }
+
     /// Load configuration by layering serde defaults with environment variables.
     ///
     /// Environment variables are read without a prefix and mapped directly to
     /// struct fields via case-insensitive matching (e.g. `IMAP_HOST` → `imap_host`).
     #[allow(clippy::result_large_err)]
     pub fn load() -> Result<Self, figment::Error> {
-        Figment::new()
-            .merge(Env::raw())
-            .extract()
+        Figment::new().merge(Env::raw()).extract()
     }
 
     /// Whether `email` may sign in under `ALLOWED_EMAIL_DOMAINS` (exact domain
