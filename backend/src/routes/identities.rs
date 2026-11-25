@@ -29,6 +29,32 @@ pub(crate) fn ensure_sender_allowed(
     }
 }
 
+/// Longest display name accepted for an identity, in characters.
+const MAX_DISPLAY_NAME_CHARS: usize = 100;
+
+/// Reject display names that could pass for a different sender.
+///
+/// The name is free text shown by recipients' mail clients, so a name such
+/// as `CEO <ceo@example.com>` would display as another address even though
+/// lettre quotes it correctly. Angle brackets, `@` and control characters
+/// have no place in a person's name.
+pub(crate) fn validate_display_name(name: &str) -> Result<(), AppError> {
+    if name.chars().count() > MAX_DISPLAY_NAME_CHARS {
+        return Err(AppError::BadRequest(format!(
+            "Display name must be {MAX_DISPLAY_NAME_CHARS} characters or fewer"
+        )));
+    }
+    if name
+        .chars()
+        .any(|c| matches!(c, '<' | '>' | '@') || c.is_control())
+    {
+        return Err(AppError::BadRequest(
+            "Display name cannot contain <, >, @ or control characters".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// `GET /api/identities` — list all sender identities.
 pub async fn list_identities_handler(
     Extension(session): Extension<SessionState>,
@@ -70,6 +96,7 @@ pub async fn create_identity_handler(
     if data.email.trim().is_empty() {
         return Err(AppError::BadRequest("Email is required".to_string()));
     }
+    validate_display_name(&data.display_name)?;
     ensure_sender_allowed(&config, &session, &data.email)?;
 
     let conn = db::pool::open_user_db(&config.data_dir, &session.user_hash)
@@ -88,6 +115,9 @@ pub async fn update_identity_handler(
     Path(id): Path<i64>,
     Json(data): Json<UpdateIdentity>,
 ) -> Result<Response, AppError> {
+    if let Some(name) = &data.display_name {
+        validate_display_name(name)?;
+    }
     if let Some(email) = &data.email {
         ensure_sender_allowed(&config, &session, email)?;
     }
@@ -117,5 +147,36 @@ pub async fn delete_identity_handler(
         Ok(Json(serde_json::json!({ "status": "deleted" })).into_response())
     } else {
         Err(AppError::NotFound("Identity not found".to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ordinary_display_names_are_accepted() {
+        for name in ["", "Alice Smith", "Zoë O'Brien-Müller", "Support (Acme)", "\"Al\" Capone"] {
+            assert!(validate_display_name(name).is_ok(), "{name:?}");
+        }
+    }
+
+    #[test]
+    fn spoofing_display_names_are_rejected() {
+        for name in [
+            "CEO <ceo@example.com>",
+            "ceo@example.com",
+            "Alice <",
+            "Alice >",
+            "Alice\r\nBcc: victim@example.com",
+            "Alice\u{7}",
+        ] {
+            assert!(
+                matches!(validate_display_name(name), Err(AppError::BadRequest(_))),
+                "{name:?} should be rejected"
+            );
+        }
+        assert!(validate_display_name(&"a".repeat(MAX_DISPLAY_NAME_CHARS)).is_ok());
+        assert!(validate_display_name(&"a".repeat(MAX_DISPLAY_NAME_CHARS + 1)).is_err());
     }
 }

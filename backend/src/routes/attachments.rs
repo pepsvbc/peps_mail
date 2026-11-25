@@ -21,7 +21,12 @@ const MAX_ATTACHMENT_SIZE: usize = 25 * 1024 * 1024;
 pub const MAX_UPLOAD_BODY: usize = MAX_ATTACHMENT_SIZE + 1024 * 1024;
 
 /// Per-user cap on stored draft attachments, so uploads can't fill the disk.
-const MAX_USER_ATTACHMENT_BYTES: i64 = 500 * 1024 * 1024;
+/// Applies to uploads and to attachments copied in by draft import.
+pub(crate) const MAX_USER_ATTACHMENT_BYTES: i64 = 500 * 1024 * 1024;
+
+/// Error shown when the per-user attachment quota is full.
+pub(crate) const ATTACHMENT_STORAGE_FULL: &str =
+    "Attachment storage is full. Send or delete some drafts first.";
 
 #[derive(Debug, Serialize)]
 struct UploadResponse {
@@ -69,7 +74,6 @@ pub async fn upload_attachment(
         .map_err(|e| AppError::InternalError(format!("Failed to create attachment dir: {e}")))?;
 
     let mut uploaded = Vec::new();
-    let mut stored_bytes = db::drafts::total_attachment_bytes(&conn).map_err(AppError::InternalError)?;
 
     while let Some(field) = multipart
         .next_field()
@@ -97,11 +101,14 @@ pub async fn upload_attachment(
             )));
         }
 
-        stored_bytes += data.len() as i64;
-        if stored_bytes > MAX_USER_ATTACHMENT_BYTES {
-            return Err(AppError::BadRequest(
-                "Attachment storage is full. Send or delete some drafts first.".to_string(),
-            ));
+        let size = data.len() as i64;
+
+        // Cheap early refusal so a full quota doesn't cost a disk write.
+        // Not authoritative: the atomic check happens when the row is added.
+        let stored_bytes =
+            db::drafts::total_attachment_bytes(&conn).map_err(AppError::InternalError)?;
+        if stored_bytes.saturating_add(size) > MAX_USER_ATTACHMENT_BYTES {
+            return Err(AppError::BadRequest(ATTACHMENT_STORAGE_FULL.to_string()));
         }
 
         let att_id = uuid::Uuid::new_v4().to_string();
@@ -111,9 +118,9 @@ pub async fn upload_attachment(
             .await
             .map_err(|e| AppError::InternalError(format!("Failed to write attachment: {e}")))?;
 
-        let size = data.len() as i64;
-
-        db::drafts::add_draft_attachment(
+        // Check the quota and record the file in one write transaction, so
+        // parallel uploads can't each pass against the same stale total.
+        let stored = db::drafts::add_draft_attachment_within_quota(
             &conn,
             &att_id,
             &draft_id,
@@ -121,8 +128,17 @@ pub async fn upload_attachment(
             &content_type,
             size,
             file_path.to_str().unwrap_or(""),
-        )
-        .map_err(AppError::InternalError)?;
+            MAX_USER_ATTACHMENT_BYTES,
+        );
+        if !matches!(stored, Ok(true)) {
+            // Never leave an unaccounted file on disk.
+            if let Err(e) = tokio::fs::remove_file(&file_path).await {
+                tracing::warn!(error = %e, "Failed to remove rejected attachment file");
+            }
+        }
+        if !stored.map_err(AppError::InternalError)? {
+            return Err(AppError::BadRequest(ATTACHMENT_STORAGE_FULL.to_string()));
+        }
 
         uploaded.push(UploadResponse {
             id: att_id,

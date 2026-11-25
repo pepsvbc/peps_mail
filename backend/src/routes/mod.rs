@@ -3,6 +3,7 @@ pub mod addresses;
 mod attachment_response;
 pub mod attachments;
 pub mod auth;
+mod csp;
 pub mod display_preferences;
 pub mod drafts;
 mod draft_import;
@@ -154,22 +155,23 @@ impl KeyExtractor for ClientIpKeyExtractor {
 /// Baseline security headers for every response (static app and API).
 ///
 /// Headers a handler already set win, so attachment downloads keep their
-/// stricter sandbox CSP. The CSP leaves scripts/styles alone (the static
-/// Next.js export needs inline bootstrap scripts) but blocks plugins, `<base>`
-/// hijacking, cross-site form posts and framing by other sites; the email
-/// iframe uses `srcdoc`, so it inherits these restrictions too.
+/// stricter sandbox CSP. The CSP only allows same-origin scripts and the
+/// static export's inline bootstrap scripts (by hash, see `csp.rs`), and blocks
+/// plugins, `<base>` hijacking, cross-site form posts and framing by other
+/// sites; the email iframe uses `srcdoc`, so it inherits these restrictions
+/// too. Styles, images, fonts and connections are deliberately not restricted
+/// here (the email iframe sets its own policy for remote content).
 async fn security_headers(
-    State(hsts): State<bool>,
+    State(security): State<csp::SecurityHeaders>,
     req: axum::extract::Request,
     next: middleware::Next,
 ) -> Response {
     let mut response = next.run(req).await;
     let headers = response.headers_mut();
+    headers
+        .entry(header::CONTENT_SECURITY_POLICY)
+        .or_insert(security.csp);
     let defaults = [
-        (
-            header::CONTENT_SECURITY_POLICY,
-            "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'",
-        ),
         (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
         (header::X_FRAME_OPTIONS, "SAMEORIGIN"),
         (header::REFERRER_POLICY, "no-referrer"),
@@ -177,12 +179,36 @@ async fn security_headers(
     for (name, value) in defaults {
         headers.entry(name).or_insert(HeaderValue::from_static(value));
     }
-    if hsts {
+    if security.hsts {
         headers
             .entry(header::STRICT_TRANSPORT_SECURITY)
             .or_insert(HeaderValue::from_static("max-age=31536000"));
     }
     response
+}
+
+/// Whether a percent-encoded path contains an encoded control character
+/// (`%00`–`%1F` or `%7F`). Folder names and ids never legitimately do, and a
+/// CR/LF that reached the mail server would split IMAP commands.
+fn has_encoded_control_char(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.windows(3).any(|w| {
+        w[0] == b'%'
+            && matches!(
+                (w[1].to_ascii_uppercase(), w[2].to_ascii_uppercase()),
+                (b'0' | b'1', b'0'..=b'9' | b'A'..=b'F') | (b'7', b'F')
+            )
+    })
+}
+
+/// Reject API requests whose path parameters would decode to control characters.
+async fn reject_control_chars_in_path(req: axum::extract::Request, next: middleware::Next) -> Response {
+    if has_encoded_control_char(req.uri().path()) {
+        return axum::response::IntoResponse::into_response(crate::error::AppError::BadRequest(
+            "Invalid characters in request path".to_string(),
+        ));
+    }
+    next.run(req).await
 }
 
 /// Assembles all application routes into an Axum Router.
@@ -425,7 +451,8 @@ pub fn create_router_with_integrations(
         // Unknown API paths must not fall through to the SPA's index.html.
         .fallback(|| async {
             crate::error::AppError::NotFound("API endpoint not found".to_string())
-        });
+        })
+        .layer(middleware::from_fn(reject_control_chars_in_path));
 
     let index_path = Path::new(&config.static_dir).join("index.html");
     let static_service = ServeDir::new(&config.static_dir).fallback(ServeFile::new(index_path));
@@ -449,7 +476,10 @@ pub fn create_router_with_integrations(
         .layer(Extension(store))
         .layer(Extension(config.clone()))
         .layer(middleware::from_fn_with_state(
-            config.environment != "development",
+            csp::SecurityHeaders::new(
+                config.environment != "development",
+                Path::new(&config.static_dir),
+            ),
             security_headers,
         ))
         .layer(TraceLayer::new_for_http());

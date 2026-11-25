@@ -1,11 +1,15 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
+
+use futures::FutureExt;
 
 use crate::config::AppConfig;
 use crate::db;
-use crate::email_theme;
-use crate::imap::client::{ImapClient, ImapCredentials};
+use crate::imap::client::{ImapClient, ImapCredentials, ImapError};
+use crate::realtime::credentials::CredentialSource;
 use crate::realtime::events::{EventBus, MailEvent};
+use crate::realtime::retry::{AfterAuthFailure, Backoff, TaskError, handle_auth_failure};
 use crate::search::engine::{IndexableMessage, SearchEngine};
 use crate::search::engine::UserIndex;
 
@@ -14,33 +18,118 @@ use crate::search::engine::UserIndex;
 /// for non-INBOX folders that don't have IDLE.
 const SYNC_INTERVAL_SECS: u64 = 30;
 
+/// Longest wait between sync attempts while the server keeps failing.
+const MAX_SYNC_BACKOFF: Duration = Duration::from_secs(15 * 60);
+
+/// Consecutive failed sync cycles after which the loop stops. It is
+/// restarted by the next WebSocket connection for the mailbox.
+const MAX_SYNC_FAILURES: u32 = 20;
+
+type SyncError = TaskError;
+
+#[cfg(test)]
+#[path = "sync_tests.rs"]
+mod tests;
+
 /// Run a periodic reconciliation loop for a user.
 ///
 /// Uses a 3-tier strategy per folder:
 /// 1. STATUS pre-check (cheap, no SELECT)
 /// 2. CONDSTORE incremental fetch (only changed flags)
 /// 3. Full fetch fallback (when CONDSTORE unavailable)
+///
+/// Credentials are looked up from `credentials` before every cycle, so a
+/// re-login is picked up. If the server rejects them the loop stops (and the
+/// clients are told to re-authenticate) instead of retrying a stale password;
+/// other failures back off exponentially and eventually stop the loop.
 pub async fn sync_loop(
     user_hash: String,
-    creds: ImapCredentials,
+    credentials: Arc<dyn CredentialSource>,
     config: Arc<AppConfig>,
     imap_client: Arc<dyn ImapClient>,
     event_bus: Arc<EventBus>,
     search_engine: Arc<SearchEngine>,
 ) {
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(SYNC_INTERVAL_SECS));
-    // Skip the first immediate tick — IDLE + initial list_messages handles that.
-    interval.tick().await;
+    let timing = SyncTiming {
+        interval: Duration::from_secs(SYNC_INTERVAL_SECS),
+        max_backoff: MAX_SYNC_BACKOFF,
+        max_failures: MAX_SYNC_FAILURES,
+    };
+    run_sync_loop(user_hash, credentials, config, imap_client, event_bus, search_engine, timing).await;
+}
+
+/// Scheduling parameters of the sync loop (shortened in tests).
+struct SyncTiming {
+    interval: Duration,
+    max_backoff: Duration,
+    max_failures: u32,
+}
+
+async fn run_sync_loop(
+    user_hash: String,
+    credentials: Arc<dyn CredentialSource>,
+    config: Arc<AppConfig>,
+    imap_client: Arc<dyn ImapClient>,
+    event_bus: Arc<EventBus>,
+    search_engine: Arc<SearchEngine>,
+    timing: SyncTiming,
+) {
+    let interval = timing.interval;
+    let mut backoff = Backoff::new(interval * 2, timing.max_backoff, timing.max_failures);
+    // Skip an immediate run — IDLE + initial list_messages handles that.
+    let mut delay = interval;
 
     loop {
-        interval.tick().await;
+        tokio::time::sleep(delay).await;
+        delay = interval;
 
-        if let Err(e) = run_sync(&user_hash, &creds, &config, imap_client.as_ref(), &event_bus, &search_engine).await {
-            tracing::warn!(
-                user = %creds.email,
-                error = %e,
-                "Periodic sync failed, will retry next interval"
-            );
+        let Some(creds) = credentials.current() else {
+            tracing::info!(user_hash = %user_hash, "No usable IMAP credentials; stopping periodic sync");
+            return;
+        };
+
+        // A panic while processing attacker-controlled mail must not kill
+        // the user's sync forever: treat it as a failed cycle.
+        let cycle = std::panic::AssertUnwindSafe(run_sync(
+            &user_hash,
+            &creds,
+            &config,
+            imap_client.as_ref(),
+            &event_bus,
+            &search_engine,
+        ))
+        .catch_unwind()
+        .await
+        .unwrap_or_else(|_| Err(SyncError::Failed("sync cycle panicked".to_string())));
+
+        match cycle {
+            Ok(()) => backoff.reset(),
+            Err(SyncError::Auth) => {
+                match handle_auth_failure(credentials.as_ref(), &creds, &event_bus, &user_hash, "sync").await {
+                    AfterAuthFailure::RetryWith => delay = Duration::ZERO,
+                    AfterAuthFailure::Stop => return,
+                }
+            }
+            Err(SyncError::Failed(e)) => match backoff.next_delay() {
+                Some(wait) => {
+                    tracing::warn!(
+                        user_hash = %user_hash,
+                        error = %e,
+                        failures = backoff.failures(),
+                        retry_in_secs = wait.as_secs(),
+                        "Periodic sync failed, backing off"
+                    );
+                    delay = wait;
+                }
+                None => {
+                    tracing::warn!(
+                        user_hash = %user_hash,
+                        error = %e,
+                        "Periodic sync keeps failing; stopping until the next connection"
+                    );
+                    return;
+                }
+            },
         }
     }
 }
@@ -52,7 +141,7 @@ async fn run_sync(
     imap_client: &dyn ImapClient,
     event_bus: &EventBus,
     search_engine: &SearchEngine,
-) -> Result<(), String> {
+) -> Result<(), SyncError> {
     // Collect folder metadata in a non-async block so `conn` is dropped before awaits.
     let folder_snapshots = {
         let conn = db::pool::open_user_db(&config.data_dir, user_hash)
@@ -77,6 +166,11 @@ async fn run_sync(
         // ── Tier 1: STATUS pre-check (no SELECT needed) ──────────────
         let status = match imap_client.folder_status_extended(creds, folder_name).await {
             Ok(s) => s,
+            // Every call is a fresh login: stop at the first rejection or
+            // outage instead of repeating it once per folder.
+            Err(e @ (ImapError::AuthenticationFailed | ImapError::ConnectionFailed(_))) => {
+                return Err(SyncError::from_imap("STATUS", e));
+            }
             Err(e) => {
                 tracing::debug!(
                     folder = %folder_name,
@@ -146,8 +240,10 @@ async fn run_sync(
     }
 
     // ── Deep index phase: fetch & index bodies if enabled ────────────
-    if let Err(e) = index_message_bodies(user_hash, creds, config, imap_client, search_engine).await {
-        tracing::debug!(error = %e, "Deep index phase skipped or failed");
+    match index_message_bodies(user_hash, creds, config, imap_client, search_engine).await {
+        Ok(()) => {}
+        Err(SyncError::Auth) => return Err(SyncError::Auth),
+        Err(e) => tracing::debug!(error = %e, "Deep index phase skipped or failed"),
     }
 
     Ok(())
@@ -164,7 +260,7 @@ async fn index_message_bodies(
     config: &AppConfig,
     imap_client: &dyn ImapClient,
     search_engine: &SearchEngine,
-) -> Result<(), String> {
+) -> Result<(), SyncError> {
     let unindexed = {
         let conn = db::pool::open_user_db(&config.data_dir, user_hash)
             .map_err(|e| format!("DB error: {e}"))?;
@@ -195,32 +291,32 @@ async fn index_message_bodies(
 
         let body = match imap_client.fetch_body(creds, folder, *uid).await {
             Ok(b) => b,
+            Err(e @ (ImapError::AuthenticationFailed | ImapError::ConnectionFailed(_))) => {
+                return Err(SyncError::from_imap("Deep index fetch", e));
+            }
             Err(e) => {
                 tracing::debug!(folder = %folder, uid = uid, error = %e, "Deep index: failed to fetch body");
                 continue;
             }
         };
 
-        // Cache the body in the DB.
+        // Cache the body in the DB, in the same shape get_message writes:
+        // attachment metadata only (never the raw bytes), cid-resolved HTML.
         {
             let conn = db::pool::open_user_db(&config.data_dir, user_hash)
                 .map_err(|e| format!("DB error: {e}"))?;
 
-            let att_json = serde_json::to_string(&body.attachments).ok();
-            let detected_theme = body.text_html
-                .as_ref()
-                .and_then(|h| email_theme::detect_email_theme(h))
-                .map(|t| t.as_i32());
+            let prepared = crate::routes::messages::prepare_body_for_cache(&body);
 
             db::messages::cache_message_body(
                 &conn,
                 folder,
                 *uid,
-                body.text_html.as_deref(),
+                prepared.html.as_deref(),
                 body.text_plain.as_deref(),
-                att_json.as_deref(),
+                prepared.attachments_json.as_deref(),
                 Some(&body.raw_headers),
-                detected_theme,
+                prepared.email_theme,
             )?;
         }
 
@@ -267,12 +363,13 @@ async fn sync_condstore(
     cached_modseq: u64,
     status: &crate::imap::types::FolderStatusExtended,
     event_bus: &EventBus,
-) -> Result<bool, String> {
+) -> Result<bool, SyncError> {
     let mut folder_changed = false;
 
     // Fetch only messages whose flags changed since our cached modseq.
     let (changed, new_modseq) = match imap_client.fetch_changed_flags(creds, folder_name, cached_modseq).await {
         Ok(result) => result,
+        Err(ImapError::AuthenticationFailed) => return Err(SyncError::Auth),
         Err(e) => {
             tracing::debug!(
                 folder = %folder_name,
@@ -307,7 +404,11 @@ async fn sync_condstore(
 
     if status.exists < cached_count {
         // Need to fetch all UIDs to find which ones were deleted.
-        if let Ok(imap_state) = imap_client.fetch_uids_and_flags(creds, folder_name).await {
+        let fetched = match imap_client.fetch_uids_and_flags(creds, folder_name).await {
+            Err(ImapError::AuthenticationFailed) => return Err(SyncError::Auth),
+            other => other,
+        };
+        if let Ok(imap_state) = fetched {
             let conn = db::pool::open_user_db(&config.data_dir, user_hash)
                 .map_err(|e| format!("DB error: {e}"))?;
             let imap_uids: HashSet<u32> = imap_state.iter().map(|(uid, _)| *uid).collect();
@@ -385,7 +486,7 @@ async fn sync_full(
     folder_name: &str,
     status: &crate::imap::types::FolderStatusExtended,
     event_bus: &EventBus,
-) -> Result<bool, String> {
+) -> Result<bool, SyncError> {
     let cached = {
         let conn = db::pool::open_user_db(&config.data_dir, user_hash)
             .map_err(|e| format!("DB error: {e}"))?;
@@ -404,6 +505,7 @@ async fn sync_full(
 
     let imap_state = match imap_client.fetch_uids_and_flags(creds, folder_name).await {
         Ok(state) => state,
+        Err(ImapError::AuthenticationFailed) => return Err(SyncError::Auth),
         Err(e) => {
             tracing::debug!(
                 folder = %folder_name,

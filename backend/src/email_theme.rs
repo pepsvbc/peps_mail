@@ -168,6 +168,17 @@ pub fn detect_email_theme(html: &str) -> Option<EmailTheme> {
     classify_by_luminance_groups(&backgrounds)
 }
 
+/// [`detect_email_theme`] for callers that must keep running no matter what
+/// the (attacker-controlled) HTML contains, such as the background sync loop.
+/// Detection is panic-free by design; this is defence in depth so that a
+/// future bug degrades to "no theme" instead of killing the caller's task.
+pub fn detect_email_theme_guarded(html: &str) -> Option<EmailTheme> {
+    std::panic::catch_unwind(|| detect_email_theme(html)).unwrap_or_else(|_| {
+        tracing::warn!("email theme detection panicked; treating theme as unknown");
+        None
+    })
+}
+
 /// Check if the HTML has a @media(prefers-color-scheme:dark) block that sets
 /// background colors, indicating the email handles dark mode natively.
 fn has_dark_mode_media_query(html: &str) -> bool {
@@ -543,16 +554,32 @@ fn extract_colors_from_style(tag_content: &str) -> Vec<ExtractedColor> {
 /// Returns 1.0 for 3/6-digit hex or if parsing fails.
 fn parse_hex_alpha(color: &str) -> f32 {
     let c = color.trim().to_lowercase();
-    if let Some(hex) = c.strip_prefix('#') {
+    if let Some(hex) = c.strip_prefix('#').and_then(ascii_hex) {
         if hex.len() == 8 {
-            return u8::from_str_radix(&hex[6..8], 16).unwrap_or(255) as f32 / 255.0;
+            return hex
+                .get(6..8)
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
+                .unwrap_or(255) as f32
+                / 255.0;
         }
         if hex.len() == 4 {
-            let digit = u8::from_str_radix(&hex[3..4], 16).unwrap_or(15);
+            let digit = hex
+                .get(3..4)
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
+                .unwrap_or(15);
             return (digit * 17) as f32 / 255.0;
         }
     }
     1.0
+}
+
+/// Return `hex` only when it is non-empty and made solely of ASCII hex digits.
+///
+/// Colour values come from untrusted email HTML (e.g. `bgcolor="#aéaaaa"`).
+/// Every byte-index slice on a hex string must go through this check first so
+/// a multi-byte character can never land inside a slice range and panic.
+fn ascii_hex(hex: &str) -> Option<&str> {
+    (!hex.is_empty() && hex.bytes().all(|b| b.is_ascii_hexdigit())).then_some(hex)
 }
 
 /// Parse an alpha string that may be a decimal (`0.5`) or percentage (`50%`).
@@ -577,6 +604,11 @@ fn is_transparent(color: &str) -> bool {
 fn normalize_color(color: &str) -> String {
     let c = color.trim().to_lowercase();
     if let Some(hex) = c.strip_prefix('#') {
+        // Anything that is not pure ASCII hex is not a hex colour; leave it
+        // as-is (parse_color will fall back to its safe default).
+        let Some(hex) = ascii_hex(hex) else {
+            return c;
+        };
         match hex.len() {
             3 => {
                 let mut chars = hex.chars();
@@ -585,10 +617,9 @@ fn normalize_color(color: &str) -> String {
                 let b = chars.next().unwrap_or('0');
                 format!("#{r}{r}{g}{g}{b}{b}")
             }
-            6 => c,
             8 => {
                 // 8-digit hex: strip alpha channel
-                format!("#{}", &hex[0..6])
+                format!("#{}", hex.get(0..6).unwrap_or(hex))
             }
             _ => c,
         }
@@ -612,15 +643,15 @@ fn parse_color(color: &str) -> (u8, u8, u8) {
         }
     }
 
-    if let Some(hex) = c.strip_prefix('#') {
-        let hex = hex.trim();
-        if hex.len() >= 6 {
-            return (
-                u8::from_str_radix(&hex[0..2], 16).unwrap_or(255),
-                u8::from_str_radix(&hex[2..4], 16).unwrap_or(255),
-                u8::from_str_radix(&hex[4..6], 16).unwrap_or(255),
-            );
-        }
+    if let Some(hex) = c.strip_prefix('#').map(str::trim).and_then(ascii_hex)
+        && hex.len() >= 6
+    {
+        let channel = |range: std::ops::Range<usize>| {
+            hex.get(range)
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
+                .unwrap_or(255)
+        };
+        return (channel(0..2), channel(2..4), channel(4..6));
     }
 
     if let Some(cap) = RGB_COLOR_RE.captures(&c) {
@@ -893,6 +924,41 @@ mod tests {
             (colors_rgba[0].element_weight - colors_rgb[0].element_weight).abs() < 0.01,
             "rgba with alpha=1.0 should have same weight as rgb"
         );
+    }
+
+    #[test]
+    fn test_non_ascii_bgcolor_does_not_panic() {
+        // Regression: byte slicing "#aéaaaa" at [0..2] split the 'é' and panicked.
+        for html in [
+            r##"<html><body bgcolor="#aéaaaa">x</body></html>"##,
+            r##"<html><body bgcolor="#éaaaaaaa">x</body></html>"##,
+            r##"<html><body bgcolor="#aaaaaé">x</body></html>"##,
+            r##"<html><body bgcolor="#ééé">x</body></html>"##,
+            r##"<html><body bgcolor="#a😀a">x</body></html>"##,
+            r##"<html><body bgcolor="#😀😀">x</body></html>"##,
+            r##"<html><body bgcolor="# éaaaaa">x</body></html>"##,
+            r##"<html><table bgcolor="#aaaaaaé"><tr><td bgcolor="#ñ">x</td></tr></table></html>"##,
+        ] {
+            let _ = detect_email_theme(html);
+        }
+    }
+
+    #[test]
+    fn test_color_helpers_are_panic_free_on_non_ascii() {
+        for value in [
+            "#aéaaaa", "#éa", "#aaaaaaé", "#a😀aaaa", "#😀", "#", "# ", "#ééééé", "#aaaaaaéa",
+        ] {
+            let _ = normalize_color(value);
+            let _ = parse_color(value);
+            let _ = parse_hex_alpha(value);
+            let _ = calculate_luminance(value);
+        }
+        // Non-hex input falls back to the safe default (white).
+        assert_eq!(parse_color("#aéaaaa"), (255, 255, 255));
+        // Valid hex still parses.
+        assert_eq!(parse_color("#102030"), (0x10, 0x20, 0x30));
+        assert_eq!(normalize_color("#AABBCCDD"), "#aabbcc");
+        assert_eq!(normalize_color("#abc"), "#aabbcc");
     }
 
     #[test]

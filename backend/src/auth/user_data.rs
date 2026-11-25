@@ -18,6 +18,28 @@ pub fn hash_email(email: &str) -> String {
     result.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// The per-user data key for a login address.
+///
+/// Mailbox addresses are case-insensitive, so the data directory is keyed by
+/// the lower-cased address: every spelling of one mailbox shares one cache,
+/// and deleting a mailbox can find its data. Directories created before this
+/// (keyed by the address exactly as typed) are moved over on first use.
+pub fn user_hash_for_login(data_dir: &str, email: &str) -> String {
+    let canonical = hash_email(&email.trim().to_ascii_lowercase());
+    let legacy = hash_email(email);
+    if legacy != canonical {
+        let old_dir = PathBuf::from(data_dir).join(&legacy);
+        let new_dir = PathBuf::from(data_dir).join(&canonical);
+        if old_dir.is_dir()
+            && !new_dir.exists()
+            && let Err(error) = fs::rename(&old_dir, &new_dir)
+        {
+            tracing::warn!(%error, "Could not move legacy user data directory");
+        }
+    }
+    canonical
+}
+
 /// Provision a per-user data directory under `data_dir`.
 ///
 /// Creates `{data_dir}/{user_hash}/` with a `tantivy/` subdirectory,
@@ -59,6 +81,31 @@ pub fn provision_user_data(data_dir: &str, user_hash: &str) -> Result<PathBuf, S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn login_hash_ignores_address_case() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path().to_str().unwrap();
+        assert_eq!(
+            user_hash_for_login(data_dir, "Alice@Example.com"),
+            user_hash_for_login(data_dir, "alice@example.com"),
+        );
+        assert_eq!(user_hash_for_login(data_dir, "alice@example.com"), hash_email("alice@example.com"));
+    }
+
+    #[test]
+    fn login_hash_moves_legacy_mixed_case_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path().to_str().unwrap();
+        let legacy = dir.path().join(hash_email("Alice@Example.com"));
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(legacy.join("db.sqlite"), b"cache").unwrap();
+
+        let hash = user_hash_for_login(data_dir, "Alice@Example.com");
+
+        assert!(!legacy.exists());
+        assert_eq!(fs::read(dir.path().join(hash).join("db.sqlite")).unwrap(), b"cache");
+    }
 
     #[test]
     fn hash_email_is_deterministic() {

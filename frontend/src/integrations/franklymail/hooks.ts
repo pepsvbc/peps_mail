@@ -7,6 +7,7 @@ import { translate } from "@/lib/i18n";
 import { toast } from "sonner";
 
 export const ROOT = "/integrations/franklymail";
+export interface Mailbox { id: string; address: string; protected?: boolean }
 export interface Forwarding { enabled: boolean; address: string; keep_copy: boolean }
 export interface Settings {
   forwarding: Forwarding;
@@ -14,6 +15,8 @@ export interface Settings {
   existing_rules: boolean;
   externally_managed: boolean;
   recovery_email: string | null;
+  /** Another FranklyMail administrator's mailbox: read-only here. */
+  protected?: boolean;
 }
 export function useProviderCapabilities() {
   return useQuery({
@@ -27,7 +30,7 @@ export function useProviderAccount() {
   const capabilities = useProviderCapabilities();
   return useQuery({
     queryKey: ["franklymail", account, "account"],
-    queryFn: () => apiGet<{ change_password: boolean }>(`${ROOT}/account`, { accountId: account! }),
+    queryFn: () => apiGet<{ change_password: boolean; admin?: boolean }>(`${ROOT}/account`, { accountId: account! }),
     enabled: !!account && capabilities.data?.franklymail === true,
     retry: false,
   });
@@ -36,7 +39,7 @@ export function useMailboxes() {
   const account = useAuthStore((s) => s.activeAccountId);
   return useQuery({
     queryKey: ["franklymail", account, "mailboxes"],
-    queryFn: () => apiGet<{ mailboxes: { id: string; address: string }[]; domains: string[]; recovery_enabled: boolean }>(`${ROOT}/mailboxes`, { accountId: account! }),
+    queryFn: () => apiGet<{ mailboxes: Mailbox[]; domains: string[]; recovery_enabled: boolean }>(`${ROOT}/mailboxes`, { accountId: account! }),
     retry: false, refetchOnWindowFocus: false,
   });
 }

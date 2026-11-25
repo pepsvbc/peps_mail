@@ -147,7 +147,8 @@ describe("EmailRenderer security", () => {
 
   it("detects remote content that the old patterns missed", () => {
     expect(hasRemoteResources("<img src=https://t.example/a.gif>")).toBe(true);
-    expect(hasRemoteResources('<link rel="stylesheet" href="//t.example/s.css">')).toBe(true);
+    // Remote stylesheets are never loaded (their URLs cannot be checked), so they do not count.
+    expect(hasRemoteResources('<link rel="stylesheet" href="//t.example/s.css">')).toBe(false);
     expect(hasRemoteResources('<style>@import "https://t.example/s.css";</style>')).toBe(true);
     expect(hasRemoteResources('<img src="data:image/png;base64,AAAA">')).toBe(false);
     expect(hasRemoteResources(null)).toBe(false);

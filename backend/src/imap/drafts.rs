@@ -3,7 +3,7 @@ use futures::StreamExt;
 use tokio::io::AsyncWriteExt;
 
 use super::{
-    connection::{connect, map_imap_error},
+    connection::{connect, map_imap_error, quote_mailbox, validate_mailbox},
     error::ImapError,
     types::{DraftSyncRequest, DraftSyncResult, ImapCredentials},
 };
@@ -14,6 +14,7 @@ pub(crate) async fn sync(
     creds: &ImapCredentials,
     request: &DraftSyncRequest,
 ) -> Result<DraftSyncResult, ImapError> {
+    validate_mailbox(&request.folder)?;
     let mut session = connect(creds).await?;
     let mailbox = session
         .select(&request.folder)
@@ -99,13 +100,10 @@ async fn append_with_uid(
     content: &[u8],
     validity: u32,
 ) -> Result<Option<u32>, ImapError> {
-    if folder.contains(['\r', '\n', '\0']) {
-        return Err(ImapError::ProtocolError("Invalid draft folder".into()));
-    }
-    let folder = folder.replace('\\', "\\\\").replace('"', "\\\"");
+    let folder = quote_mailbox(folder)?;
     let tag = session
         .run_command(format!(
-            "APPEND \"{folder}\" (\\Draft \\Seen) {{{}}}",
+            "APPEND {folder} (\\Draft \\Seen) {{{}}}",
             content.len()
         ))
         .await

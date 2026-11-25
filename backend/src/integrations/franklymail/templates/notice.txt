@@ -1,0 +1,6 @@
+{{message}}
+
+Mailbox: {{mailbox}}
+
+If you expected this change, no action is needed. If you did not, contact
+your administrator straight away.

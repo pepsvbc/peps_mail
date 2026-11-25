@@ -74,4 +74,6 @@ export const userMessages: Record<string, string> = {
   "Forwarding saved on FranklyMail": "Transfert enregistré sur FranklyMail",
   "Mailbox created and welcome email sent": "Boîte mail créée et e-mail de bienvenue envoyé",
   "Password link sent": "Lien de mot de passe envoyé",
+  "Only its owner can change another administrator's mailbox.": "Seul son propriétaire peut modifier la boîte mail d'un autre administrateur.",
+  "This is another administrator's mailbox. Only its owner can change its recovery address or forwarding.": "Cette boîte mail appartient à un autre administrateur. Seul son propriétaire peut modifier son adresse de récupération ou son transfert.",
 };

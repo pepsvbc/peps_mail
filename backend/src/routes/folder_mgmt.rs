@@ -64,6 +64,19 @@ fn validate_folder_name(name: &str) -> Result<(), AppError> {
             "Folder name contains invalid characters".to_string(),
         ));
     }
+    reject_control_chars(name)
+}
+
+/// Reject folder names carrying control characters. CR/LF in particular
+/// would let a caller inject IMAP commands (e.g. via a `%0D%0A` in the URL
+/// path of `PATCH /api/folders/{name}/subscribe`). Applies to existing
+/// folder names taken from the URL as well as to new names.
+fn reject_control_chars(name: &str) -> Result<(), AppError> {
+    if name.chars().any(char::is_control) {
+        return Err(AppError::BadRequest(
+            "Folder name contains invalid characters".to_string(),
+        ));
+    }
     Ok(())
 }
 
@@ -125,6 +138,7 @@ pub async fn rename_folder(
     Path(name): Path<String>,
     Json(body): Json<RenameFolderRequest>,
 ) -> Result<Response, AppError> {
+    reject_control_chars(&name)?;
     if is_system_folder(&name) {
         return Err(AppError::BadRequest(format!(
             "Cannot rename system folder '{name}'"
@@ -157,6 +171,7 @@ pub async fn delete_folder(
     Extension(imap_client): Extension<Arc<dyn ImapClient>>,
     Path(name): Path<String>,
 ) -> Result<Response, AppError> {
+    reject_control_chars(&name)?;
     if is_system_folder(&name) {
         return Err(AppError::BadRequest(format!(
             "Cannot delete system folder '{name}'"
@@ -188,6 +203,7 @@ pub async fn subscribe_folder(
     Path(name): Path<String>,
     Json(body): Json<SubscribeRequest>,
 ) -> Result<Response, AppError> {
+    reject_control_chars(&name)?;
     let creds = build_creds(&session, &config)?;
 
     imap_client
@@ -250,5 +266,76 @@ mod tests {
         assert!(validate_folder_name("test}folder").is_err());
         assert!(validate_folder_name("test*folder").is_err());
         assert!(validate_folder_name("test%folder").is_err());
+    }
+
+    #[test]
+    fn test_validate_folder_name_rejects_line_breaks() {
+        assert!(validate_folder_name("a\r\nA1 DELETE INBOX").is_err());
+        assert!(validate_folder_name("a\nb").is_err());
+        assert!(validate_folder_name("a\0b").is_err());
+    }
+
+    /// `PATCH /api/folders/{name}/subscribe` with `%0D%0A` in the path must
+    /// be refused before anything reaches the IMAP server.
+    #[tokio::test]
+    async fn path_folder_names_with_crlf_are_rejected_with_400() {
+        use crate::imap::client::mock::MockImapClient;
+        use axum::http::StatusCode;
+
+        let dir = tempfile::tempdir().unwrap();
+        let config: Arc<AppConfig> = Arc::new(
+            figment::Figment::new()
+                .merge(("data_dir", dir.path().to_str().unwrap()))
+                .merge(("imap_host", "imap.example.com"))
+                .extract()
+                .unwrap(),
+        );
+        let session = SessionState {
+            account_id: "account-a".into(),
+            email: "alice@example.com".into(),
+            password: "test".into(),
+            user_hash: "alice".into(),
+            imap_host: "imap.example.com".into(),
+            imap_port: 993,
+            imap_tls: true,
+            smtp_host: "smtp.example.com".into(),
+            smtp_port: 587,
+            smtp_tls: true,
+            last_accessed: std::time::Instant::now(),
+            timeout_override: None,
+        };
+        let imap: Arc<dyn ImapClient> = Arc::new(MockImapClient::new());
+        let evil = "Archive\r\nA1 DELETE INBOX".to_string();
+
+        let status = |r: Result<Response, AppError>| match r {
+            Ok(response) => response.status(),
+            Err(e) => e.into_response().status(),
+        };
+        let subscribe = subscribe_folder(
+            Extension(session.clone()),
+            Extension(config.clone()),
+            Extension(imap.clone()),
+            Path(evil.clone()),
+            Json(SubscribeRequest { subscribed: true }),
+        )
+        .await;
+        assert_eq!(status(subscribe), StatusCode::BAD_REQUEST);
+        let delete = delete_folder(
+            Extension(session.clone()),
+            Extension(config.clone()),
+            Extension(imap.clone()),
+            Path(evil.clone()),
+        )
+        .await;
+        assert_eq!(status(delete), StatusCode::BAD_REQUEST);
+        let rename = rename_folder(
+            Extension(session),
+            Extension(config),
+            Extension(imap),
+            Path(evil),
+            Json(RenameFolderRequest { new_name: "Safe".into() }),
+        )
+        .await;
+        assert_eq!(status(rename), StatusCode::BAD_REQUEST);
     }
 }

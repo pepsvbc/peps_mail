@@ -71,9 +71,75 @@ impl EmailTemplate {
     }
 }
 
+/// Security notices about administrator changes. Fixed wording, no links and
+/// no addresses other than the mailbox itself and, for forwarding, the target
+/// its owner needs to recognise.
+pub enum Notice<'a> {
+    RecoveryChanged,
+    ForwardingChanged { address: &'a str, keep_copy: bool },
+}
+
+pub struct RenderedNotice {
+    pub subject: &'static str,
+    pub text: String,
+    pub html: String,
+}
+
+impl Notice<'_> {
+    pub fn render(&self, mailbox: &str) -> RenderedNotice {
+        let (subject, message) = match self {
+            Notice::RecoveryChanged => (
+                "Your mailbox recovery address was changed",
+                "An administrator changed the personal email address that receives password reset links for this mailbox. Links already sent to the previous address no longer work.".to_string(),
+            ),
+            Notice::ForwardingChanged { address, keep_copy } => (
+                "Automatic forwarding was changed for your mailbox",
+                format!(
+                    "An administrator changed automatic forwarding for this mailbox. New incoming messages are now forwarded to {address}{}.",
+                    if *keep_copy {
+                        ", and a copy is kept in the mailbox"
+                    } else {
+                        " and are not kept in the mailbox"
+                    }
+                ),
+            ),
+        };
+        let text = include_str!("templates/notice.txt")
+            .replace("{{mailbox}}", mailbox)
+            .replace("{{message}}", &message);
+        let html = include_str!("templates/notice.html")
+            .replace("{{title}}", subject)
+            .replace("{{mailbox}}", &escape_html(mailbox))
+            .replace("{{message}}", &escape_html(&message));
+        RenderedNotice {
+            subject,
+            text,
+            html,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notices_are_escaped_and_contain_no_links() {
+        let rendered = Notice::ForwardingChanged {
+            address: "a&b@example.org",
+            keep_copy: false,
+        }
+        .render("me<x>@example.com");
+        assert!(rendered.text.contains("a&b@example.org"));
+        assert!(rendered.text.contains("not kept"));
+        assert!(rendered.html.contains("a&amp;b@example.org"));
+        assert!(rendered.html.contains("me&lt;x&gt;@example.com"));
+        assert!(!rendered.html.contains("{{"));
+        assert!(!rendered.html.contains("href"));
+        let recovery = Notice::RecoveryChanged.render("me@example.com");
+        assert!(recovery.text.contains("me@example.com"));
+        assert!(!recovery.text.contains("{{"));
+    }
 
     #[test]
     fn both_templates_have_a_button_visible_url_and_matching_plain_text() {

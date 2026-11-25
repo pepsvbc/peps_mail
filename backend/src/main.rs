@@ -20,8 +20,55 @@ use crate::auth::session::SessionStore;
 use crate::imap::client::RealImapClient;
 use crate::smtp::client::RealSmtpClient;
 
+/// Make everything the server creates from now on private to its own user:
+/// directories 0700 and files 0600. This covers SQLite databases and the
+/// `-wal`/`-shm` files SQLite creates on its own, per-user directories,
+/// draft attachments, search indexes and integration data, without having
+/// to chase every creation site.
+#[cfg(unix)]
+fn set_private_umask() {
+    // `mode_t` is 16 bits on macOS and FreeBSD and 32 bits elsewhere.
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
+    type ModeT = u16;
+    #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "freebsd")))]
+    type ModeT = u32;
+
+    // libc is not a direct dependency; umask(2) lives in the C library the
+    // Rust standard library already links against.
+    unsafe extern "C" {
+        fn umask(mask: ModeT) -> ModeT;
+    }
+    // SAFETY: umask(2) cannot fail and only swaps the process file mode
+    // creation mask; nothing in Rust relies on its previous value.
+    unsafe {
+        umask(0o077);
+    }
+}
+
+/// Files created before the umask was in place (older deployments) may be
+/// world-readable. Closing the top of the data directory to other users
+/// protects everything below it.
+#[cfg(unix)]
+fn restrict_data_dir(data_dir: &str) {
+    use std::os::unix::fs::PermissionsExt;
+
+    match std::fs::metadata(data_dir) {
+        Ok(meta) if meta.permissions().mode() & 0o077 != 0 => {
+            if let Err(error) =
+                std::fs::set_permissions(data_dir, std::fs::Permissions::from_mode(0o700))
+            {
+                tracing::warn!(%error, data_dir, "Could not restrict DATA_DIR permissions to 0700");
+            }
+        }
+        _ => {}
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(unix)]
+    set_private_umask();
+
     // Initialize structured JSON logging with env filter.
     // Default to INFO level; override with RUST_LOG env var.
     tracing_subscriber::registry()
@@ -31,6 +78,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load configuration via figment (serde defaults + env vars).
     let config = Arc::new(AppConfig::load()?);
+
+    #[cfg(unix)]
+    restrict_data_dir(&config.data_dir);
 
     if config.environment == "development" {
         tracing::warn!("ENVIRONMENT=development: cookies are not Secure and CORS is permissive; never use this behind a public URL");

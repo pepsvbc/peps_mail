@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use dashmap::{DashMap, mapref::entry::Entry};
 use futures::StreamExt;
@@ -8,7 +9,9 @@ use crate::config::AppConfig;
 use crate::imap::client::ImapCredentials;
 use crate::imap::connection::ImapStream;
 use crate::imap::parse::{decode_rfc2047, flag_to_string, has_attachments, imap_address_to_email};
+use crate::realtime::credentials::CredentialSource;
 use crate::realtime::events::{EventBus, MailEvent};
+use crate::realtime::retry::{AfterAuthFailure, Backoff, TaskError, handle_auth_failure};
 use crate::{db, imap};
 
 /// Manages long-lived IMAP IDLE connections, one per (user, folder) pair.
@@ -34,23 +37,34 @@ impl IdleManager {
 
     /// Start an IDLE task for a specific user + folder.
     /// Reuse an existing watcher and register this socket as a subscriber.
+    ///
+    /// The watcher looks up fresh credentials from `credentials` on every
+    /// (re)connect, so it follows re-logins instead of keeping the first
+    /// socket's password. A watcher that stopped (e.g. after the server
+    /// rejected the credentials) is restarted by the next subscriber.
     pub async fn start_idle(
         &self,
         user_hash: String,
         folder: String,
-        creds: ImapCredentials,
+        credentials: Arc<dyn CredentialSource>,
         event_bus: Arc<EventBus>,
         config: Arc<AppConfig>,
     ) {
         let key = (user_hash.clone(), folder.clone());
         self.acquire(key, move || tokio::spawn(async move {
-            idle_loop(&user_hash, &folder, &creds, &event_bus, &config).await;
+            idle_loop(&user_hash, &folder, credentials.as_ref(), &event_bus, &config).await;
         }));
     }
 
     fn acquire(&self, key: (String, String), start: impl FnOnce() -> JoinHandle<()>) {
         match self.tasks.entry(key) {
-            Entry::Occupied(mut entry) => entry.get_mut().subscribers += 1,
+            Entry::Occupied(mut entry) => {
+                let task = entry.get_mut();
+                task.subscribers += 1;
+                if task.handle.is_finished() {
+                    task.handle = start();
+                }
+            }
             Entry::Vacant(entry) => {
                 entry.insert(SharedIdleTask { handle: start(), subscribers: 1 });
             }
@@ -77,45 +91,104 @@ impl Default for IdleManager {
     }
 }
 
+/// First reconnect delay after an IDLE failure.
+const IDLE_INITIAL_BACKOFF: Duration = Duration::from_secs(5);
+/// Longest wait between IDLE reconnect attempts.
+const IDLE_MAX_BACKOFF: Duration = Duration::from_secs(10 * 60);
+/// Consecutive failed (re)connects after which the watcher stops. It is
+/// restarted by the next WebSocket connection for the mailbox.
+const IDLE_MAX_FAILURES: u32 = 15;
+/// A session that ran at least this long before failing counts as healthy:
+/// the backoff starts over instead of growing.
+const IDLE_STABLE_SESSION: Duration = Duration::from_secs(2 * 60);
+
 /// The inner IDLE loop with auto-reconnect and exponential backoff.
 ///
 /// This opens a dedicated IMAP connection, SELECTs the folder, and enters
 /// IDLE mode. When the server notifies of changes, it publishes an event
 /// to the EventBus and re-enters IDLE. If the connection drops, it
-/// reconnects with exponential backoff.
+/// reconnects with exponential backoff, using the current credentials.
 async fn idle_loop(
     user_hash: &str,
     folder: &str,
-    creds: &ImapCredentials,
+    credentials: &dyn CredentialSource,
     event_bus: &EventBus,
     config: &AppConfig,
 ) {
-    let mut backoff = std::time::Duration::from_secs(1);
-    let max_backoff = std::time::Duration::from_secs(60);
+    let backoff = Backoff::new(IDLE_INITIAL_BACKOFF, IDLE_MAX_BACKOFF, IDLE_MAX_FAILURES);
+    supervise(user_hash, folder, credentials, event_bus, backoff, IDLE_STABLE_SESSION, |creds| async move {
+        run_idle_session(user_hash, folder, &creds, event_bus, config).await
+    })
+    .await;
+}
 
+/// Reconnect policy around one long-running session attempt.
+///
+/// - `Ok(())` ends the loop.
+/// - [`TaskError::Auth`] marks the credentials rejected; the loop retries
+///   only if newer credentials exist, otherwise it tells the clients to
+///   re-authenticate and stops (no retry of a stale password).
+/// - Other errors back off exponentially; an attempt that ran for at least
+///   `stable_after` restarts the backoff. Too many consecutive failures
+///   stop the loop.
+async fn supervise<F, Fut>(
+    user_hash: &str,
+    folder: &str,
+    credentials: &dyn CredentialSource,
+    event_bus: &EventBus,
+    mut backoff: Backoff,
+    stable_after: Duration,
+    mut attempt: F,
+) where
+    F: FnMut(ImapCredentials) -> Fut,
+    Fut: std::future::Future<Output = Result<(), TaskError>>,
+{
     loop {
-        match run_idle_session(user_hash, folder, creds, event_bus, config).await {
+        let Some(creds) = credentials.current() else {
+            tracing::info!(user_hash = %user_hash, folder = %folder, "No usable IMAP credentials; stopping IDLE");
+            return;
+        };
+        let started = tokio::time::Instant::now();
+        let error = match attempt(creds.clone()).await {
             Ok(()) => {
                 // Session ended normally (shouldn't happen in practice).
                 tracing::info!(user_hash = %user_hash, folder = %folder, "IDLE session ended normally");
-                break;
+                return;
             }
-            Err(e) => {
-                tracing::warn!(
-                    user_hash = %user_hash,
-                    folder = %folder,
-                    error = %e,
-                    backoff_secs = backoff.as_secs(),
-                    "IDLE connection failed, will retry"
-                );
-                tokio::time::sleep(backoff).await;
-                backoff = (backoff * 2).min(max_backoff);
+            Err(TaskError::Auth) => {
+                match handle_auth_failure(credentials, &creds, event_bus, user_hash, "idle").await {
+                    AfterAuthFailure::RetryWith => continue,
+                    AfterAuthFailure::Stop => return,
+                }
             }
+            Err(TaskError::Failed(e)) => e,
+        };
+        if started.elapsed() >= stable_after {
+            backoff.reset();
         }
+        let Some(delay) = backoff.next_delay() else {
+            tracing::warn!(
+                user_hash = %user_hash,
+                folder = %folder,
+                error = %error,
+                "IDLE keeps failing; stopping until the next connection"
+            );
+            return;
+        };
+        tracing::warn!(
+            user_hash = %user_hash,
+            folder = %folder,
+            error = %error,
+            failures = backoff.failures(),
+            backoff_secs = delay.as_secs(),
+            "IDLE connection failed, will retry"
+        );
+        tokio::time::sleep(delay).await;
     }
 }
 
-/// Run a single IDLE session. Returns Err on connection/protocol errors.
+/// Run a single IDLE session. Returns Err on connection/protocol errors
+/// ([`TaskError::Auth`] if the login was rejected).
 ///
 /// The async-imap IDLE API follows an ownership pattern:
 /// `Session` → `.idle()` consumes session → `Handle` → `.init()` sends IDLE
@@ -126,12 +199,23 @@ async fn run_idle_session(
     creds: &ImapCredentials,
     event_bus: &EventBus,
     config: &AppConfig,
-) -> Result<(), String> {
-    use imap::client::connect;
-
-    let mut session = connect(creds)
+) -> Result<(), TaskError> {
+    let session = imap::client::connect(creds)
         .await
-        .map_err(|e| format!("IDLE connect failed: {e}"))?;
+        .map_err(|e| TaskError::from_imap("IDLE connect failed", e))?;
+    run_connected_idle_session(session, user_hash, folder, event_bus, config)
+        .await
+        .map_err(TaskError::Failed)
+}
+
+/// The part of an IDLE session after a successful login.
+async fn run_connected_idle_session(
+    mut session: async_imap::Session<ImapStream>,
+    user_hash: &str,
+    folder: &str,
+    event_bus: &EventBus,
+    config: &AppConfig,
+) -> Result<(), String> {
 
     {
         let conn = db::pool::open_user_db(&config.data_dir, user_hash)
@@ -851,5 +935,120 @@ mod shared_idle_tests {
         assert!(!manager.tasks.contains_key(&key));
         tokio::task::yield_now().await;
         assert!(watcher.is_finished());
+    }
+
+    #[tokio::test]
+    async fn a_stopped_watcher_is_restarted_by_the_next_subscriber() {
+        let manager = IdleManager::new();
+        let key = ("user".to_string(), "INBOX".to_string());
+        manager.acquire(key.clone(), || tokio::spawn(async {}));
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let mut restarted = false;
+        manager.acquire(key.clone(), || {
+            restarted = true;
+            tokio::spawn(std::future::pending())
+        });
+        assert!(restarted, "finished watcher must be replaced");
+        assert_eq!(manager.tasks.get(&key).unwrap().subscribers, 2);
+    }
+}
+
+#[cfg(test)]
+mod supervise_tests {
+    use super::*;
+    use crate::realtime::credentials::{CredentialRegistry, test_creds};
+    use std::sync::Mutex;
+
+    const USER: &str = "idle-test-user";
+
+    fn fast_backoff(max_failures: u32) -> Backoff {
+        Backoff::new(Duration::from_millis(1), Duration::from_millis(5), max_failures)
+    }
+
+    /// Run `supervise` with an attempt that records the password it was given
+    /// and returns the next scripted result (`Failed` once the script ends).
+    async fn run(
+        registry: &Arc<CredentialRegistry>,
+        event_bus: &EventBus,
+        max_failures: u32,
+        script: Vec<Result<(), TaskError>>,
+    ) -> Vec<String> {
+        let source = registry.source(USER);
+        let seen = Mutex::new(Vec::new());
+        let script = Mutex::new(script.into_iter());
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            supervise(USER, "INBOX", source.as_ref(), event_bus, fast_backoff(max_failures), Duration::from_secs(3600), |creds| {
+                seen.lock().unwrap().push(creds.password.clone());
+                let next = script
+                    .lock()
+                    .unwrap()
+                    .next()
+                    .unwrap_or_else(|| Err(TaskError::Failed("down".into())));
+                async move { next }
+            }),
+        )
+        .await
+        .expect("supervise must terminate");
+        seen.into_inner().unwrap()
+    }
+
+    #[tokio::test]
+    async fn authentication_failure_stops_without_retrying_and_requests_relogin() {
+        let registry = Arc::new(CredentialRegistry::default());
+        let _lease = registry.register(USER, test_creds("stale"));
+        let event_bus = EventBus::new();
+        let mut events = event_bus.subscribe(USER).await;
+
+        let attempts = run(&registry, &event_bus, 100, vec![Err(TaskError::Auth)]).await;
+
+        assert_eq!(attempts, vec!["stale"]);
+        assert!(matches!(events.try_recv(), Ok(MailEvent::ReauthRequired)));
+    }
+
+    #[tokio::test]
+    async fn reconnects_with_the_newest_credentials() {
+        let registry = Arc::new(CredentialRegistry::default());
+        let _old = registry.register(USER, test_creds("old"));
+        let event_bus = EventBus::new();
+        let source = registry.source(USER);
+        let seen = Mutex::new(Vec::new());
+        let registry_for_attempt = registry.clone();
+        let leases = Mutex::new(Vec::new());
+
+        supervise(USER, "INBOX", source.as_ref(), &event_bus, fast_backoff(100), Duration::from_secs(3600), |creds| {
+            let mut seen = seen.lock().unwrap();
+            seen.push(creds.password.clone());
+            // The user logs in again while the first connection is down.
+            if seen.len() == 1 {
+                leases.lock().unwrap().push(registry_for_attempt.register(USER, test_creds("new")));
+            }
+            let result = if seen.len() == 1 { Err(TaskError::Failed("dropped".into())) } else { Ok(()) };
+            async move { result }
+        })
+        .await;
+
+        assert_eq!(seen.into_inner().unwrap(), vec!["old", "new"]);
+    }
+
+    #[tokio::test]
+    async fn other_failures_are_capped() {
+        let registry = Arc::new(CredentialRegistry::default());
+        let _lease = registry.register(USER, test_creds("pw"));
+        let event_bus = EventBus::new();
+        let mut events = event_bus.subscribe(USER).await;
+
+        let attempts = run(&registry, &event_bus, 6, vec![]).await;
+
+        assert_eq!(attempts.len(), 6);
+        assert!(events.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn stops_when_no_socket_holds_credentials() {
+        let registry = Arc::new(CredentialRegistry::default());
+        let event_bus = EventBus::new();
+        let attempts = run(&registry, &event_bus, 100, vec![]).await;
+        assert!(attempts.is_empty());
     }
 }

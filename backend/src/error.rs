@@ -16,12 +16,36 @@ struct ErrorBody {
     status: u16,
 }
 
+/// Client-facing text for 500 responses whose detail stays in the logs.
+/// The frontend already localizes this string.
+pub const GENERIC_INTERNAL_MESSAGE: &str = "An unexpected error occurred";
+
+/// Client-facing text for 503 responses whose detail stays in the logs.
+/// The frontend already localizes this string.
+pub const GENERIC_UNAVAILABLE_MESSAGE: &str = "Unable to reach the mail server";
+
+/// Fixed server-error messages that reveal nothing about internals and that
+/// the frontend shows (and translates) as-is. Every other 5xx message is
+/// replaced by a generic one.
+const PUBLIC_SERVER_MESSAGES: &[&str] = &[
+    "Mail server not configured",
+    "IMAP server not configured",
+    "SMTP server not configured",
+    "Secure mail setup is not configured on this server.",
+    "No Drafts folder found; draft retained locally",
+];
+
 /// Application-level error type that converts into an Axum response
 /// with a structured JSON error envelope.
+///
+/// 4xx messages are user-facing validation text and are returned verbatim.
+/// 5xx messages often embed IMAP server replies, SQLite or I/O errors, so
+/// they are logged server-side and replaced by a generic message (unless the
+/// variant is explicitly public, or the text is in `PUBLIC_SERVER_MESSAGES`).
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum AppError {
-    /// Internal server error (500).
+    /// Internal server error (500). Message is logged, not returned.
     InternalError(String),
     /// Resource not found (404).
     NotFound(String),
@@ -31,8 +55,13 @@ pub enum AppError {
     BadRequest(String),
     /// Forbidden (403).
     Forbidden(String),
-    /// Service unavailable (503).
+    /// Service unavailable (503). Message is logged, not returned.
     ServiceUnavailable(String),
+    /// Too many requests (429).
+    TooManyRequests(String),
+    /// Service unavailable (503) whose message was written for the user and
+    /// is safe to return, e.g. the reason the mail server refused a message.
+    MailServerRejected(String),
 }
 
 impl AppError {
@@ -44,7 +73,10 @@ impl AppError {
             AppError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
-            AppError::ServiceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+            AppError::ServiceUnavailable(_) | AppError::MailServerRejected(_) => {
+                StatusCode::SERVICE_UNAVAILABLE
+            }
+            AppError::TooManyRequests(_) => StatusCode::TOO_MANY_REQUESTS,
         }
     }
 
@@ -56,11 +88,14 @@ impl AppError {
             AppError::Unauthorized(_) => "UNAUTHORIZED",
             AppError::BadRequest(_) => "BAD_REQUEST",
             AppError::Forbidden(_) => "FORBIDDEN",
-            AppError::ServiceUnavailable(_) => "SERVICE_UNAVAILABLE",
+            AppError::ServiceUnavailable(_) | AppError::MailServerRejected(_) => {
+                "SERVICE_UNAVAILABLE"
+            }
+            AppError::TooManyRequests(_) => "TOO_MANY_REQUESTS",
         }
     }
 
-    /// Returns the human-readable message for this error variant.
+    /// Returns the detailed message for this error variant (for logs).
     fn message(&self) -> &str {
         match self {
             AppError::InternalError(msg)
@@ -68,7 +103,23 @@ impl AppError {
             | AppError::Unauthorized(msg)
             | AppError::BadRequest(msg)
             | AppError::Forbidden(msg)
-            | AppError::ServiceUnavailable(msg) => msg,
+            | AppError::ServiceUnavailable(msg)
+            | AppError::TooManyRequests(msg)
+            | AppError::MailServerRejected(msg) => msg,
+        }
+    }
+
+    /// Returns the message that may be shown to the client.
+    fn public_message(&self) -> &str {
+        let msg = self.message();
+        match self {
+            AppError::InternalError(_) if !PUBLIC_SERVER_MESSAGES.contains(&msg) => {
+                GENERIC_INTERNAL_MESSAGE
+            }
+            AppError::ServiceUnavailable(_) if !PUBLIC_SERVER_MESSAGES.contains(&msg) => {
+                GENERIC_UNAVAILABLE_MESSAGE
+            }
+            _ => msg,
         }
     }
 }
@@ -76,10 +127,20 @@ impl AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status = self.status_code();
+        let code = self.error_code();
+        let public = self.public_message();
+        if public != self.message() {
+            // The detail is withheld from the client; keep it for operators.
+            if status.is_server_error() && status != StatusCode::SERVICE_UNAVAILABLE {
+                tracing::error!(status = status.as_u16(), code, detail = %self.message(), "Request failed");
+            } else {
+                tracing::warn!(status = status.as_u16(), code, detail = %self.message(), "Request failed");
+            }
+        }
         let envelope = ErrorEnvelope {
             error: ErrorBody {
-                code: self.error_code().to_string(),
-                message: self.message().to_string(),
+                code: code.to_string(),
+                message: public.to_string(),
                 status: status.as_u16(),
             },
         };
@@ -118,11 +179,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn internal_error_returns_500() {
-        let (status, json) = error_to_json(AppError::InternalError("something broke".into())).await;
+    async fn internal_error_returns_500_without_detail() {
+        let (status, json) = error_to_json(AppError::InternalError(
+            "Database error: no such table: secrets at /data/abc/db.sqlite".into(),
+        ))
+        .await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(json["error"]["code"], "INTERNAL_ERROR");
-        assert_eq!(json["error"]["message"], "something broke");
+        assert_eq!(json["error"]["message"], GENERIC_INTERNAL_MESSAGE);
         assert_eq!(json["error"]["status"], 500);
     }
 
@@ -154,12 +218,40 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn service_unavailable_returns_503() {
-        let (status, json) =
-            error_to_json(AppError::ServiceUnavailable("IMAP down".into())).await;
+    async fn service_unavailable_returns_503_without_detail() {
+        let (status, json) = error_to_json(AppError::ServiceUnavailable(
+            "IMAP error: Protocol error: NO [SERVERBUG] internal error at 10.0.0.5".into(),
+        ))
+        .await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(json["error"]["code"], "SERVICE_UNAVAILABLE");
-        assert_eq!(json["error"]["message"], "IMAP down");
+        assert_eq!(json["error"]["message"], GENERIC_UNAVAILABLE_MESSAGE);
         assert_eq!(json["error"]["status"], 503);
+    }
+
+    #[tokio::test]
+    async fn known_safe_server_messages_are_kept() {
+        let (_, json) = error_to_json(AppError::ServiceUnavailable(
+            "Secure mail setup is not configured on this server.".into(),
+        ))
+        .await;
+        assert_eq!(
+            json["error"]["message"],
+            "Secure mail setup is not configured on this server."
+        );
+    }
+
+    #[tokio::test]
+    async fn explicitly_public_variants_keep_their_message() {
+        let (status, json) =
+            error_to_json(AppError::MailServerRejected("relay denied".into())).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(json["error"]["message"], "relay denied");
+
+        let (status, json) =
+            error_to_json(AppError::TooManyRequests("slow down".into())).await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(json["error"]["code"], "TOO_MANY_REQUESTS");
+        assert_eq!(json["error"]["message"], "slow down");
     }
 }

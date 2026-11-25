@@ -75,6 +75,7 @@ export const sharedMessages: Record<string, string> = {
   "Sign in to another email account": "Connectez-vous à un autre compte e-mail",
   "An unexpected error occurred": "Une erreur inattendue s’est produite",
   "Account session expired": "La session du compte a expiré",
+  "Your mail password has changed. Please sign in again.": "Le mot de passe de votre messagerie a changé. Veuillez vous reconnecter.",
   "Account session has expired": "La session du compte a expiré",
   "Invalid or expired session": "La session est invalide ou a expiré",
   "Email and password are required": "L’adresse e-mail et le mot de passe sont obligatoires",

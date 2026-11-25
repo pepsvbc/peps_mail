@@ -21,6 +21,10 @@ pub enum MailEvent {
     FolderUpdated,
     /// Background draft synchronization completed; local data remains durable.
     DraftsUpdated { synced: bool },
+    /// The IMAP server rejected this account's stored credentials (e.g. the
+    /// password was changed elsewhere). Background sync for the account has
+    /// stopped; the user must log in again.
+    ReauthRequired,
 }
 
 /// Fan-out event bus: per-user broadcast channels.

@@ -303,10 +303,10 @@ impl ImapClient for MockImapClient {
         calls.push(request.clone());
         let mut remote = self.draft_remote.lock().unwrap();
         let mut removed_uids: Vec<u32> = request.uid.into_iter().collect();
-        if let Some(old) = remote.remove(&request.message_id) {
-            if !removed_uids.contains(&old) {
-                removed_uids.push(old);
-            }
+        if let Some(old) = remote.remove(&request.message_id)
+            && !removed_uids.contains(&old)
+        {
+            removed_uids.push(old);
         }
         let uid = request.content.as_ref().map(|_| 1000 + calls.len() as u32);
         if let Some(uid) = uid {

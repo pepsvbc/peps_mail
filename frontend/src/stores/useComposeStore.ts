@@ -13,6 +13,8 @@ export interface ReplyParams {
   body: string;
   /** Quoted original message, kept outside the editor (see lib/compose-quote.ts). */
   quote?: ComposeQuote | null;
+  /** Whether the user allowed remote content for the original message; the quote preview blocks it otherwise. */
+  remoteContentAllowed?: boolean;
   inReplyTo: string | null;
   references: string | null;
   fromIdentityId?: number | null;
@@ -25,6 +27,8 @@ export interface ForwardParams {
   body: string;
   /** Forwarded original message, kept outside the editor (see lib/compose-quote.ts). */
   quote?: ComposeQuote | null;
+  /** Whether the user allowed remote content for the original message; the quote preview blocks it otherwise. */
+  remoteContentAllowed?: boolean;
   isHtml?: boolean;
 }
 
@@ -77,6 +81,11 @@ export interface ComposeState {
   quotedText: string | null;
   /** Whether the quoted history is expanded below the editor. */
   showQuoted: boolean;
+  /**
+   * Whether the quote preview may load remote content: only when the user
+   * allowed it for the original message. Resumed drafts always start blocked.
+   */
+  quoteRemoteAllowed: boolean;
 
   openCompose: (to?: string) => void;
   openReply: (params: ReplyParams) => void;
@@ -168,17 +177,18 @@ const initialState = {
   quotedHtml: null as string | null,
   quotedText: null as string | null,
   showQuoted: false,
+  quoteRemoteAllowed: false,
 };
 
 /**
  * Store fields for a quoted part. Replies follow the "previous messages" display
  * preference; forwards always start expanded (the forwarded content is the point).
  */
-function quoteState(quote: ComposeQuote | null | undefined) {
+function quoteState(quote: ComposeQuote | null | undefined, remoteContentAllowed = false) {
   const showQuoted = quote?.kind === "forward" || !useUiStore.getState().collapseQuotes;
   return quote
-    ? { quoteKind: quote.kind, quotedHtml: quote.html, quotedText: quote.text, showQuoted }
-    : { quoteKind: null, quotedHtml: null, quotedText: null, showQuoted: false };
+    ? { quoteKind: quote.kind, quotedHtml: quote.html, quotedText: quote.text, showQuoted, quoteRemoteAllowed: remoteContentAllowed }
+    : { quoteKind: null, quotedHtml: null, quotedText: null, showQuoted: false, quoteRemoteAllowed: false };
 }
 
 export type ComposeStore = UseBoundStore<StoreApi<ComposeState>>;
@@ -216,7 +226,7 @@ function createComposeStore(): ComposeStore {
       sourceMessageKey: params.sourceMessageKey ?? null,
       subject: params.subject,
       body: params.body,
-      ...quoteState(params.quote),
+      ...quoteState(params.quote, params.remoteContentAllowed === true),
       inReplyTo: params.inReplyTo,
       references: params.references,
       showCc: params.cc.length > 0,
@@ -237,7 +247,7 @@ function createComposeStore(): ComposeStore {
       sourceMessageKey: params.sourceMessageKey ?? null,
       subject: params.subject,
       body: params.body,
-      ...quoteState(params.quote),
+      ...quoteState(params.quote, params.remoteContentAllowed === true),
       isHtml: params.isHtml ?? true,
     });
   },

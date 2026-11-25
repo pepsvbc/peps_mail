@@ -4,6 +4,7 @@
     mod attachment_security;
     mod draft_paths;
     mod lists;
+    mod message_cache;
     mod rate_limit_key;
     mod setup;
     mod sent_copy;
@@ -221,6 +222,36 @@
         assert_eq!(headers["x-content-type-options"], "nosniff");
         assert_eq!(headers["x-frame-options"], "SAMEORIGIN");
         assert_eq!(headers["referrer-policy"], "no-referrer");
+    }
+
+    #[test]
+    fn encoded_control_chars_are_detected() {
+        assert!(has_encoded_control_char("/api/folders/INBOX%0D%0ASELECT/messages"));
+        assert!(has_encoded_control_char("/api/folders/a%0a/subscribe"));
+        assert!(has_encoded_control_char("/api/folders/a%00"));
+        assert!(has_encoded_control_char("/api/folders/a%7f"));
+        assert!(!has_encoded_control_char("/api/folders/Sent%20Items/messages"));
+        assert!(!has_encoded_control_char("/api/folders/%C3%A9t%C3%A9/messages"));
+        assert!(!has_encoded_control_char("/api/folders/100%25/messages"));
+    }
+
+    #[tokio::test]
+    async fn api_paths_with_encoded_line_breaks_are_rejected() {
+        let dir = setup_static_dir();
+        let config = test_config(dir.path().to_str().unwrap());
+        let app = create_router(config, test_store(), test_imap_client(), test_smtp_client(), test_search_engine("/tmp/peps-mail-test"), test_event_bus(), test_idle_manager());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/folders/INBOX%0D%0ADELETE%20Trash/messages")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

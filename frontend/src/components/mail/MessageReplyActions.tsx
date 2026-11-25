@@ -108,6 +108,7 @@ export function MessageReplyActions({
       references: buildReferences(refs, messageId),
       fromIdentityId: matchedId,
       isHtml: hasHtml,
+      remoteContentAllowed,
     });
   };
 
@@ -139,6 +140,7 @@ export function MessageReplyActions({
       references: buildReferences(refs, messageId),
       fromIdentityId: matchedId,
       isHtml: hasHtml,
+      remoteContentAllowed,
     });
   };
 
@@ -152,6 +154,7 @@ export function MessageReplyActions({
       body: emptyBody(hasHtml),
       quote: buildForwardQuote({ ...original, subject: data.subject, to: toList }),
       isHtml: hasHtml,
+      remoteContentAllowed,
     });
   };
 

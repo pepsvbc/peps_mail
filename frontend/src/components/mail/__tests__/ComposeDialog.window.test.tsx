@@ -614,6 +614,20 @@ describe("composer window controls", () => {
       expect(screen.queryByRole("region", { name: "Previous messages" })).toBeNull();
     });
 
+    it("blocks remote content in the quote preview unless it was allowed for the original message", () => {
+      for (const remoteContentAllowed of [undefined, true]) {
+        useComposeStore.getState().reset();
+        useComposeStore.getState().openReply({
+          to: "bob@example.com", cc: "", subject: "Re: Hello", body: "<p></p>", quote, remoteContentAllowed,
+          inReplyTo: "<original@example.com>", references: null,
+        });
+        const { unmount } = render(<ComposeDialog />);
+        const csp = screen.getByRole("region", { name: "Previous messages" }).querySelector("iframe")?.getAttribute("srcdoc") ?? "";
+        expect(csp.includes("img-src data: cid: blob: https:")).toBe(remoteContentAllowed === true);
+        unmount();
+      }
+    });
+
     it("starts collapsed when the display preference hides previous messages", () => {
       useUiStore.setState({ collapseQuotes: true });
       openQuotedReply();

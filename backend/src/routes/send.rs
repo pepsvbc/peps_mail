@@ -1,8 +1,11 @@
+use std::num::NonZeroU32;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+use std::time::Duration;
 
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
+use governor::{DefaultKeyedRateLimiter, Quota, RateLimiter};
 use serde::{Deserialize, Serialize};
 
 use super::drafts::validate_draft_id;
@@ -11,7 +14,9 @@ use crate::config::AppConfig;
 use crate::db;
 use crate::error::AppError;
 use crate::imap::client::{ImapClient, ImapCredentials, ImapFolder};
-use crate::smtp::client::{AttachmentData, SendableMessage, SmtpClient, SmtpCredentials};
+use crate::smtp::client::{
+    AttachmentData, MAX_RECIPIENTS, SendableMessage, SmtpClient, SmtpCredentials, SmtpError,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct SendRequest {
@@ -63,12 +68,13 @@ pub async fn send_message_handler(
         None
     };
 
-    // Validate: at least one recipient.
+    // Validate: at least one recipient, and not a bulk mailing.
     if req.to.is_empty() && req.cc.is_empty() && req.bcc.is_empty() {
         return Err(AppError::BadRequest(
             "At least one recipient is required".to_string(),
         ));
     }
+    let recipient_count = check_recipients(&req.to, &req.cc, &req.bcc)?;
 
     // Validate: subject or body must be non-empty.
     let has_subject = !req.subject.trim().is_empty();
@@ -108,8 +114,9 @@ pub async fn send_message_handler(
         let identity = db::identities::get_identity(&conn, identity_id)
             .map_err(AppError::InternalError)?
             .ok_or_else(|| AppError::NotFound("Identity not found".to_string()))?;
-        // Re-checked here so identities saved before the check existed can't be used.
+        // Re-checked here so identities saved before the checks existed can't be used.
         crate::routes::identities::ensure_sender_allowed(&config, &session, &identity.email)?;
+        crate::routes::identities::validate_display_name(&identity.display_name)?;
         if identity.display_name.is_empty() {
             identity.email
         } else {
@@ -146,11 +153,15 @@ pub async fn send_message_handler(
         attachments,
     };
 
+    // Charge the per-account budget only once the request is known to be
+    // well-formed, immediately before handing it to SMTP.
+    check_send_rate(&session.email, recipient_count)?;
+
     // Send via SMTP.
     let message_id = smtp_client
         .send_message(&smtp_creds, &message)
         .await
-        .map_err(|e| AppError::ServiceUnavailable(format!("Failed to send email: {e}")))?;
+        .map_err(smtp_error_to_app_error)?;
 
     // SMTP has already accepted the message. Never report a send failure or
     // retry SMTP if saving the Sent copy fails: that could cause duplicate mail.
@@ -199,6 +210,111 @@ pub async fn send_message_handler(
         draft_removed,
     })
     .into_response())
+}
+
+// ---------------------------------------------------------------------------
+// Sending limits
+// ---------------------------------------------------------------------------
+
+/// Per-account sending budget, so a stolen session can't turn the account
+/// into a bulk relay. Kept in memory and keyed by the mailbox address, so it
+/// is shared by every session of that mailbox.
+struct SendLimiter {
+    messages: DefaultKeyedRateLimiter<String>,
+    recipients: DefaultKeyedRateLimiter<String>,
+}
+
+impl SendLimiter {
+    fn new() -> Self {
+        // Messages: a burst of 30, refilled at one every 20 s
+        // (30 per 10 minutes sustained).
+        let messages = Quota::with_period(Duration::from_secs(20))
+            .expect("non-zero period")
+            .allow_burst(NonZeroU32::new(30).expect("non-zero"));
+        // Recipients: a burst of 1000 (two sends to a full 500-member list),
+        // refilled at one every 4 s (900 per hour sustained).
+        let recipients = Quota::with_period(Duration::from_secs(4))
+            .expect("non-zero period")
+            .allow_burst(NonZeroU32::new(1000).expect("non-zero"));
+        Self {
+            messages: RateLimiter::keyed(messages),
+            recipients: RateLimiter::keyed(recipients),
+        }
+    }
+
+    fn check(&self, email: &str, recipients: usize) -> Result<(), AppError> {
+        let key = email.trim().to_lowercase();
+        let limited = || {
+            AppError::TooManyRequests(
+                "Sending limit reached for this account. Please wait a few minutes and try again."
+                    .to_string(),
+            )
+        };
+        self.messages.check_key(&key).map_err(|_| limited())?;
+        let n = NonZeroU32::new(u32::try_from(recipients.max(1)).unwrap_or(u32::MAX))
+            .expect("non-zero");
+        match self.recipients.check_key_n(&key, n) {
+            Ok(Ok(())) => {}
+            Ok(Err(_)) | Err(_) => return Err(limited()),
+        }
+        // Forget accounts whose budget has fully refilled.
+        if self.messages.len() > 10_000 {
+            self.messages.retain_recent();
+            self.recipients.retain_recent();
+        }
+        Ok(())
+    }
+}
+
+static SEND_LIMITS: LazyLock<SendLimiter> = LazyLock::new(SendLimiter::new);
+
+fn check_send_rate(email: &str, recipients: usize) -> Result<(), AppError> {
+    SEND_LIMITS.check(email, recipients)
+}
+
+/// Enforce the per-message recipient cap and reject unparseable addresses
+/// up front with a 400. Returns the total number of recipients.
+fn check_recipients(to: &[String], cc: &[String], bcc: &[String]) -> Result<usize, AppError> {
+    let total = to.len() + cc.len() + bcc.len();
+    if total > MAX_RECIPIENTS {
+        return Err(AppError::BadRequest(format!(
+            "A message can have at most {MAX_RECIPIENTS} recipients (To, Cc and Bcc combined)"
+        )));
+    }
+    for address in to.iter().chain(cc).chain(bcc) {
+        if address.parse::<lettre::message::Mailbox>().is_err() {
+            let shown: String = address.chars().take(100).collect();
+            return Err(AppError::BadRequest(format!(
+                "Invalid recipient address: {shown}"
+            )));
+        }
+    }
+    Ok(total)
+}
+
+/// Map an SMTP failure to a response without leaking connection details.
+///
+/// The SMTP server's own refusal (e.g. "550 relay denied", "552 message too
+/// large") is the only explanation the user gets for an undelivered message,
+/// so it is returned, cleaned of control characters and truncated.
+/// Connection-level failures (DNS, TLS, socket errors) are logged only.
+fn smtp_error_to_app_error(error: SmtpError) -> AppError {
+    match error {
+        SmtpError::SendFailed(reason) => {
+            let reason: String = reason
+                .chars()
+                .map(|c| if c.is_control() { ' ' } else { c })
+                .take(300)
+                .collect();
+            AppError::MailServerRejected(format!("The mail server refused the message: {reason}"))
+        }
+        SmtpError::AuthenticationFailed => AppError::MailServerRejected(
+            "The mail server rejected the sign-in for sending".to_string(),
+        ),
+        SmtpError::ConnectionFailed(detail) => {
+            AppError::ServiceUnavailable(format!("Failed to send email: {detail}"))
+        }
+    }
 }
 
 /// Prefer the server's special-use folder; legacy servers may only expose names.
@@ -495,5 +611,70 @@ mod tests {
         assert!(raw.contains("<bcc@example.com>"));
         assert!(raw.contains("Hi Bob"));
         assert!(!raw.contains("Bcc:"));
+    }
+
+    fn addresses(n: usize) -> Vec<String> {
+        (0..n).map(|i| format!("user{i}@example.com")).collect()
+    }
+
+    #[test]
+    fn recipient_cap_counts_to_cc_and_bcc_together() {
+        let third = MAX_RECIPIENTS / 3;
+        let rest = MAX_RECIPIENTS - 2 * third;
+        assert_eq!(
+            check_recipients(&addresses(third), &addresses(third), &addresses(rest)).unwrap(),
+            MAX_RECIPIENTS
+        );
+        let err = check_recipients(&addresses(third), &addresses(third), &addresses(rest + 1))
+            .unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(ref m) if m.contains("at most")));
+    }
+
+    #[test]
+    fn malformed_recipients_are_a_bad_request() {
+        let err = check_recipients(&["not an address".to_string()], &[], &[]).unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
+        assert!(check_recipients(&["Bob <bob@example.com>".to_string()], &[], &[]).is_ok());
+    }
+
+    #[test]
+    fn send_rate_is_limited_per_account() {
+        let limiter = SendLimiter::new();
+        for _ in 0..30 {
+            limiter.check("Mallory@example.com", 1).unwrap();
+        }
+        assert!(matches!(
+            limiter.check("mallory@example.com ", 1),
+            Err(AppError::TooManyRequests(_))
+        ));
+        // Another account has its own budget.
+        assert!(limiter.check("alice@example.com", 1).is_ok());
+    }
+
+    #[test]
+    fn recipient_volume_is_limited_per_account() {
+        let limiter = SendLimiter::new();
+        limiter.check("bulk@example.com", MAX_RECIPIENTS).unwrap();
+        limiter.check("bulk@example.com", MAX_RECIPIENTS).unwrap();
+        assert!(matches!(
+            limiter.check("bulk@example.com", MAX_RECIPIENTS),
+            Err(AppError::TooManyRequests(_))
+        ));
+    }
+
+    #[test]
+    fn smtp_connection_details_are_not_public() {
+        use axum::response::IntoResponse;
+        let response = smtp_error_to_app_error(SmtpError::ConnectionFailed(
+            "Connection refused (os error 111) to 10.1.2.3:587".into(),
+        ))
+        .into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        let rejected = smtp_error_to_app_error(SmtpError::SendFailed(
+            "permanent error (550): relay denied\r\nX".into(),
+        ));
+        assert!(
+            matches!(rejected, AppError::MailServerRejected(ref m) if m.contains("relay denied") && !m.contains('\n'))
+        );
     }
 }

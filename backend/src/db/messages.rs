@@ -436,26 +436,86 @@ pub fn get_all_uids_and_flags(conn: &Connection, folder: &str) -> Result<Vec<(u3
     Ok(result)
 }
 
+/// Longest Message-ID (including angle brackets) accepted for threading.
+/// RFC 5322 places no explicit limit, but real IDs are well under 256 bytes.
+pub const MAX_THREAD_ID_LEN: usize = 255;
+
+/// Most IDs taken from a message's References header to seed/extend the walk.
+pub const MAX_THREAD_SEED_IDS: usize = 50;
+
+/// Most messages returned for one thread (also caps rows read per lookup).
+pub const MAX_THREAD_MESSAGES: usize = 200;
+
+/// Most ID lookups performed while walking one thread.
+const MAX_THREAD_LOOKUPS: usize = 250;
+
+/// Whether `id` looks like a real Message-ID: `<left@right>`, bounded length,
+/// no whitespace, control characters or nested brackets.
+///
+/// Threading IDs come from sender-controlled headers, so anything else (e.g.
+/// a bare `@`, or thousands of junk tokens) is ignored rather than matched.
+pub fn is_valid_thread_id(id: &str) -> bool {
+    if id.len() < 5 || id.len() > MAX_THREAD_ID_LEN {
+        return false;
+    }
+    let Some(inner) = id.strip_prefix('<').and_then(|rest| rest.strip_suffix('>')) else {
+        return false;
+    };
+    if inner
+        .chars()
+        .any(|c| c.is_whitespace() || c.is_control() || c == '<' || c == '>')
+    {
+        return false;
+    }
+    match inner.split_once('@') {
+        Some((left, right)) => !left.is_empty() && !right.is_empty(),
+        None => false,
+    }
+}
+
+/// Valid Message-IDs in a whitespace-separated header value, in order.
+fn thread_ids(header: &str) -> impl Iterator<Item = &str> {
+    header.split_whitespace().filter(|id| is_valid_thread_id(id))
+}
+
+/// Queue `id` for lookup unless it is malformed or already known.
+fn enqueue_thread_id(
+    id: &str,
+    known: &mut std::collections::HashSet<String>,
+    queue: &mut std::collections::VecDeque<String>,
+) {
+    if is_valid_thread_id(id) && known.insert(id.to_string()) {
+        queue.push_back(id.to_string());
+    }
+}
+
 /// Find messages related to the given `target_message_id` for threading.
 ///
-/// Returns messages where:
+/// Returns (at most `MAX_THREAD_MESSAGES`) messages where:
 /// - `message_id` equals `target_message_id`, OR
 /// - `in_reply_to` equals `target_message_id`, OR
-/// - `references_header` contains `target_message_id`
+/// - `references_header` contains `target_message_id` as a whole,
+///   space-delimited token (exact, case-sensitive match).
+///
+/// IDs that are not shaped like `<left@right>` match nothing.
 pub fn get_thread_messages(
     conn: &Connection,
     target_message_id: &str,
 ) -> Result<Vec<CachedMessage>, String> {
-    // Escape % and _ characters in the message_id to prevent LIKE injection.
-    let escaped_target = target_message_id.replace("%", "\\%").replace("_", "\\_");
-    let like_pattern = format!("%{}%", escaped_target);
+    if !is_valid_thread_id(target_message_id) {
+        return Ok(Vec::new());
+    }
+    // References are stored as `<a@x> <b@y>`; padding both sides with spaces
+    // makes `instr` match whole IDs only (no substring or wildcard matches).
     let sql = format!(
         "SELECT {MSG_SELECT_COLS}
          FROM messages
          WHERE message_id = ?1
             OR in_reply_to = ?1
-            OR references_header LIKE ?2 ESCAPE '\\'
-         ORDER BY date_epoch ASC"
+            OR (references_header IS NOT NULL
+                AND instr(' ' || references_header || ' ', ' ' || ?1 || ' ') > 0)
+         ORDER BY date_epoch ASC
+         LIMIT ?2"
     );
 
     let mut stmt = conn
@@ -463,7 +523,7 @@ pub fn get_thread_messages(
         .map_err(|e| format!("Failed to prepare get_thread_messages: {e}"))?;
 
     let rows = stmt
-        .query_map(params![target_message_id, like_pattern], |row| {
+        .query_map(params![target_message_id, MAX_THREAD_MESSAGES as i64], |row| {
             row_to_cached_message(row)
         })
         .map_err(|e| format!("Failed to query thread messages: {e}"))?;
@@ -482,73 +542,81 @@ pub fn get_thread_messages(
 /// collects every message_id, in_reply_to, and references_header ID it encounters.
 /// The process repeats until no new IDs are discovered (transitive closure).
 ///
+/// Because the IDs come from sender-controlled headers, the walk is bounded:
+/// only well-formed IDs are followed, at most `MAX_THREAD_SEED_IDS` IDs are
+/// taken from any one References header (for the opened message: the root
+/// plus the most recent ancestors), at most `MAX_THREAD_LOOKUPS` lookups run,
+/// and at most `MAX_THREAD_MESSAGES` messages are returned.
+///
 /// The result is deduplicated by `(folder, uid)` and sorted by `date_epoch` ascending.
 pub fn get_full_thread(
     conn: &Connection,
     message_id: &str,
     references: Option<&str>,
 ) -> Result<Vec<CachedMessage>, String> {
-    use std::collections::HashSet;
+    use std::collections::{HashSet, VecDeque};
 
-    // Step 1: Seed the set of known message IDs.
+    // Step 1: Seed the queue with the message's own ID and its references.
     let mut known_ids: HashSet<String> = HashSet::new();
-    known_ids.insert(message_id.to_string());
+    let mut queue: VecDeque<String> = VecDeque::new();
+    enqueue_thread_id(message_id, &mut known_ids, &mut queue);
     if let Some(refs) = references {
-        for id in refs.split_whitespace() {
-            if !id.is_empty() {
-                known_ids.insert(id.to_string());
+        let mut seeds: Vec<&str> = Vec::new();
+        for id in thread_ids(refs) {
+            if !seeds.contains(&id) {
+                seeds.push(id);
+                // Bound the dedup work on absurd headers as well.
+                if seeds.len() > MAX_THREAD_SEED_IDS * 4 {
+                    seeds.remove(1);
+                }
             }
+        }
+        // Keep the thread root and the most recent ancestors.
+        if seeds.len() > MAX_THREAD_SEED_IDS {
+            let tail_start = seeds.len() - (MAX_THREAD_SEED_IDS - 1);
+            let mut trimmed = vec![seeds[0]];
+            trimmed.extend_from_slice(&seeds[tail_start..]);
+            seeds = trimmed;
+        }
+        for id in seeds {
+            enqueue_thread_id(id, &mut known_ids, &mut queue);
         }
     }
 
-    // Step 2-4: Iteratively query until no new IDs are found.
-    let mut processed_ids: HashSet<String> = HashSet::new();
+    // Step 2: Breadth-first walk, bounded in lookups and collected messages.
+    let mut seen: HashSet<(String, u32)> = HashSet::new();
     let mut all_messages: Vec<CachedMessage> = Vec::new();
+    let mut lookups = 0usize;
 
-    loop {
-        // Find IDs we haven't queried yet.
-        let to_query: Vec<String> = known_ids
-            .difference(&processed_ids)
-            .cloned()
-            .collect();
-
-        if to_query.is_empty() {
+    'walk: while let Some(id) = queue.pop_front() {
+        if lookups >= MAX_THREAD_LOOKUPS {
             break;
         }
+        lookups += 1;
 
-        for id in &to_query {
-            processed_ids.insert(id.clone());
-
-            let found = get_thread_messages(conn, id)?;
-            for msg in found {
-                // Extract IDs from each found message and add to known set.
-                if let Some(ref mid) = msg.message_id
-                    && !mid.is_empty()
-                {
-                    known_ids.insert(mid.clone());
+        for msg in get_thread_messages(conn, &id)? {
+            if !seen.insert((msg.folder.clone(), msg.uid)) {
+                continue;
+            }
+            if let Some(ref mid) = msg.message_id {
+                enqueue_thread_id(mid, &mut known_ids, &mut queue);
+            }
+            if let Some(ref irt) = msg.in_reply_to {
+                enqueue_thread_id(irt, &mut known_ids, &mut queue);
+            }
+            if let Some(ref refs) = msg.references_header {
+                for r in thread_ids(refs).take(MAX_THREAD_SEED_IDS) {
+                    enqueue_thread_id(r, &mut known_ids, &mut queue);
                 }
-                if let Some(ref irt) = msg.in_reply_to
-                    && !irt.is_empty()
-                {
-                    known_ids.insert(irt.clone());
-                }
-                if let Some(ref refs) = msg.references_header {
-                    for r in refs.split_whitespace() {
-                        if !r.is_empty() {
-                            known_ids.insert(r.to_string());
-                        }
-                    }
-                }
-                all_messages.push(msg);
+            }
+            all_messages.push(msg);
+            if all_messages.len() >= MAX_THREAD_MESSAGES {
+                break 'walk;
             }
         }
     }
 
-    // Step 5: Deduplicate by (folder, uid) pair.
-    let mut seen: HashSet<(String, u32)> = HashSet::new();
-    all_messages.retain(|msg| seen.insert((msg.folder.clone(), msg.uid)));
-
-    // Step 6: Sort by date_epoch ascending.
+    // Step 3: Sort by date_epoch ascending.
     all_messages.sort_by_key(|msg| parse_date_to_epoch(&msg.date));
 
     Ok(all_messages)
@@ -973,5 +1041,129 @@ mod tests {
         let thread = get_full_thread(&conn, "<solo@ex>", None).unwrap();
         assert_eq!(thread.len(), 1);
         assert_eq!(thread[0].uid, 1);
+    }
+
+    fn insert_threaded(conn: &Connection, uid: u32, mid: &str, irt: Option<&str>, refs: Option<&str>) {
+        upsert_message(conn, "INBOX", uid, Some(mid), irt, refs,
+            "Subject", "a@ex", "A", "[]", "[]", "2024-01-01T10:00:00Z", "", 100, false, "", None).unwrap();
+    }
+
+    #[test]
+    fn thread_id_validation_requires_bracketed_addr_spec() {
+        for ok in ["<a@b>", "<thread-1@example.com>", "<x.y+z@host.example>"] {
+            assert!(is_valid_thread_id(ok), "{ok}");
+        }
+        let too_long = format!("<{}@ex>", "a".repeat(MAX_THREAD_ID_LEN));
+        for bad in ["@", "<@>", "<a@>", "<@b>", "a@b", "<ab>", "<a b@c>", "<a<b@c>", "", too_long.as_str()] {
+            assert!(!is_valid_thread_id(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn at_sign_token_does_not_match_every_message() {
+        let conn = open_test_db();
+        ensure_folder(&conn, "INBOX");
+        for uid in 1..=20 {
+            insert_threaded(&conn, uid, &format!("<m{uid}@ex>"), None, Some("<root@ex>"));
+        }
+        insert_threaded(&conn, 100, "<victim@ex>", None, Some("@ % _ <"));
+
+        assert!(get_thread_messages(&conn, "@").unwrap().is_empty());
+        assert!(get_thread_messages(&conn, "%").unwrap().is_empty());
+        let thread = get_full_thread(&conn, "<victim@ex>", Some("@ % _ <")).unwrap();
+        assert_eq!(thread.len(), 1);
+        assert_eq!(thread[0].uid, 100);
+    }
+
+    #[test]
+    fn references_match_whole_ids_only() {
+        let conn = open_test_db();
+        ensure_folder(&conn, "INBOX");
+        insert_threaded(&conn, 1, "<x@ex>", None, Some("<abc@ex.com>"));
+        insert_threaded(&conn, 2, "<y@ex>", None, Some("<b@ex.com>"));
+        // "<b@ex.com>" must not match inside "<abc@ex.com>".
+        let found = get_thread_messages(&conn, "<b@ex.com>").unwrap();
+        assert_eq!(found.iter().map(|m| m.uid).collect::<Vec<_>>(), vec![2]);
+    }
+
+    #[test]
+    fn huge_references_header_is_bounded() {
+        let conn = open_test_db();
+        ensure_folder(&conn, "INBOX");
+        // A mailbox of unrelated messages, each with its own ID.
+        for uid in 1..=(MAX_THREAD_MESSAGES as u32 + 100) {
+            insert_threaded(&conn, uid, &format!("<m{uid}@ex>"), None, None);
+        }
+        // The attacker's message references every ID in the mailbox plus
+        // 10k junk tokens.
+        let mut refs: Vec<String> = (1..=(MAX_THREAD_MESSAGES as u32 + 100))
+            .map(|uid| format!("<m{uid}@ex>"))
+            .collect();
+        refs.extend((0..10_000).map(|i| format!("<j{i}@x>")));
+        let refs = refs.join(" ");
+        insert_threaded(&conn, 9999, "<evil@ex>", None, Some(&refs));
+
+        let started = std::time::Instant::now();
+        let thread = get_full_thread(&conn, "<evil@ex>", Some(&refs)).unwrap();
+        assert!(thread.len() <= MAX_THREAD_MESSAGES, "{}", thread.len());
+        // Only the seeded IDs (root + most recent) can be pulled in directly.
+        assert!(thread.len() <= 2 * MAX_THREAD_SEED_IDS + 1, "{}", thread.len());
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+    }
+
+    #[test]
+    fn transitive_walk_is_capped_at_max_thread_messages() {
+        let conn = open_test_db();
+        ensure_folder(&conn, "INBOX");
+        // A long legitimate chain: each message replies to the previous one.
+        let total = MAX_THREAD_MESSAGES as u32 + 50;
+        insert_threaded(&conn, 1, "<c1@ex>", None, None);
+        for uid in 2..=total {
+            let parent = format!("<c{}@ex>", uid - 1);
+            insert_threaded(&conn, uid, &format!("<c{uid}@ex>"), Some(&parent), Some(&parent));
+        }
+        let thread = get_full_thread(&conn, "<c1@ex>", None).unwrap();
+        assert_eq!(thread.len(), MAX_THREAD_MESSAGES);
+    }
+
+    #[test]
+    fn normal_threading_still_works_with_junk_tokens() {
+        let conn = open_test_db();
+        ensure_folder(&conn, "INBOX");
+        insert_threaded(&conn, 1, "<root@ex>", None, None);
+        insert_threaded(&conn, 2, "<mid@ex>", Some("<root@ex>"), Some("<root@ex>"));
+        insert_threaded(&conn, 3, "<leaf@ex>", Some("<mid@ex>"), Some("<root@ex> junk @ <mid@ex>"));
+        let thread = get_full_thread(&conn, "<leaf@ex>", Some("<root@ex> junk @ <mid@ex>")).unwrap();
+        let mut uids: Vec<u32> = thread.iter().map(|m| m.uid).collect();
+        uids.sort();
+        assert_eq!(uids, vec![1, 2, 3]);
+    }
+
+    /// The V025 migration must clear attachment JSON written by the old deep
+    /// index (raw `data` byte arrays, no `id`) and keep well-formed metadata.
+    #[test]
+    fn v025_migration_clears_bloated_attachment_json() {
+        let conn = open_test_db();
+        ensure_folder(&conn, "INBOX");
+        for uid in 1..=4 {
+            insert_sample(&conn, "INBOX", uid, "2024-01-01T10:00:00Z");
+        }
+        let bloated = r#"[{"filename":"a.bin","content_type":"application/octet-stream","size":3,"data":[1,2,3],"content_id":null}]"#;
+        let good = r#"[{"id":"0","filename":"\"data\":[x].pdf","content_type":"application/pdf","size":3,"content_id":null}]"#;
+        cache_message_body(&conn, "INBOX", 1, Some("<p>x</p>"), Some("x"), Some(bloated), Some("H"), None).unwrap();
+        cache_message_body(&conn, "INBOX", 2, Some("<p>x</p>"), Some("x"), Some(good), Some("H"), None).unwrap();
+        cache_message_body(&conn, "INBOX", 3, Some("<p>x</p>"), Some("x"), Some("[]"), Some("H"), None).unwrap();
+
+        conn.execute_batch(include_str!(
+            "../../migrations/V025__clear_bloated_attachments_json.sql"
+        ))
+        .unwrap();
+
+        let first = get_cached_body(&conn, "INBOX", 1).unwrap().unwrap();
+        assert!(first.attachments_json.is_none(), "bloated JSON must be cleared");
+        let second = get_cached_body(&conn, "INBOX", 2).unwrap().unwrap();
+        assert_eq!(second.attachments_json.as_deref(), Some(good));
+        let third = get_cached_body(&conn, "INBOX", 3).unwrap().unwrap();
+        assert_eq!(third.attachments_json.as_deref(), Some("[]"));
     }
 }

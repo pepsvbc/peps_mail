@@ -151,6 +151,21 @@ describe("user management", () => {
     expect(apiPost).not.toHaveBeenCalled();
   });
 
+  it("keeps another administrator's mailbox read-only", async () => {
+    vi.mocked(apiGet).mockImplementation(async (path) => path.includes("/settings?") ? {
+      forwarding: { enabled: false, address: "", keep_copy: true }, revision: "revision", existing_rules: false, externally_managed: false, recovery_email: "boss@elsewhere.org", protected: true,
+    } : { mailboxes: [{ id: "3", address: "boss@example.com", protected: true }], domains: ["example.com"], recovery_enabled: true });
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Manage boss@example.com" }));
+    const dialog = await screen.findByRole("dialog", { name: "Manage user" });
+    expect(await within(dialog).findByText(/Only its owner can change its recovery address or forwarding/)).toBeTruthy();
+    expect((within(dialog).getByLabelText("Personal email") as HTMLInputElement).disabled).toBe(true);
+    expect((within(dialog).getByRole("button", { name: "Save address and send password link" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(dialog).getByRole("button", { name: "Save forwarding" }).closest("fieldset") as HTMLFieldSetElement).disabled).toBe(true);
+    expect((within(dialog).getByRole("button", { name: "Delete user" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(apiPost).not.toHaveBeenCalled();
+  });
+
   it("labels the users page and creation action in French", async () => {
     useLanguageStore.setState({ language: "fr" });
     mount();

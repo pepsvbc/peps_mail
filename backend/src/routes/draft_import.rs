@@ -1,9 +1,14 @@
 //! Resume IMAP drafts in the same editor as locally saved drafts.
-use std::{path::Path, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use axum::{Extension, Json, extract::Path as AxumPath, response::Response};
+use rusqlite::TransactionBehavior;
 use serde::Deserialize;
 
+use super::attachments::{ATTACHMENT_STORAGE_FULL, MAX_USER_ATTACHMENT_BYTES};
 use crate::imap::client::{ImapClient, ImapCredentials};
 use crate::{auth::session::SessionState, config::AppConfig, db, error::AppError};
 
@@ -81,6 +86,17 @@ pub async fn import_draft_handler(
         let subject = parsed.subject().unwrap_or_default().to_string();
         let in_reply_to = message_ids(parsed.in_reply_to());
         let references = message_ids(parsed.references());
+        // Imported attachments count against the same per-user quota as
+        // uploads. Refuse early, before anything is written to disk.
+        let new_bytes: i64 = body
+            .attachments
+            .iter()
+            .map(|a| a.data.len() as i64)
+            .fold(0, i64::saturating_add);
+        let stored = db::drafts::total_attachment_bytes(&conn).map_err(AppError::InternalError)?;
+        if stored.saturating_add(new_bytes) > MAX_USER_ATTACHMENT_BYTES {
+            return Err(AppError::BadRequest(ATTACHMENT_STORAGE_FULL.to_string()));
+        }
         let dir = Path::new(&config.data_dir)
             .join(&session.user_hash)
             .join("attachments")
@@ -93,9 +109,13 @@ pub async fn import_draft_handler(
         for attachment in body.attachments {
             let attachment_id = uuid::Uuid::new_v4().to_string();
             let file = dir.join(&attachment_id);
-            tokio::fs::write(&file, &attachment.data)
-                .await
-                .map_err(|e| AppError::InternalError(e.to_string()))?;
+            if let Err(e) = tokio::fs::write(&file, &attachment.data).await {
+                let mut written: Vec<PathBuf> =
+                    attachments.into_iter().map(|(_, file, _)| file).collect();
+                written.push(file);
+                remove_files(&written).await;
+                return Err(AppError::InternalError(e.to_string()));
+            }
             if let (Some(html), Some(cid)) = (&mut html, &attachment.content_id) {
                 let url = format!(
                     "{}/api/drafts/{id}/attachments/{attachment_id}/content",
@@ -106,13 +126,23 @@ pub async fn import_draft_handler(
             attachments.push((attachment_id, file, attachment));
         }
         // Do not expose a partially imported draft or overwrite edits on repeat clicks.
-        let tx = conn
-            .transaction()
-            .map_err(|e| AppError::InternalError(e.to_string()))?;
-        if db::drafts::get_draft(&tx, &id)
-            .map_err(AppError::InternalError)?
-            .is_none()
-        {
+        // IMMEDIATE takes the write lock before the quota is re-read, so a
+        // parallel upload or import can't slip in between check and insert.
+        let mut insert = || -> Result<bool, AppError> {
+            let tx = conn
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(|e| AppError::InternalError(e.to_string()))?;
+            if db::drafts::get_draft(&tx, &id)
+                .map_err(AppError::InternalError)?
+                .is_some()
+            {
+                return Ok(false);
+            }
+            let stored =
+                db::drafts::total_attachment_bytes(&tx).map_err(AppError::InternalError)?;
+            if stored.saturating_add(new_bytes) > MAX_USER_ATTACHMENT_BYTES {
+                return Err(AppError::BadRequest(ATTACHMENT_STORAGE_FULL.to_string()));
+            }
             db::drafts::upsert_draft(
                 &tx,
                 &id,
@@ -138,9 +168,18 @@ pub async fn import_draft_handler(
                 )
                 .map_err(AppError::InternalError)?;
             }
+            tx.commit()
+                .map_err(|e| AppError::InternalError(e.to_string()))?;
+            Ok(true)
+        };
+        let inserted = insert();
+        if !matches!(inserted, Ok(true)) {
+            // Rejected, failed, or another request imported it first: the
+            // files just written are not referenced by any row.
+            let written: Vec<PathBuf> = attachments.into_iter().map(|(_, file, _)| file).collect();
+            remove_files(&written).await;
         }
-        tx.commit()
-            .map_err(|e| AppError::InternalError(e.to_string()))?;
+        inserted?;
     }
     db::drafts::set_source(
         &conn,
@@ -151,6 +190,15 @@ pub async fn import_draft_handler(
     )
     .map_err(AppError::InternalError)?;
     super::drafts::get_draft_handler(Extension(session), Extension(config), AxumPath(id)).await
+}
+
+/// Best-effort removal of attachment files that no database row refers to.
+async fn remove_files(files: &[PathBuf]) {
+    for file in files {
+        if let Err(e) = tokio::fs::remove_file(file).await {
+            tracing::warn!(error = %e, "Failed to remove unreferenced draft attachment file");
+        }
+    }
 }
 
 fn addresses(address: Option<&mail_parser::Address<'_>>) -> String {
@@ -692,5 +740,53 @@ mod tests {
             import(config, imap(), "INBOX").await,
             Err(AppError::BadRequest(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn import_respects_the_attachment_quota_and_leaves_no_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = config(&dir);
+        {
+            // Fill the quota with an existing (row-only) attachment.
+            let conn = db::pool::open_user_db(&config.data_dir, "alice").unwrap();
+            db::drafts::upsert_draft(&conn, "full", "", "", "", "", "", None, None, None).unwrap();
+            db::drafts::add_draft_attachment(
+                &conn,
+                "big",
+                "full",
+                "big.bin",
+                "application/octet-stream",
+                MAX_USER_ATTACHMENT_BYTES - 1,
+                "/nonexistent",
+            )
+            .unwrap();
+        }
+        let result = import(config.clone(), imap(), "Brouillons").await;
+        assert!(
+            matches!(result, Err(AppError::BadRequest(ref m)) if m == ATTACHMENT_STORAGE_FULL),
+            "import over quota must be refused"
+        );
+        let conn = db::pool::open_user_db(&config.data_dir, "alice").unwrap();
+        assert_eq!(
+            db::drafts::total_attachment_bytes(&conn).unwrap(),
+            MAX_USER_ATTACHMENT_BYTES - 1
+        );
+        assert_eq!(db::drafts::list_drafts(&conn).unwrap().len(), 1);
+        let attachments_dir = dir.path().join("alice").join("attachments");
+        let files = walk_files(&attachments_dir);
+        assert!(files.is_empty(), "no attachment files should remain: {files:?}");
+    }
+
+    fn walk_files(dir: &Path) -> Vec<PathBuf> {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return Vec::new();
+        };
+        entries
+            .flatten()
+            .flat_map(|e| {
+                let path = e.path();
+                if path.is_dir() { walk_files(&path) } else { vec![path] }
+            })
+            .collect()
     }
 }

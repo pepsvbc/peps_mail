@@ -16,6 +16,9 @@ pub struct Config {
     pub reset_template_path: String,
     pub welcome_html_template_path: String,
     pub reset_html_template_path: String,
+    /// FRANKLYMAIL_ADMIN_EMAILS: comma-separated mailboxes allowed to administer
+    /// FranklyMail. Deliberately separate from ADMIN_EMAILS (distribution lists).
+    pub admin_emails: String,
 }
 
 impl Config {
@@ -85,6 +88,23 @@ impl Config {
         self.enabled && !self.public_url.is_empty()
     }
 
+    /// Exact, case-insensitive match against FRANKLYMAIL_ADMIN_EMAILS. Empty
+    /// means nobody administers FranklyMail; there is no ADMIN_EMAILS fallback.
+    pub fn is_admin(&self, email: &str) -> bool {
+        let email = email.trim();
+        self.enabled
+            && !email.is_empty()
+            && self
+                .admin_emails
+                .split(',')
+                .map(str::trim)
+                .any(|admin| !admin.is_empty() && admin.eq_ignore_ascii_case(email))
+    }
+
+    pub fn has_admins(&self) -> bool {
+        self.admin_emails.split(',').any(|a| !a.trim().is_empty())
+    }
+
     pub fn allows(&self, email: &str) -> bool {
         self.enabled
             && email.rsplit_once('@').is_some_and(|(_, domain)| {
@@ -92,5 +112,36 @@ impl Config {
                     .split(',')
                     .any(|d| d.trim().eq_ignore_ascii_case(domain))
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn admin_list_is_exact_case_insensitive_and_has_no_fallback() {
+        let config = Config {
+            enabled: true,
+            admin_emails: " Boss@Example.com , ,ops@example.com".into(),
+            ..Default::default()
+        };
+        assert!(config.has_admins());
+        assert!(config.is_admin("boss@example.com"));
+        assert!(config.is_admin(" OPS@example.com "));
+        assert!(!config.is_admin("boss@example.com.evil.org"));
+        assert!(!config.is_admin("xboss@example.com"));
+        assert!(!config.is_admin(""));
+        let unset = Config {
+            enabled: true,
+            ..Default::default()
+        };
+        assert!(!unset.has_admins());
+        assert!(!unset.is_admin("boss@example.com"));
+        let disabled = Config {
+            enabled: false,
+            ..config
+        };
+        assert!(!disabled.is_admin("boss@example.com"));
     }
 }

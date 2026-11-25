@@ -301,7 +301,7 @@ pub async fn login(
                 }
             }
 
-            let user_hash = user_data::hash_email(&body.email);
+            let user_hash = user_data::user_hash_for_login(&config.data_dir, &body.email);
             if let Err(e) = user_data::provision_user_data(&config.data_dir, &user_hash) {
                 tracing::error!(error = %e, "failed to provision user data directory");
                 return (

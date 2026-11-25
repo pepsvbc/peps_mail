@@ -45,15 +45,23 @@ function localizeError(error: ApiError): string {
   return message;
 }
 
+/**
+ * Drop an account whose server session is no longer usable, tell the user,
+ * and revoke the session server-side so nothing keeps using its password.
+ */
+export function signOutAccount(accountId: string, message: string): void {
+  useAuthStore.getState().removeAccount(accountId);
+  toast.error(message);
+  fetch(`${API_BASE}/auth/accounts/${encodeURIComponent(accountId)}`, {
+    method: "DELETE",
+    headers: { "X-Requested-With": "XMLHttpRequest" },
+    credentials: "same-origin",
+  }).catch(() => {});
+}
+
 function handleAccountSessionExpired(error: ApiError): void {
   if (error.code === "ACCOUNT_SESSION_EXPIRED" && error.accountId) {
-    useAuthStore.getState().removeAccount(error.accountId);
-    toast.error(localizeError({ ...error, message: error.message ?? "Account session expired" }));
-    fetch(`${API_BASE}/auth/accounts/${error.accountId}`, {
-      method: "DELETE",
-      headers: { "X-Requested-With": "XMLHttpRequest" },
-      credentials: "same-origin",
-    }).catch(() => {});
+    signOutAccount(error.accountId, localizeError({ ...error, message: error.message ?? "Account session expired" }));
   }
 }
 

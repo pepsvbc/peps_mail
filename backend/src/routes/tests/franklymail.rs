@@ -2,12 +2,23 @@ use super::*;
 use crate::integrations::franklymail::{self, config::Config};
 
 fn app(temp: &TempDir, enabled: bool, store: Arc<SessionStore>) -> Router {
+    app_with_admins(temp, enabled, store, "admin@example.com")
+}
+
+fn app_with_admins(
+    temp: &TempDir,
+    enabled: bool,
+    store: Arc<SessionStore>,
+    franklymail_admins: &str,
+) -> Router {
     let mut config = (*test_config_with_imap("nonexistent", temp.path().to_str().unwrap())).clone();
-    config.admin_emails = Some("admin@example.com".into());
+    // Distribution-list administrators; deliberately not FranklyMail admins.
+    config.admin_emails = Some("admin@example.com,lists@example.com".into());
     let provider = Config {
         enabled,
         api_key: "server-only-test-secret".into(),
         domains: "example.com".into(),
+        admin_emails: franklymail_admins.into(),
         ..Default::default()
     };
     let extension = franklymail::router(provider, &config).unwrap();
@@ -99,6 +110,83 @@ async fn non_admin_cannot_read_or_mutate_provider_settings() {
             .unwrap();
         assert_eq!(res.status(), StatusCode::FORBIDDEN, "{method} {path}");
     }
+}
+
+async fn account_flags(router: &Router, store: &Arc<SessionStore>, email: &str) -> serde_json::Value {
+    let (browser, account, token) = setup_test_account(store, email);
+    let mut request = Request::builder().uri("/api/integrations/franklymail/account");
+    for (name, value) in auth_headers(&browser, &account, &token) {
+        request = request.header(name, value);
+    }
+    let response = router
+        .clone()
+        .oneshot(request.body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap()
+}
+
+#[tokio::test]
+async fn distribution_list_admins_are_not_franklymail_admins() {
+    let temp = TempDir::new().unwrap();
+    let store = test_store();
+    // FRANKLYMAIL_ADMIN_EMAILS unset: nobody administers FranklyMail, even
+    // though ADMIN_EMAILS lists this address.
+    let router = app_with_admins(&temp, true, store.clone(), "");
+    assert_eq!(account_flags(&router, &store, "admin@example.com").await["admin"], false);
+    let (browser, account, token) = setup_test_account(&store, "admin@example.com");
+    let mut request = Request::builder()
+        .method("POST")
+        .uri("/api/integrations/franklymail/recovery")
+        .header("content-type", "application/json")
+        .header("x-requested-with", "XMLHttpRequest");
+    for (name, value) in auth_headers(&browser, &account, &token) {
+        request = request.header(name, value);
+    }
+    let res = router
+        .oneshot(
+            request
+                .body(Body::from(
+                    r#"{"email":"member@example.com","personal_email":"attacker@other.org"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+    let store = test_store();
+    let router = app_with_admins(&temp, true, store.clone(), "ADMIN@example.com");
+    assert_eq!(account_flags(&router, &store, "admin@example.com").await["admin"], true);
+    assert_eq!(account_flags(&router, &store, "lists@example.com").await["admin"], false);
+    assert_eq!(account_flags(&router, &store, "member@example.com").await["admin"], false);
+}
+
+#[tokio::test]
+async fn anonymous_recovery_floods_do_not_rate_limit_signed_in_routes() {
+    let temp = TempDir::new().unwrap();
+    let store = test_store();
+    let router = app(&temp, true, store.clone());
+    let mut limited = false;
+    for _ in 0..15 {
+        let res = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/integrations/franklymail/recovery/request")
+                    .header("content-type", "application/json")
+                    .header("x-requested-with", "XMLHttpRequest")
+                    .body(Body::from(r#"{"email":"member@example.com"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        limited |= res.status() == StatusCode::TOO_MANY_REQUESTS;
+    }
+    assert!(limited, "the public bucket should be exhausted");
+    assert_eq!(account_flags(&router, &store, "admin@example.com").await["admin"], true);
 }
 
 #[tokio::test]

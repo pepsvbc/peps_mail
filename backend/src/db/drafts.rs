@@ -1,4 +1,4 @@
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, Transaction, TransactionBehavior, params};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -190,6 +190,35 @@ pub fn total_attachment_bytes(conn: &Connection) -> Result<i64, String> {
         .map_err(|e| format!("Failed to sum draft attachments: {e}"))
 }
 
+/// Add an attachment record only if the user's stored total stays within
+/// `max_total_bytes`. Returns `Ok(false)` (and stores nothing) when it would
+/// not fit.
+///
+/// The check and the insert run in one `BEGIN IMMEDIATE` transaction, which
+/// takes SQLite's write lock up front, so parallel uploads on other
+/// connections can't all pass the check against the same old total.
+#[allow(clippy::too_many_arguments)]
+pub fn add_draft_attachment_within_quota(
+    conn: &Connection,
+    id: &str,
+    draft_id: &str,
+    filename: &str,
+    content_type: &str,
+    size: i64,
+    file_path: &str,
+    max_total_bytes: i64,
+) -> Result<bool, String> {
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
+        .map_err(|e| format!("Failed to start attachment transaction: {e}"))?;
+    if total_attachment_bytes(&tx)?.saturating_add(size) > max_total_bytes {
+        return Ok(false); // dropping `tx` rolls back
+    }
+    add_draft_attachment(&tx, id, draft_id, filename, content_type, size, file_path)?;
+    tx.commit()
+        .map_err(|e| format!("Failed to commit draft attachment: {e}"))?;
+    Ok(true)
+}
+
 /// Get all attachments for a draft.
 pub fn get_draft_attachments(
     conn: &Connection,
@@ -229,6 +258,65 @@ pub fn delete_draft_attachment(conn: &Connection, id: &str) -> Result<bool, Stri
         .execute("DELETE FROM draft_attachments WHERE id = ?1", params![id])
         .map_err(|e| format!("Failed to delete draft attachment: {e}"))?;
     Ok(deleted > 0)
+}
+
+/// Stable identity used by older imports as well as new ones.
+pub fn imported_id(folder: &str, uid_validity: u32, uid: u32) -> String {
+    format!(
+        "imap-{:x}",
+        Sha256::digest(format!("{folder}\0{uid_validity}\0{uid}"))
+    )
+}
+
+pub fn set_source(
+    conn: &Connection,
+    id: &str,
+    folder: &str,
+    uid_validity: Option<u32>,
+    uid: Option<u32>,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE drafts SET source_folder=?2, source_uid_validity=?3, source_uid=?4 WHERE id=?1",
+        params![id, folder, uid_validity, uid],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn find_by_source(
+    conn: &Connection,
+    folder: &str,
+    uid_validity: u32,
+    uid: u32,
+) -> Result<Option<String>, String> {
+    use rusqlite::OptionalExtension;
+    conn.query_row(
+        "SELECT id FROM drafts WHERE source_folder=?1 AND source_uid_validity=?2 AND source_uid=?3",
+        params![folder, uid_validity, uid],
+        |r| r.get(0),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+/// Recover exact folder/UID links for drafts imported before source tracking.
+/// Never guess from subjects, senders, or message contents.
+pub fn recover_sources(conn: &Connection) -> Result<(), String> {
+    let mut stmt = conn.prepare("SELECT m.folder,m.uid,f.uid_validity FROM messages m JOIN folders f ON f.name=m.folder WHERE m.flags LIKE '%\\Draft%' OR f.flags LIKE '%\\Drafts%' OR lower(m.folder) IN ('drafts','[gmail]/drafts','brouillons')").map_err(|e| e.to_string())?;
+    let sources = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, u32>(1)?,
+                row.get::<_, u32>(2)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+    for source in sources {
+        let (folder, uid, validity) = source.map_err(|e| e.to_string())?;
+        conn.execute("UPDATE drafts SET source_folder=?2,source_uid_validity=?3,source_uid=?4 WHERE id=?1 AND source_folder IS NULL", params![imported_id(&folder, validity, uid),folder,validity,uid]).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -427,63 +515,49 @@ mod tests {
         let atts = get_draft_attachments(&conn, "draft-1").unwrap();
         assert!(atts.is_empty());
     }
-}
 
-/// Stable identity used by older imports as well as new ones.
-pub fn imported_id(folder: &str, uid_validity: u32, uid: u32) -> String {
-    format!(
-        "imap-{:x}",
-        Sha256::digest(format!("{folder}\0{uid_validity}\0{uid}"))
-    )
-}
-
-pub fn set_source(
-    conn: &Connection,
-    id: &str,
-    folder: &str,
-    uid_validity: Option<u32>,
-    uid: Option<u32>,
-) -> Result<(), String> {
-    conn.execute(
-        "UPDATE drafts SET source_folder=?2, source_uid_validity=?3, source_uid=?4 WHERE id=?1",
-        params![id, folder, uid_validity, uid],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-pub fn find_by_source(
-    conn: &Connection,
-    folder: &str,
-    uid_validity: u32,
-    uid: u32,
-) -> Result<Option<String>, String> {
-    use rusqlite::OptionalExtension;
-    conn.query_row(
-        "SELECT id FROM drafts WHERE source_folder=?1 AND source_uid_validity=?2 AND source_uid=?3",
-        params![folder, uid_validity, uid],
-        |r| r.get(0),
-    )
-    .optional()
-    .map_err(|e| e.to_string())
-}
-
-/// Recover exact folder/UID links for drafts imported before source tracking.
-/// Never guess from subjects, senders, or message contents.
-pub fn recover_sources(conn: &Connection) -> Result<(), String> {
-    let mut stmt = conn.prepare("SELECT m.folder,m.uid,f.uid_validity FROM messages m JOIN folders f ON f.name=m.folder WHERE m.flags LIKE '%\\Draft%' OR f.flags LIKE '%\\Drafts%' OR lower(m.folder) IN ('drafts','[gmail]/drafts','brouillons')").map_err(|e| e.to_string())?;
-    let sources = stmt
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, u32>(1)?,
-                row.get::<_, u32>(2)?,
-            ))
-        })
-        .map_err(|e| e.to_string())?;
-    for source in sources {
-        let (folder, uid, validity) = source.map_err(|e| e.to_string())?;
-        conn.execute("UPDATE drafts SET source_folder=?2,source_uid_validity=?3,source_uid=?4 WHERE id=?1 AND source_folder IS NULL", params![imported_id(&folder, validity, uid),folder,validity,uid]).map_err(|e| e.to_string())?;
+    #[test]
+    fn quota_checked_insert_refuses_what_does_not_fit() {
+        let conn = open_test_db();
+        upsert_draft(&conn, "d", "", "", "", "", "", None, None, None).unwrap();
+        assert!(add_draft_attachment_within_quota(&conn, "a", "d", "a", "x/y", 60, "/a", 100).unwrap());
+        assert!(!add_draft_attachment_within_quota(&conn, "b", "d", "b", "x/y", 41, "/b", 100).unwrap());
+        assert!(add_draft_attachment_within_quota(&conn, "c", "d", "c", "x/y", 40, "/c", 100).unwrap());
+        assert_eq!(total_attachment_bytes(&conn).unwrap(), 100);
+        assert_eq!(get_draft_attachments(&conn, "d").unwrap().len(), 2);
     }
-    Ok(())
+
+    /// Parallel uploads on separate connections must not all pass the check
+    /// against the same stale total.
+    #[test]
+    fn quota_checked_insert_is_atomic_across_connections() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path().to_str().unwrap().to_string();
+        let conn = crate::db::pool::open_user_db(&data_dir, "u").unwrap();
+        upsert_draft(&conn, "d", "", "", "", "", "", None, None, None).unwrap();
+        drop(conn);
+
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let handles: Vec<_> = (0..8)
+            .map(|i| {
+                let data_dir = data_dir.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let conn = crate::db::pool::open_user_db(&data_dir, "u").unwrap();
+                    barrier.wait();
+                    let id = format!("att-{i}");
+                    add_draft_attachment_within_quota(&conn, &id, "d", &id, "x/y", 30, "/p", 100)
+                        .unwrap()
+                })
+            })
+            .collect();
+        let stored = handles
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .filter(|ok| *ok)
+            .count();
+        assert_eq!(stored, 3);
+        let conn = crate::db::pool::open_user_db(&data_dir, "u").unwrap();
+        assert_eq!(total_attachment_bytes(&conn).unwrap(), 90);
+    }
 }

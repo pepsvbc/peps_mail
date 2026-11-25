@@ -5,11 +5,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { toast } from "sonner";
 import { translate as t } from "@/lib/i18n";
+import { signOutAccount } from "@/lib/api";
 
 export type WsStatus = "connected" | "connecting" | "disconnected";
 
 export interface MailEvent {
-  type: "NewMessages" | "FlagsChanged" | "FolderUpdated" | "DraftsUpdated";
+  type: "NewMessages" | "FlagsChanged" | "FolderUpdated" | "DraftsUpdated" | "ReauthRequired";
   data?: {
     folder?: string;
     synced?: boolean;
@@ -97,6 +98,13 @@ export function useWebSocket(onEvent?: (event: MailEvent) => void) {
 
           if (mailEvent.type === "NewMessages" || mailEvent.type === "FlagsChanged" || mailEvent.type === "FolderUpdated") {
             scheduleInvalidation(["account-unread", accountId]);
+          }
+
+          // The mail server rejected this account's saved password (e.g. it was
+          // changed elsewhere). Applies to any account, not just the active one.
+          if (mailEvent.type === "ReauthRequired") {
+            signOutAccount(accountId, t("Your mail password has changed. Please sign in again."));
+            return;
           }
 
           const activeAccountId = useAuthStore.getState().activeAccountId;

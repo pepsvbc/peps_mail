@@ -12,6 +12,7 @@ use tokio::sync::{broadcast, mpsc};
 use crate::auth::session::{AccountSession, SessionStore};
 use crate::config::AppConfig;
 use crate::imap::client::{ImapClient, ImapCredentials};
+use crate::realtime::credentials::CREDENTIALS;
 use crate::realtime::events::EventBus;
 use crate::realtime::idle::IdleManager;
 use crate::routes::auth::{extract_browser_id, extract_session_cookies};
@@ -19,6 +20,10 @@ use crate::search::engine::SearchEngine;
 
 /// Maximum simultaneous WebSockets per browser (roughly: open tabs).
 const MAX_SOCKETS_PER_BROWSER: usize = 20;
+
+/// Largest message/frame accepted from a client. Incoming data messages are
+/// ignored, so this only needs to fit control frames (ping/pong/close).
+const MAX_INCOMING_WS_BYTES: usize = 4 * 1024;
 
 /// Open socket count per browser id.
 static BROWSER_SOCKETS: LazyLock<Mutex<HashMap<String, usize>>> =
@@ -177,7 +182,11 @@ pub async fn ws_handler(
         return (StatusCode::TOO_MANY_REQUESTS, "Too many open connections").into_response();
     };
 
-    ws.on_upgrade(move |socket| {
+    // The server only pushes events; clients send nothing but control frames,
+    // so refuse anything bigger than a few KiB instead of the 64 MiB default.
+    ws.max_message_size(MAX_INCOMING_WS_BYTES)
+        .max_frame_size(MAX_INCOMING_WS_BYTES)
+        .on_upgrade(move |socket| {
         handle_socket_multi_account(
             socket,
             slot,
@@ -210,6 +219,7 @@ async fn handle_socket_multi_account(
     tracing::info!(account_count = auth.accounts.len(), "WebSocket connected");
 
     let mut forward_handles: Vec<tokio::task::JoinHandle<()>> = Vec::new();
+    let mut credential_leases = Vec::with_capacity(auth.accounts.len());
 
     let (event_tx, mut event_rx) =
         mpsc::channel::<(String, crate::realtime::events::MailEvent)>(64);
@@ -246,11 +256,17 @@ async fn handle_socket_multi_account(
             password: session.password.clone(),
         };
 
+        // The shared background tasks read the newest live credentials from
+        // the registry on every reconnect; this socket's entry is removed
+        // when the socket closes (lease dropped below).
+        credential_leases.push(CREDENTIALS.register(&user_hash, creds));
+        let credentials = CREDENTIALS.source(&user_hash);
+
         idle_manager
             .start_idle(
                 user_hash.clone(),
                 "INBOX".to_string(),
-                creds.clone(),
+                credentials.clone(),
                 event_bus.clone(),
                 config.clone(),
             )
@@ -259,7 +275,7 @@ async fn handle_socket_multi_account(
         subscribe_sync(&user_hash, || {
             tokio::spawn(super::sync::sync_loop(
                 user_hash.clone(),
-                creds,
+                credentials,
                 config.clone(),
                 imap_client.clone(),
                 event_bus.clone(),
@@ -328,6 +344,8 @@ async fn handle_socket_multi_account(
         idle_manager.stop_idle(&session.user_hash, "INBOX").await;
         event_bus.cleanup(&session.user_hash).await;
     }
+
+    drop(credential_leases);
 }
 
 #[cfg(test)]

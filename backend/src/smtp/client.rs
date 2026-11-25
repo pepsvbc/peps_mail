@@ -6,6 +6,14 @@ use async_trait::async_trait;
 pub use crate::smtp::error::SmtpError;
 pub use crate::smtp::types::{AttachmentData, SendableMessage, SmtpCredentials};
 
+/// Most recipients (To + Cc + Bcc combined) one message may have.
+///
+/// Distribution lists hold up to 500 members and are expanded into
+/// individual addresses by the composer, so a full list must still fit.
+/// Enforced by the send route (as a 400) and again here so no other caller
+/// can hand SMTP an unbounded recipient list.
+pub const MAX_RECIPIENTS: usize = 500;
+
 // ---------------------------------------------------------------------------
 // Trait definition
 // ---------------------------------------------------------------------------
@@ -51,6 +59,13 @@ impl SmtpClient for RealSmtpClient {
         };
         use lettre::transport::smtp::authentication::Credentials;
         use lettre::{AsyncSmtpTransport, AsyncTransport, Tokio1Executor};
+
+        let recipients = message.to.len() + message.cc.len() + message.bcc.len();
+        if recipients > MAX_RECIPIENTS {
+            return Err(SmtpError::SendFailed(format!(
+                "too many recipients ({recipients}, at most {MAX_RECIPIENTS})"
+            )));
+        }
 
         // Generate a unique Message-ID.
         let message_id = format!(

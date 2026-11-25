@@ -30,11 +30,18 @@ describe("optional provider access", () => {
     expect(screen.queryByRole("button", { name: /Manage users/ })).toBeNull();
     expect(vi.mocked(apiGet).mock.calls.every(([path]) => ["/integrations/capabilities", "/integrations/franklymail/account"].includes(path))).toBe(true);
   });
-  it("shows administration to admins only when enabled", async () => {
-    useAuthStore.setState({ accounts:useAuthStore.getState().accounts.map((a) => ({ ...a,isAdmin:true })) });
+  it("shows administration to FranklyMail admins only when enabled", async () => {
+    vi.mocked(apiGet).mockImplementation(async (path) => path.endsWith("/account") ? { change_password:true,admin:true } : { franklymail:true,franklymail_recovery:true });
     mount(<ProviderSettings />);
     fireEvent.click(await screen.findByRole("button", { name: /Manage users/ }));
     expect(useUiStore.getState().viewMode).toBe("users");
+  });
+  it("does not treat distribution-list admins as FranklyMail admins", async () => {
+    useAuthStore.setState({ accounts:useAuthStore.getState().accounts.map((a) => ({ ...a,isAdmin:true })) });
+    vi.mocked(apiGet).mockImplementation(async (path) => path.endsWith("/account") ? { change_password:true,admin:false } : { franklymail:true,franklymail_recovery:true });
+    mount(<><ProviderSettings /><AdminPage /></>);
+    await screen.findByText("Administrator access is required.");
+    expect(screen.queryByRole("button", { name: /Manage users/ })).toBeNull();
   });
   it("keeps generic installations free of provider UI", async () => {
     vi.mocked(apiGet).mockResolvedValue({ franklymail:false,franklymail_recovery:false });

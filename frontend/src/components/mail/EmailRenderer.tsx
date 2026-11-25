@@ -10,9 +10,8 @@ import {
   escapeStyleText,
   isSafeCssColor,
   isSafeLinkHref,
-  parseEmailHtml,
-  sanitizeEmailDocument,
-  stripRemoteResources,
+  parseSanitizedEmailHtml,
+  restrictResourceUrls,
 } from "@/lib/email-html";
 import { findPlainTextQuote, findTrailingQuote } from "@/lib/quote-detection";
 import { QuoteToggle } from "./QuoteToggle";
@@ -22,6 +21,7 @@ interface EmailRendererProps {
   autoHeight?: boolean;
   html: string | null;
   text: string | null;
+  /** Block remote images, styles and fonts (the default); pass false once the user allowed them. */
   blockRemoteResources?: boolean;
   theme?: "light" | "dark" | "auto";
   emailTheme?: 'light' | 'dark' | 'transparent' | 'adaptive';
@@ -61,9 +61,7 @@ export function hasRemoteResources(html: string | null): boolean {
   if (!html) return false;
   // Called on every ReadingPane render, so remember the last message's answer.
   if (lastRemoteCheck?.html === html) return lastRemoteCheck.result;
-  const doc = parseEmailHtml(html);
-  sanitizeEmailDocument(doc);
-  const result = documentHasRemoteResources(doc);
+  const result = documentHasRemoteResources(parseSanitizedEmailHtml(html));
   lastRemoteCheck = { html, result };
   return result;
 }
@@ -112,9 +110,9 @@ function processEmailHtml(
   adaptiveMode: "dark" | "light" | null,
   quoteMode: "keep" | "detect" | "collapse" = "keep",
 ): { bodyHtml: string; emailBgColor: string | null; adaptiveDarkCSS: string; hasQuote: boolean } {
-  const doc = parseEmailHtml(html);
-  sanitizeEmailDocument(doc);
-  if (blockRemoteResources) stripRemoteResources(doc);
+  const doc = parseSanitizedEmailHtml(html);
+  // Also when remote content is allowed: relative and same-origin URLs are always dropped.
+  restrictResourceUrls(doc, !blockRemoteResources);
 
   // Trailing quoted history (detected by DOM traversal, see lib/quote-detection.ts).
   const quoteNodes = quoteMode === "keep" ? null : findTrailingQuote(doc);
@@ -207,13 +205,28 @@ function processEmailHtml(
 }
 
 /**
+ * The link an email click activates. Uses the composed path rather than
+ * `target.closest()`, which stops at a shadow root: sanitization removes
+ * declarative shadow roots, but a link inside one must never slip past the
+ * handler. Elements come from the iframe's realm, so no `instanceof` checks.
+ */
+function findClickedLink(event: MouseEvent): Element | null {
+  const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+  for (const target of path) {
+    const node = target as Partial<Element>;
+    if (node.nodeType === 1 && (node.localName === "a" || node.localName === "area")) return node as Element;
+  }
+  return (event.target as Element | null)?.closest?.("a, area") ?? null;
+}
+
+/**
  * Click handler for the email document. Static sanitization already gives safe
  * links target="_blank" and removes unsafe hrefs; this also covers hrefs that
  * change after load (SVG) and fragment links, which in a srcdoc document would
  * otherwise resolve against the app URL and load the app inside the iframe.
  */
-function handleEmailLinkClick(event: MouseEvent) {
-  const link = (event.target as Element | null)?.closest?.("a, area");
+export function handleEmailLinkClick(event: MouseEvent) {
+  const link = findClickedLink(event);
   if (!link) return;
   const svgHref = (link as unknown as { href?: unknown }).href;
   const href = typeof svgHref === "object" && svgHref !== null
@@ -249,7 +262,7 @@ export function EmailRenderer({
   html,
   text,
   autoHeight = false,
-  blockRemoteResources = false,
+  blockRemoteResources = true,
   theme = "auto",
   emailTheme,
   collapseQuotes = false,

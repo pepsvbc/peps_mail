@@ -155,6 +155,7 @@ function ComposeWindow({ store = defaultComposeStore, windowDock, leftTabDock, r
     quotedHtml,
     quotedText,
     showQuoted,
+    quoteRemoteAllowed,
     setShowQuoted,
     removeQuote,
     closeCompose,
@@ -1111,7 +1112,7 @@ function ComposeWindow({ store = defaultComposeStore, windowDock, leftTabDock, r
                 {showQuoted && (
                   <div role="region" aria-label={t("Previous messages")} className="mt-2 overflow-hidden rounded-md border border-border/60">
                     {isHtml && quotedHtml != null ? (
-                      <EmailRenderer autoHeight html={quotedHtml} text={null} />
+                      <EmailRenderer autoHeight html={quotedHtml} text={null} blockRemoteResources={!quoteRemoteAllowed} />
                     ) : (
                       <pre className="whitespace-pre-wrap break-words p-3 text-sm text-muted-foreground">{quotedText ?? ""}</pre>
                     )}

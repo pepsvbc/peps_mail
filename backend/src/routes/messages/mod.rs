@@ -78,12 +78,6 @@ pub async fn list_messages(
             .map_err(|e| AppError::InternalError(format!("Database error: {e}")))?;
         let cached_uid_validity = cached_folder.as_ref().map(|f| f.uid_validity).unwrap_or(0);
 
-        // Ensure the folder exists in the folders table (for FK constraint).
-        if cached_folder.is_none() {
-            db::folders::upsert_folder(&conn, &folder, None, None, "", true, 0, 0, 0, 0)
-                .map_err(|e| AppError::InternalError(format!("Database error: {e}")))?;
-        }
-
         let cached_count = db::messages::count_messages(&conn, &folder)
             .map_err(|e| AppError::InternalError(format!("Database error: {e}")))?;
 
@@ -92,6 +86,14 @@ pub async fn list_messages(
             .folder_status(&creds, &folder)
             .await
             .map_err(|e| AppError::ServiceUnavailable(format!("IMAP error: {e}")))?;
+
+        // Ensure the folder exists in the folders table (for FK constraint),
+        // but only once IMAP has confirmed it exists: the name comes straight
+        // from the URL, so inserting earlier would let any request add rows.
+        if cached_folder.is_none() {
+            db::folders::upsert_folder(&conn, &folder, None, None, "", true, 0, 0, 0, 0)
+                .map_err(|e| AppError::InternalError(format!("Database error: {e}")))?;
+        }
 
         tracing::info!(
             folder = %folder,
@@ -446,113 +448,62 @@ pub async fn get_message(
     let cached_body = db::messages::get_cached_body(&conn, &folder, uid)
         .map_err(|e| AppError::InternalError(format!("Database error: {e}")))?;
 
-    // Treat a cache hit with missing attachments_json as stale (pre-V006 cache).
-    // Re-fetch from IMAP so attachments and inline images are properly resolved.
-    let usable_cache = cached_body.filter(|c| c.attachments_json.is_some());
-    let fetched_body = usable_cache.is_none();
+    // Treat a cache hit with missing attachments_json as stale (pre-V006 cache,
+    // or cleared by V025). Re-fetch from IMAP so attachments and inline images
+    // are properly resolved; keep the stale copy to serve if IMAP is down.
+    let (usable_cache, stale_cache) = match cached_body {
+        Some(c) if c.attachments_json.is_some() => (Some(c), None),
+        other => (None, other),
+    };
+    let mut fetched_body = usable_cache.is_none();
 
     let (body_html, body_text, attachments, raw_headers, email_theme) = if let Some(cached) = usable_cache {
-        let attachments: Vec<AttachmentMeta> = cached
-            .attachments_json
-            .as_deref()
-            .and_then(|j| serde_json::from_str(j).ok())
-            .unwrap_or_default();
-        let theme = cached.email_theme;
-        if theme.is_none() && let Some(ref html) = cached.html {
-            let detected = email_theme::detect_email_theme(html)
-                .map(|t| t.as_i32());
-            if let Some(t) = detected {
-                let _ = db::messages::update_email_theme(&conn, &folder, uid, t);
-            }
-            (cached.html, cached.text, attachments, cached.raw_headers.unwrap_or_default(), detected)
-        } else {
-            (cached.html, cached.text, attachments, cached.raw_headers.unwrap_or_default(), theme)
-        }
+        serve_cached_body(&conn, &folder, uid, cached)
     } else {
         // Fetch from IMAP.
-        let body = imap_client
-            .fetch_body(&creds, &folder, uid)
-            .await
-            .map_err(|e| match e {
-                crate::imap::client::ImapError::MessageNotFound { .. } => {
-                    // Message exists in local DB but not on IMAP server —
-                    // remove the stale cache entry, search index entry, and
-                    // invalidate the folder so the list refreshes.
-                    let _ = db::messages::delete_message(&conn, &folder, uid);
-                    let _ = db::folders::invalidate_folder_freshness(&conn, &folder);
-                    if let Ok(user_index) = search_engine.open_user_index(&session.user_hash) {
-                        let _ = user_index.delete_message(uid, &folder);
-                    }
-                    AppError::NotFound(format!("Message UID {uid} not found in folder {folder}"))
-                }
-                other => {
-                    // No cached body and IMAP is unreachable — this message
-                    // can't be served. Remove the stale DB entry so it
-                    // disappears from the message list.
-                    let _ = db::messages::delete_message(&conn, &folder, uid);
-                    let _ = db::folders::invalidate_folder_freshness(&conn, &folder);
-                    if let Ok(user_index) = search_engine.open_user_index(&session.user_hash) {
-                        let _ = user_index.delete_message(uid, &folder);
-                    }
-                    AppError::ServiceUnavailable(format!("IMAP error: {other}"))
-                }
-            })?;
+        match imap_client.fetch_body(&creds, &folder, uid).await {
+            Ok(body) => {
+                let prepared = prepare_body_for_cache(&body);
 
-        // Use HTML directly (frontend sandbox handles security).
-        let sanitized_html = body.text_html.clone();
+                db::messages::cache_message_body(
+                    &conn,
+                    &folder,
+                    uid,
+                    prepared.html.as_deref(),
+                    body.text_plain.as_deref(),
+                    prepared.attachments_json.as_deref(),
+                    Some(&body.raw_headers),
+                    prepared.email_theme,
+                )
+                .map_err(|e| AppError::InternalError(format!("Database error: {e}")))?;
 
-        let attachment_meta: Vec<AttachmentMeta> = body
-            .attachments
-            .iter()
-            .enumerate()
-            .map(|(i, a)| AttachmentMeta {
-                id: i.to_string(),
-                filename: a.filename.clone(),
-                content_type: preview_content_type(&a.content_type, a.filename.as_deref(), &a.data),
-                size: a.size,
-                content_id: a.content_id.clone(),
-            })
-            .collect();
-
-        // Rewrite cid: URLs in the HTML to inline data URIs so the
-        // sandboxed iframe can display embedded images without needing
-        // network access.
-        let resolved_html = sanitized_html.map(|mut html| {
-            for att in &body.attachments {
-                if let Some(ref cid) = att.content_id {
-                    let cid_url = format!("cid:{cid}");
-                    if html.contains(&cid_url) {
-                        use base64::Engine;
-                        let b64 = base64::engine::general_purpose::STANDARD.encode(&att.data);
-                        let data_uri = format!("data:{};base64,{}", att.content_type, b64);
-                        html = html.replace(&cid_url, &data_uri);
-                    }
-                }
+                (prepared.html, body.text_plain, prepared.attachments, body.raw_headers, prepared.email_theme)
             }
-            html
-        });
-
-        // Serialize attachment metadata for caching.
-        let att_json = serde_json::to_string(&attachment_meta).ok();
-
-        let detected_theme = resolved_html
-            .as_ref()
-            .and_then(|h| email_theme::detect_email_theme(h))
-            .map(|t| t.as_i32());
-
-        db::messages::cache_message_body(
-            &conn,
-            &folder,
-            uid,
-            resolved_html.as_deref(),
-            body.text_plain.as_deref(),
-            att_json.as_deref(),
-            Some(&body.raw_headers),
-            detected_theme,
-        )
-        .map_err(|e| AppError::InternalError(format!("Database error: {e}")))?;
-
-        (resolved_html, body.text_plain, attachment_meta, body.raw_headers, detected_theme)
+            Err(crate::imap::client::ImapError::MessageNotFound { .. }) => {
+                // The server says the message is gone — remove the stale
+                // cache entry and search index entry, and invalidate the
+                // folder so the list refreshes.
+                let _ = db::messages::delete_message(&conn, &folder, uid);
+                let _ = db::folders::invalidate_folder_freshness(&conn, &folder);
+                if let Ok(user_index) = search_engine.open_user_index(&session.user_hash) {
+                    let _ = user_index.delete_message(uid, &folder);
+                }
+                return Err(AppError::NotFound(format!(
+                    "Message UID {uid} not found in folder {folder}"
+                )));
+            }
+            Err(other) => {
+                // Transient failure (server down, auth, protocol): the message
+                // may well still exist, so keep the cached row. Serve the stale
+                // body if we have one, otherwise report the outage.
+                let Some(stale) = stale_cache else {
+                    return Err(AppError::ServiceUnavailable(format!("IMAP error: {other}")));
+                };
+                tracing::warn!(folder = %folder, uid, error = %other, "IMAP fetch failed; serving stale cached body");
+                fetched_body = false;
+                serve_cached_body(&conn, &folder, uid, stale)
+            }
+        }
     };
 
     // Get the message header from cache (use efficient single-message lookup).
@@ -638,10 +589,17 @@ pub async fn get_message(
         });
     }
 
-    // Build thread using full References chain.
-    let thread_messages = if let Some(ref message_id) = msg.message_id {
-        db::messages::get_full_thread(&conn, message_id, msg.references_header.as_deref())
-            .unwrap_or_default()
+    // Build thread using full References chain. The walk is bounded but still
+    // runs several SQLite queries, so keep it off the async runtime threads.
+    let thread_messages = if let Some(message_id) = msg.message_id.clone() {
+        let references = msg.references_header.clone();
+        tokio::task::spawn_blocking(move || {
+            db::messages::get_full_thread(&conn, &message_id, references.as_deref())
+        })
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .unwrap_or_default()
     } else {
         vec![]
     };
@@ -889,6 +847,89 @@ pub async fn download_attachment(
     let content_type = preview_content_type(&attachment.content_type, Some(&filename), &attachment.data);
 
     super::attachment_response::attachment_response(&content_type, &filename, attachment.data)
+}
+
+/// Fields of a message detail served from the SQLite body cache:
+/// `(html, text, attachments, raw_headers, email_theme)`.
+type BodyParts = (Option<String>, Option<String>, Vec<AttachmentMeta>, String, Option<i32>);
+
+/// Turn a cached body row into response parts, detecting (and storing) the
+/// email theme if it was never computed.
+fn serve_cached_body(
+    conn: &rusqlite::Connection,
+    folder: &str,
+    uid: u32,
+    cached: db::messages::CachedBody,
+) -> BodyParts {
+    let attachments: Vec<AttachmentMeta> = cached
+        .attachments_json
+        .as_deref()
+        .and_then(|j| serde_json::from_str(j).ok())
+        .unwrap_or_default();
+    let mut theme = cached.email_theme;
+    if theme.is_none() && let Some(ref html) = cached.html {
+        theme = email_theme::detect_email_theme_guarded(html).map(|t| t.as_i32());
+        if let Some(t) = theme {
+            let _ = db::messages::update_email_theme(conn, folder, uid, t);
+        }
+    }
+    (cached.html, cached.text, attachments, cached.raw_headers.unwrap_or_default(), theme)
+}
+
+/// A fetched message body in the shape stored in the SQLite body cache.
+pub(crate) struct PreparedBody {
+    /// HTML with `cid:` references rewritten to inline `data:` URIs.
+    pub(crate) html: Option<String>,
+    /// Attachment metadata (no bytes), as returned to the client.
+    pub(crate) attachments: Vec<AttachmentMeta>,
+    /// `attachments` serialized for the `attachments_json` column.
+    pub(crate) attachments_json: Option<String>,
+    /// Detected email theme (`EmailTheme::as_i32`).
+    pub(crate) email_theme: Option<i32>,
+}
+
+/// Build the cacheable form of a fetched body. Shared by `get_message` and
+/// the deep-index background task so both write the same metadata shape
+/// (never raw attachment bytes) to `attachments_json`.
+pub(crate) fn prepare_body_for_cache(body: &crate::imap::client::ImapMessageBody) -> PreparedBody {
+    let attachments: Vec<AttachmentMeta> = body
+        .attachments
+        .iter()
+        .enumerate()
+        .map(|(i, a)| AttachmentMeta {
+            id: i.to_string(),
+            filename: a.filename.clone(),
+            content_type: preview_content_type(&a.content_type, a.filename.as_deref(), &a.data),
+            size: a.size,
+            content_id: a.content_id.clone(),
+        })
+        .collect();
+
+    // Rewrite cid: URLs in the HTML to inline data URIs so the sandboxed
+    // iframe can display embedded images without needing network access.
+    // (HTML is used directly; the frontend sandbox handles security.)
+    let html = body.text_html.clone().map(|mut html| {
+        for att in &body.attachments {
+            if let Some(ref cid) = att.content_id {
+                let cid_url = format!("cid:{cid}");
+                if html.contains(&cid_url) {
+                    use base64::Engine;
+                    let b64 = base64::engine::general_purpose::STANDARD.encode(&att.data);
+                    let data_uri = format!("data:{};base64,{}", att.content_type, b64);
+                    html = html.replace(&cid_url, &data_uri);
+                }
+            }
+        }
+        html
+    });
+
+    let attachments_json = serde_json::to_string(&attachments).ok();
+    let email_theme = html
+        .as_deref()
+        .and_then(email_theme::detect_email_theme_guarded)
+        .map(|t| t.as_i32());
+
+    PreparedBody { html, attachments, attachments_json, email_theme }
 }
 
 fn preview_content_type(content_type: &str, filename: Option<&str>, data: &[u8]) -> String {

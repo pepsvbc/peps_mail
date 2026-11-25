@@ -77,7 +77,12 @@ impl ManagementClient {
 
     /// Resolve an authorized address to a provider ID; callers enforce domain/admin access.
     pub async fn mailbox(&self, email: &str) -> Result<uuid::Uuid, AppError> {
-        let matches: Vec<_> = self
+        Ok(self.find_mailbox(email).await?.id)
+    }
+
+    /// Like [`Self::mailbox`], also returning the address as the provider spells it.
+    pub async fn find_mailbox(&self, email: &str) -> Result<Mailbox, AppError> {
+        let mut matches: Vec<_> = self
             .mailboxes()
             .await?
             .into_iter()
@@ -88,7 +93,7 @@ impl ManagementClient {
                 "This mailbox is not managed by this FranklyMail integration".into(),
             ));
         }
-        Ok(matches[0].id)
+        Ok(matches.remove(0))
     }
 
     pub async fn mailboxes(&self) -> Result<Vec<Mailbox>, AppError> {

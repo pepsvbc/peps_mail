@@ -75,7 +75,9 @@ pub struct ImapAttachment {
     pub content_type: String,
     /// Size in bytes.
     pub size: usize,
-    /// Raw attachment content.
+    /// Raw attachment content. Never serialized: attachment bytes must not
+    /// end up in JSON (e.g. the attachments_json cache column).
+    #[serde(skip)]
     pub data: Vec<u8>,
     /// Content-ID for inline images (e.g. "image001@01D1234"), without angle brackets.
     pub content_id: Option<String>,

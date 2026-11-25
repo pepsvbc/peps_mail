@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SelectField } from "@/components/ui/select";
 import { useTranslation } from "@/lib/i18n";
-import { useMailboxes, useFranklyMutation, useDeleteMailbox } from "./hooks";
+import { useMailboxes, useFranklyMutation, useDeleteMailbox, type Mailbox } from "./hooks";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { SelectedMailbox } from "./MailboxSettings";
 
@@ -82,18 +82,19 @@ function AddUserDialog({ domains, addresses, onClose }: { domains: string[]; add
   </UserDialog>;
 }
 
-function ManageUserDialog({ user, recoveryEnabled, onClose }: { user: { id: string; address: string }; recoveryEnabled: boolean; onClose: () => void }) {
+function ManageUserDialog({ user, recoveryEnabled, onClose }: { user: Mailbox; recoveryEnabled: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   const activeEmail = useAuthStore((s) => s.accounts.find((a) => a.id === s.activeAccountId)?.email);
   const [deleting, setDeleting] = useState(false);
   const [confirmation, setConfirmation] = useState("");
   const remove = useDeleteMailbox();
   const isSelf = activeEmail?.toLowerCase() === user.address.toLowerCase();
+  const locked = user.protected === true;
   const confirmed = confirmation.trim().toLowerCase() === user.address.toLowerCase();
   return <UserDialog title={t(deleting ? "Delete user" : "Manage user")} description={user.address} onClose={onClose} busy={remove.isPending}>
     {deleting ? <form className="space-y-4" onSubmit={(e) => {
       e.preventDefault();
-      if (confirmed && !isSelf && !remove.isPending) remove.mutate({ email: user.address, mailbox_id: user.id, confirmation }, { onSuccess: onClose });
+      if (confirmed && !isSelf && !locked && !remove.isPending) remove.mutate({ email: user.address, mailbox_id: user.id, confirmation }, { onSuccess: onClose });
     }}>
       <p className="text-sm text-muted-foreground">{t("This takes the address out of service and signs the user out. FranklyMail keeps the existing mail. Recovery links and the personal recovery address are removed from this app.")}</p>
       <Label htmlFor="delete-user-confirmation">{t("Type {email} to confirm", { email: user.address })}</Label>
@@ -101,13 +102,14 @@ function ManageUserDialog({ user, recoveryEnabled, onClose }: { user: { id: stri
       {remove.error && <p role="alert" className="text-sm text-destructive">{remove.error.message} {t("Refresh users before retrying. Their recovery settings may need to be set up again.")}</p>}
       <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
         <Button type="button" variant="outline" disabled={remove.isPending} onClick={() => { setDeleting(false); setConfirmation(""); remove.reset(); }}>{t("Cancel")}</Button>
-        <Button variant="destructive" disabled={!confirmed || isSelf || remove.isPending}><Trash2 className="size-4" aria-hidden />{t(remove.isPending ? "Deleting…" : "Delete user")}</Button>
+        <Button variant="destructive" disabled={!confirmed || isSelf || locked || remove.isPending}><Trash2 className="size-4" aria-hidden />{t(remove.isPending ? "Deleting…" : "Delete user")}</Button>
       </div>
     </form> : <div className="space-y-6">
       <SelectedMailbox email={user.address} recoveryEnabled={recoveryEnabled} />
       <div className="space-y-2 border-t border-border pt-5">
-        <Button variant="destructive" disabled={isSelf} onClick={() => setDeleting(true)}><Trash2 className="size-4" aria-hidden />{t("Delete user")}</Button>
+        <Button variant="destructive" disabled={isSelf || locked} onClick={() => setDeleting(true)}><Trash2 className="size-4" aria-hidden />{t("Delete user")}</Button>
         {isSelf && <p className="text-sm text-muted-foreground">{t("You cannot delete the account you are currently using")}</p>}
+        {locked && !isSelf && <p className="text-sm text-muted-foreground">{t("Only its owner can change another administrator's mailbox.")}</p>}
       </div>
     </div>}
   </UserDialog>;
@@ -118,7 +120,7 @@ export function AdminSettings() {
   const mailboxes = useMailboxes();
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
-  const [selected, setSelected] = useState<{ id: string; address: string } | null>(null);
+  const [selected, setSelected] = useState<Mailbox | null>(null);
   const users = [...(mailboxes.data?.mailboxes ?? [])].sort((a, b) => a.address.localeCompare(b.address));
   const filtered = users.filter((user) => user.address.toLowerCase().includes(query.trim().toLowerCase()));
   const recoveryEnabled = mailboxes.data?.recovery_enabled === true;
