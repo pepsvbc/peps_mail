@@ -255,6 +255,9 @@ pub async fn login(
 
     match result {
         AuthResult::Success => {
+            // These credentials work (again), e.g. the password was changed back.
+            crate::imap::rejected::forget(imap_host, imap_port, &body.email, &body.password);
+
             // A browser identifier alone is not proof of ownership. Only reuse
             // a browser when a matching account session cookie authenticates it.
             let existing_browser_id = extract_browser_id(&headers).filter(|browser_id| {

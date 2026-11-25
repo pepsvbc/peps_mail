@@ -133,9 +133,46 @@ pub async fn auth_guard(mut req: Request, next: Next) -> Response {
         None => return account_expired(&account_id),
     };
 
+    // The mail server rejected this session's saved password (changed
+    // elsewhere). Sign it out instead of letting every request retry a login
+    // that fails, which could get this server's IP banned.
+    let password_rejected = {
+        let (host, port, email, password) =
+            (session.imap_host.clone(), session.imap_port, session.email.clone(), session.password.clone());
+        move || crate::imap::rejected::is_rejected(&host, port, &email, &password)
+    };
+    if password_rejected() {
+        store.remove_account(&account_id);
+        return password_no_longer_valid(&account_id);
+    }
+
     req.extensions_mut().insert(session);
 
-    next.run(req).await
+    let response = next.run(req).await;
+    // This request's own IMAP login may have been the one that failed.
+    if password_rejected() {
+        store.remove_account(&account_id);
+        return password_no_longer_valid(&account_id);
+    }
+    response
+}
+
+fn password_no_longer_valid(account_id: &str) -> Response {
+    let body = serde_json::json!({
+        "error": {
+            "code": "ACCOUNT_SESSION_EXPIRED",
+            "message": "The mail server rejected your password. Please sign in again.",
+            "status": 401,
+            "accountId": account_id,
+        }
+    })
+    .to_string();
+    (
+        StatusCode::UNAUTHORIZED,
+        [("content-type", "application/json")],
+        body,
+    )
+        .into_response()
 }
 
 #[cfg(test)]
@@ -321,6 +358,66 @@ mod tests {
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(json["email"], "alice@example.com");
+    }
+
+    fn protected_request(session: &TestSession) -> Request<Body> {
+        Request::builder()
+            .uri("/protected")
+            .header(ACTIVE_ACCOUNT_HEADER, &session.account_id)
+            .header("cookie", build_auth_headers(session))
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn session_with_rejected_password_is_signed_out() {
+        let store = Arc::new(SessionStore::new(Duration::from_secs(3600)));
+        let email = "stale-before@example.com";
+        let session = create_test_session(&store, email, "old-password", "stale1");
+        crate::imap::rejected::record("imap.example.com", 993, email, "old-password");
+
+        let (status, json) = send(guarded_router(Arc::clone(&store)), protected_request(&session)).await;
+
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(json["error"]["code"], "ACCOUNT_SESSION_EXPIRED");
+        assert_eq!(json["error"]["accountId"], session.account_id.as_str());
+        assert!(store.get(&session.token).is_none(), "session must be revoked");
+    }
+
+    #[tokio::test]
+    async fn login_rejected_during_request_signs_session_out() {
+        let store = Arc::new(SessionStore::new(Duration::from_secs(3600)));
+        let email = "stale-during@example.com";
+        let session = create_test_session(&store, email, "old-password", "stale2");
+        // Stands in for a handler whose IMAP login the server refused.
+        let router = Router::new()
+            .route(
+                "/protected",
+                get(|Extension(s): Extension<AccountSession>| async move {
+                    crate::imap::rejected::record(&s.imap_host, s.imap_port, &s.email, &s.password);
+                    (StatusCode::SERVICE_UNAVAILABLE, r#"{"error":{}}"#).into_response()
+                }),
+            )
+            .layer(middleware::from_fn(auth_guard))
+            .layer(Extension(Arc::clone(&store)));
+
+        let (status, json) = send(router, protected_request(&session)).await;
+
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(json["error"]["code"], "ACCOUNT_SESSION_EXPIRED");
+        assert!(store.get(&session.token).is_none(), "session must be revoked");
+    }
+
+    #[tokio::test]
+    async fn other_sessions_of_the_mailbox_with_a_new_password_stay_signed_in() {
+        let store = Arc::new(SessionStore::new(Duration::from_secs(3600)));
+        let email = "stale-other@example.com";
+        let session = create_test_session(&store, email, "new-password", "stale3");
+        crate::imap::rejected::record("imap.example.com", 993, email, "old-password");
+
+        let (status, _) = send(guarded_router(Arc::clone(&store)), protected_request(&session)).await;
+
+        assert_eq!(status, StatusCode::OK);
     }
 
     #[tokio::test]

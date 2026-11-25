@@ -84,10 +84,19 @@ async fn connect_with_timeouts(
     };
 
     let client = async_imap::Client::new(stream);
-    tokio::time::timeout(login_timeout, client.login(&creds.email, &creds.password))
+    let session = tokio::time::timeout(login_timeout, client.login(&creds.email, &creds.password))
         .await
         .map_err(|_| ImapError::ConnectionFailed("login timed out".to_string()))?
-        .map_err(|(e, _)| classify_login_error(e))
+        .map_err(|(e, _)| classify_login_error(e));
+    // Let the auth guard sign out sessions whose saved password stopped working.
+    match &session {
+        Ok(_) => super::rejected::forget(&creds.host, creds.port, &creds.email, &creds.password),
+        Err(ImapError::AuthenticationFailed) => {
+            super::rejected::record(&creds.host, creds.port, &creds.email, &creds.password)
+        }
+        Err(_) => {}
+    }
+    session
 }
 
 /// Classify an `async_imap::error::Error` that occurred during LOGIN.
